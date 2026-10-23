@@ -1,0 +1,7 @@
+node_modules/
+dist/
+test-results/
+playwright-report/
+.test-vault/
+.session.json
+examples/workspace-vault/.atlas/

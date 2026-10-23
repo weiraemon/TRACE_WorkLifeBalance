@@ -1,0 +1,128 @@
+[
+  {
+    "repo": "shadcn-ui/ui",
+    "url": "https://github.com/shadcn-ui/ui",
+    "stars": 126317,
+    "pushedAt": "2026-10-23T08:20:32Z",
+    "archived": false,
+    "license": "MIT",
+    "checkedAt": "2026-10-23T14:36:18.389Z"
+  },
+  {
+    "repo": "radix-ui/primitives",
+    "url": "https://github.com/radix-ui/primitives",
+    "stars": 19418,
+    "pushedAt": "2026-10-14T21:52:47Z",
+    "archived": false,
+    "license": "MIT",
+    "checkedAt": "2026-10-23T14:36:17.947Z"
+  },
+  {
+    "repo": "tailwindlabs/tailwindcss",
+    "url": "https://github.com/tailwindlabs/tailwindcss",
+    "stars": 98031,
+    "pushedAt": "2026-10-19T15:50:56Z",
+    "archived": false,
+    "license": "MIT",
+    "checkedAt": "2026-10-23T14:36:18.414Z"
+  },
+  {
+    "repo": "clauderic/dnd-kit",
+    "url": "https://github.com/clauderic/dnd-kit",
+    "stars": 17746,
+    "pushedAt": "2026-10-22T21:53:21Z",
+    "archived": false,
+    "license": "MIT",
+    "checkedAt": "2026-10-23T14:36:17.936Z"
+  },
+  {
+    "repo": "TanStack/table",
+    "url": "https://github.com/TanStack/table",
+    "stars": 28513,
+    "pushedAt": "2026-10-21T14:02:33Z",
+    "archived": false,
+    "license": "MIT",
+    "checkedAt": "2026-10-23T14:36:18.777Z"
+  },
+  {
+    "repo": "TanStack/virtual",
+    "url": "https://github.com/TanStack/virtual",
+    "stars": 7157,
+    "pushedAt": "2026-10-22T12:04:02Z",
+    "archived": false,
+    "license": "MIT",
+    "checkedAt": "2026-10-23T14:36:18.524Z"
+  },
+  {
+    "repo": "react-hook-form/react-hook-form",
+    "url": "https://github.com/react-hook-form/react-hook-form",
+    "stars": 44878,
+    "pushedAt": "2026-10-23T08:09:17Z",
+    "archived": false,
+    "license": "MIT",
+    "checkedAt": "2026-10-23T14:36:18.207Z"
+  },
+  {
+    "repo": "colinhacks/zod",
+    "url": "https://github.com/colinhacks/zod",
+    "stars": 44181,
+    "pushedAt": "2026-10-19T22:46:10Z",
+    "archived": false,
+    "license": "MIT",
+    "checkedAt": "2026-10-23T14:36:19.242Z"
+  },
+  {
+    "repo": "pmndrs/zustand",
+    "url": "https://github.com/pmndrs/zustand",
+    "stars": 58864,
+    "pushedAt": "2026-10-22T04:23:23Z",
+    "archived": false,
+    "license": "MIT",
+    "checkedAt": "2026-10-23T14:36:20.742Z"
+  },
+  {
+    "repo": "fullcalendar/fullcalendar",
+    "url": "https://github.com/fullcalendar/fullcalendar",
+    "stars": 20712,
+    "pushedAt": "2026-10-16T03:03:44Z",
+    "archived": false,
+    "license": "MIT",
+    "checkedAt": "2026-10-23T14:36:18.066Z"
+  },
+  {
+    "repo": "obsidian-tasks-group/obsidian-tasks",
+    "url": "https://github.com/obsidian-tasks-group/obsidian-tasks",
+    "stars": 4067,
+    "pushedAt": "2026-10-22T19:47:30Z",
+    "archived": false,
+    "license": "MIT",
+    "checkedAt": "2026-10-23T14:36:18.140Z"
+  },
+  {
+    "repo": "blacksmithgu/obsidian-dataview",
+    "url": "https://github.com/blacksmithgu/obsidian-dataview",
+    "stars": 9408,
+    "pushedAt": "2025-11-17T20:51:35Z",
+    "archived": false,
+    "license": "MIT",
+    "checkedAt": "2026-10-23T14:36:18.109Z"
+  },
+  {
+    "repo": "obsidianmd/obsidian-sample-plugin",
+    "url": "https://github.com/obsidianmd/obsidian-sample-plugin",
+    "stars": 4582,
+    "pushedAt": "2026-08-02T15:56:53Z",
+    "archived": false,
+    "license": "0BSD",
+    "checkedAt": "2026-10-23T14:36:18.356Z"
+  },
+  {
+    "repo": "toeverything/AFFiNE",
+    "url": "https://github.com/toeverything/AFFiNE",
+    "stars": 73774,
+    "pushedAt": "2026-10-23T09:36:13Z",
+    "archived": false,
+    "license": "NOASSERTION",
+    "checkedAt": "2026-10-23T14:36:18.059Z"
+  }
+]
