@@ -33,12 +33,9 @@ const frontmatter = /^(\uFEFF?---\r?\n)([\s\S]*?)(^---(?:\r?\n|$))/m;
 const backupSchema = z.object({
   version: z.literal(1),
   createdAt: z.iso.datetime(),
-  kind: z.enum(['manual', 'delete', 'restore', 'recovery']).default('manual'),
   files: z.array(z.object({ path: z.string().min(1), content: z.string() })),
 });
-const backupLimits = { manual: 3, delete: 1, restore: 1 };
 const backupName = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.json$/;
-type BackupFile = { path: string; content: string };
 async function readText(filename: string) {
   const bytes = await fs.readFile(filename);
   try {
@@ -264,24 +261,6 @@ export class Vault {
       });
     }
   }
-  private async writeBackup(files: BackupFile[], kind: z.infer<typeof backupSchema>['kind']) {
-    const id = randomUUID();
-    await this.atomic(
-      `.atlas/backups/${id}.json`,
-      JSON.stringify(
-        {
-          version: 1,
-          createdAt: new Date().toISOString(),
-          kind,
-          files,
-        },
-        null,
-        2,
-      ),
-      null,
-    );
-    return id;
-  }
   async save(input: unknown, revision?: string): Promise<Entry> {
     return this.serialized(async () => {
       let data = parseRecord(input);
@@ -501,235 +480,106 @@ export class Vault {
         preview.entries.some((e) => expectations[e.data.id] !== e.revision)
       )
         throw new VaultError('删除范围或文件已更改，请重新检查后再删除', 409);
-      const files = await Promise.all(
-        preview.entries.map(async (entry) => {
-          const content = await readText(await this.safe(entry.path));
-          if (hash(content) !== entry.revision)
-            throw new VaultError('外部修改冲突，未删除文件', 409);
-          return { path: entry.path, content };
-        }),
-      );
-      const backupId = await this.writeBackup(files, 'recovery');
-      const moved: { source: string; trash: string }[] = [];
+      for (const entry of preview.entries)
+        if (hash(await readText(await this.safe(entry.path))) !== entry.revision)
+          throw new VaultError('外部修改冲突，未删除文件', 409);
       const ordered = [...preview.entries].sort(
         (a, b) =>
           deletionLevels[b.data.type as keyof typeof deletionLevels] -
           deletionLevels[a.data.type as keyof typeof deletionLevels],
       );
+      const deletedIds: string[] = [];
       try {
         for (const entry of ordered) {
-          const source = await this.safe(entry.path);
-          const trashPath = `.atlas/trash/${backupId}/${entry.path}`;
-          const trash = await this.safe(trashPath, true);
-          await fs.mkdir(path.dirname(trash), { recursive: true });
-          await this.safe(slash(path.relative(this.root, path.dirname(trash))));
-          if (hash(await readText(source)) !== entry.revision)
+          const target = await this.safe(entry.path);
+          if (hash(await readText(target)) !== entry.revision)
             throw new VaultError('外部修改冲突', 409);
-          await this.safe(entry.path);
-          await fs.rename(source, trash);
-          moved.push({ source, trash });
-          if (hash(await readText(trash)) !== entry.revision)
-            throw new VaultError('移动时发现外部修改冲突', 409);
+          await fs.unlink(target);
+          deletedIds.push(entry.data.id);
         }
       } catch (error) {
-        let incomplete = false;
-        for (const file of moved.reverse()) {
-          try {
-            // Hard links restore only missing paths; a recreated user file is never overwritten.
-            await this.safe(slash(path.relative(this.root, file.source)), true);
-            await this.safe(slash(path.relative(this.root, file.trash)));
-            await fs.link(file.trash, file.source);
-            await fs.unlink(file.trash);
-          } catch {
-            incomplete = true;
-          }
-        }
-        if (!incomplete) await fs.unlink(await this.safe(`.atlas/backups/${backupId}.json`));
         throw new VaultError(
-          incomplete
-            ? `删除中断，部分文件保留在 .atlas/trash/${backupId}；请从备份恢复。${String(error)}`
-            : `删除未完成，已还原移动的文件。${String(error)}`,
+          '删除中断，已删除 ' + deletedIds.length + ' 项，其余内容保留。' + String(error),
           409,
         );
       }
-      let warning: string | undefined;
-      try {
-        const backupPath = `.atlas/backups/${backupId}.json`;
-        const source = await readText(await this.safe(backupPath));
-        const backup = backupSchema.parse(JSON.parse(source));
-        await this.atomic(
-          backupPath,
-          JSON.stringify({ ...backup, kind: 'delete' }, null, 2),
-          hash(source),
-        );
-        await this.clearTrash(backupId, files);
-        await this.pruneBackups(backupId);
-      } catch (error) {
-        warning = '删除已完成，旧备份清理未完成：' + String(error);
-      }
-      return {
-        deletedIds: preview.entries.map((e) => e.data.id),
-        backupId,
-        ...(warning ? { warning } : {}),
-      };
+      return { deletedIds };
     });
   }
   private async storedBackups() {
-    const dir = await this.safe('.atlas/backups', true);
     let names: string[];
     try {
-      names = await fs.readdir(dir);
+      names = await fs.readdir(await this.safe('.atlas/backups'));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
       throw error;
     }
     const results = [];
     for (const name of names.filter((n) => backupName.test(n))) {
-      const absolute = await this.safe('.atlas/backups/' + name);
-      const content = backupSchema.parse(JSON.parse(await readText(absolute)));
-      results.push({
-        ...content,
-        id: name.slice(0, -5),
-        modified: (await fs.stat(absolute)).mtimeMs,
-      });
+      const content = backupSchema.parse(
+        JSON.parse(await readText(await this.safe('.atlas/backups/' + name))),
+      );
+      results.push({ ...content, id: name.slice(0, -5) });
     }
-    return results.sort(
-      (a, b) => b.createdAt.localeCompare(a.createdAt) || b.modified - a.modified,
-    );
+    return results.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
   async backups() {
     return (await this.storedBackups()).map((b) => ({
       id: b.id,
       createdAt: b.createdAt,
       count: b.files.length,
-      kind: b.kind,
     }));
-  }
-  private async removeEmptyParents(relative: string, base: string) {
-    while (relative === base || relative.startsWith(base + '/')) {
-      try {
-        await fs.rmdir(await this.safe(relative));
-      } catch (error) {
-        if (['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes((error as NodeJS.ErrnoException).code ?? ''))
-          return;
-        throw error;
-      }
-      if (relative === base) return;
-      relative = slash(path.dirname(relative));
-    }
-  }
-  private async clearTrash(id: string, files: BackupFile[]) {
-    let removed = 0;
-    for (const file of files) {
-      const relative = `.atlas/trash/${id}/${file.path}`;
-      let original: string;
-      try {
-        original = await readText(await this.safe(relative));
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
-        throw error;
-      }
-      if (original !== file.content)
-        throw new VaultError('回收文件与快照内容不同，已保留：' + relative);
-      await fs.unlink(await this.safe(relative));
-      removed++;
-      await this.removeEmptyParents(slash(path.dirname(relative)), '.atlas/trash');
-    }
-    return removed;
-  }
-  private async pruneBackups(currentId?: string) {
-    const backups = await this.storedBackups();
-    backups.sort((a, b) => Number(b.id === currentId) - Number(a.id === currentId));
-    const counts = { manual: 0, delete: 0, restore: 0 };
-    let removed = 0;
-    for (const backup of backups) {
-      if (backup.kind === 'recovery') continue;
-      if (++counts[backup.kind] <= backupLimits[backup.kind]) continue;
-      removed += await this.clearTrash(backup.id, backup.files);
-      await fs.unlink(await this.safe(`.atlas/backups/${backup.id}.json`));
-      removed++;
-    }
-    return removed;
-  }
-  async cleanupBackups() {
-    return this.serialized(async () => {
-      let removed = await this.pruneBackups();
-      for (const backup of await this.storedBackups()) {
-        if (backup.kind !== 'recovery') removed += await this.clearTrash(backup.id, backup.files);
-      }
-      const cleanNotes = async (relative: string) => {
-        let children;
-        try {
-          children = await fs.readdir(await this.safe(relative), { withFileTypes: true });
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
-          throw error;
-        }
-        for (const child of children) {
-          const target = relative + '/' + child.name;
-          if (child.isDirectory()) await cleanNotes(target);
-          else if (
-            child.isFile() &&
-            /\.md$/i.test(relative) &&
-            backupName.test(child.name.replace(/\.md$/, '.json'))
-          ) {
-            await fs.unlink(await this.safe(target));
-            removed++;
-          }
-        }
-        await this.removeEmptyParents(relative, '.atlas/note-backups');
-      };
-      await cleanNotes('.atlas/note-backups');
-      return { removed };
-    });
   }
   async backup() {
     return this.serialized(async () => {
       const snapshot = await this.scan();
-      if (snapshot.issues.length) throw new VaultError('索引存在诊断，请先修复后创建完整快照');
+      if (snapshot.issues.length) throw new VaultError('索引存在诊断，请先修复后创建快照');
       const files = await Promise.all(
         snapshot.entries.map(async (e) => ({
           path: e.path,
           content: await readText(await this.safe(e.path)),
         })),
       );
-      files.sort((a, b) => a.path.localeCompare(b.path));
-      const last = (await this.storedBackups()).find((b) => b.kind === 'manual');
-      const existing = last && JSON.stringify(last.files) === JSON.stringify(files) ? last : null;
-      const id = existing?.id ?? (await this.writeBackup(files, 'manual'));
-      await this.pruneBackups(id);
+      const id = randomUUID();
+      await this.atomic(
+        '.atlas/backups/' + id + '.json',
+        JSON.stringify(
+          {
+            version: 1,
+            createdAt: new Date().toISOString(),
+            files,
+          },
+          null,
+          2,
+        ),
+        null,
+      );
+      const backups = await this.storedBackups();
+      backups.sort((a, b) => Number(b.id === id) - Number(a.id === id));
+      for (const old of backups.slice(3))
+        await fs.unlink(await this.safe('.atlas/backups/' + old.id + '.json'));
       return { id, count: files.length };
     });
   }
   async restore(id: string, expectations: Record<string, string>) {
     return this.serialized(async () => {
-      if (!/^[\da-f-]{36}$/.test(id)) throw new VaultError('无效备份 ID');
-      let backupSource: string;
-      try {
-        backupSource = await readText(await this.safe(`.atlas/backups/${id}.json`));
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT')
-          throw new VaultError('该快照已被新的备份替换或清理，请重新加载备份列表。', 409);
-        throw error;
-      }
-      const backup = JSON.parse(backupSource);
-      if (backup.version !== 1 || !Array.isArray(backup.files)) throw new VaultError('非法备份');
+      if (!backupName.test(id + '.json')) throw new VaultError('无效备份 ID');
+      const backup = backupSchema.parse(
+        JSON.parse(await readText(await this.safe('.atlas/backups/' + id + '.json'))),
+      );
+      const snapshot = await this.scan();
       const changes: { path: string; content: string; current: string | null }[] = [];
       for (const file of backup.files) {
-        if (typeof file.path !== 'string' || typeof file.content !== 'string')
-          throw new VaultError('非法备份内容');
         const note = decodeNote(file.content);
         if (!note) throw new VaultError('备份包含非 ATLAS 文件');
-        const snapshot = await this.scan();
         const matches = snapshot.entries.filter((e) => e.data.id === note.data.id);
         if (matches.length > 1) throw new VaultError('重复 ID，无法恢复', 409);
         const target = matches[0]?.path ?? file.path;
-        const absolute = await this.safe(target, true);
         let current: string | null = null;
         try {
-          current = await readText(absolute);
-        } catch (e) {
-          if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+          current = await readText(await this.safe(target, true));
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
         }
         if (
           current !== null &&
@@ -739,28 +589,14 @@ export class Vault {
           throw new VaultError('恢复冲突，请刷新并检查当前记录', 409);
         changes.push({ path: target, content: file.content, current });
       }
-      const originals = changes
-        .filter((change) => change.current !== null && change.current !== change.content)
-        .map((change) => ({ path: change.path, content: change.current! }));
-      const undoId = originals.length ? await this.writeBackup(originals, 'restore') : undefined;
-      // Preflight the whole batch, then keep one combined snapshot of replaced files.
-      let restored = 0;
-      for (const change of changes) {
-        if (change.current !== change.content) {
+      for (const change of changes)
+        if (change.current !== change.content)
           await this.atomic(
             change.path,
             change.content,
             change.current === null ? null : hash(change.current),
           );
-        }
-        restored++;
-      }
-      try {
-        await this.pruneBackups(undoId);
-        return { restored };
-      } catch (error) {
-        return { restored, warning: '恢复已完成，旧备份清理未完成：' + String(error) };
-      }
+      return { restored: changes.length };
     });
   }
   async resolveResource(id: string) {

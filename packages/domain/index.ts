@@ -1,5 +1,5 @@
 import { z } from 'zod';
-export const recordContract = 'atlas-r0-space-7';
+export const recordContract = 'atlas-r0-space-8';
 export const noteKinds = ['note', 'idea', 'meeting', 'draft'] as const;
 export const noteKindLabel = { note: '笔记', idea: '灵感', meeting: '纪要', draft: '待细化' };
 export function noteKindFromPath(target: string, fallback: (typeof noteKinds)[number] = 'note') {
@@ -212,7 +212,7 @@ export const isSpaceItem = (record: RecordData): record is SpaceItem =>
   ['project', 'workline', 'milestone', 'todo'].includes(record.type);
 export type Entry = { data: RecordData; path: string; revision: string };
 export type DeletePreview = { entries: Entry[]; blockedReason: string | null };
-export type DeleteResult = { deletedIds: string[]; backupId: string; warning?: string };
+export type DeleteResult = { deletedIds: string[] };
 export type MilestoneContent = { body: string; revision: string; path: string };
 export type Snapshot = {
   entries: Entry[];

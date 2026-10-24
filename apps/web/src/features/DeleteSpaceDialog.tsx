@@ -57,7 +57,7 @@ export function DeleteSpaceDialog({
         <>
           <p className="hint">
             将删除以下 {preview.entries.length}{' '}
-            项内容，包含下级。绑定的笔记和资源保留；仅保留最近一次删除的撤销记录。
+            项内容，包含下级。绑定的笔记和资源保留。删除不可撤销，需要备份时请先手动创建快照。
           </p>
           <ul className="delete-scope" aria-label="删除范围">
             {preview.entries.map(

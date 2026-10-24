@@ -17,7 +17,7 @@ import {
   type Snapshot,
   type DeleteResult,
 } from '../../../packages/domain/index';
-import { api, load, session } from './api';
+import { load, session } from './api';
 import { spaceSubtree } from '../../../packages/domain/workspace';
 import { Button, Modal, EmptyState, ErrorMessage, DatePicker } from './components/ui';
 import { Connect, Backup } from './features/VaultSettings';
@@ -309,21 +309,6 @@ export default function App() {
                   {deletion && (
                     <div className="deletion-result">
                       <span role="status">已删除 {deletion.deletedIds.length} 项内容</span>
-                      <Button
-                        onClick={() =>
-                          run(async () => {
-                            const result = await api<{ warning?: string }>('restore', {
-                              id: deletion.backupId,
-                              expectations: {},
-                            });
-                            setDeletion(null);
-                            await reload();
-                            if (result.warning) setError(result.warning);
-                          })
-                        }
-                      >
-                        撤销删除
-                      </Button>
                     </div>
                   )}
                   <div className="list-tools">
@@ -421,7 +406,6 @@ export default function App() {
             }
             setDeleting(null);
             setDeletion(result);
-            if (result.warning) setError(result.warning);
             try {
               await reload();
             } catch (e) {

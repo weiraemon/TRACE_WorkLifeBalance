@@ -192,12 +192,6 @@ const server = http.createServer(async (req, res) => {
       }
       if (url.pathname === '/api/backups' && req.method === 'GET')
         return send(res, 200, await active.backups());
-      if (url.pathname === '/api/cleanup-backups' && req.method === 'POST') {
-        z.object({})
-          .strict()
-          .parse(await body(req));
-        return send(res, 200, await active.cleanupBackups());
-      }
       if (url.pathname === '/api/backup' && req.method === 'POST')
         return send(res, 200, await active.backup());
       if (url.pathname === '/api/restore' && req.method === 'POST') {
