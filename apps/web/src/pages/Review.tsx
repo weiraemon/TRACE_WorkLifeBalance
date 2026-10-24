@@ -60,9 +60,6 @@ export function Review({
       <section>
         <h3>实际投入 · {(totals.total / 60).toFixed(2)} h</h3>
         <Totals values={totals.projects} />
-        <p className="hint">
-          项目归属从完成的待办推导；跨项目记录不自动分摊，未关联待办的时间单独列出。
-        </p>
       </section>
       <div className="review-columns">
         <section>

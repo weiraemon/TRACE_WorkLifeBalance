@@ -5,3 +5,7 @@ playwright-report/
 .test-vault/
 .session.json
 examples/workspace-vault/.atlas/
+tests/
+docs/screenshots/
+docs/development/test-report.md
+coverage/

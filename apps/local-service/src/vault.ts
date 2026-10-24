@@ -2,13 +2,20 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { parseDocument, stringify, isMap } from 'yaml';
+import { z } from 'zod';
 import {
   parseRecord,
   validateChange,
+  noteInputSchema,
+  actualTodoIds,
   type Entry,
   type Snapshot,
   type RecordData,
+  type MilestoneContent,
+  type DeletePreview,
+  type DeleteResult,
 } from '../../../packages/domain/index';
+import { spaceSubtree } from '../../../packages/domain/workspace';
 
 export class VaultError extends Error {
   constructor(
@@ -21,6 +28,17 @@ export class VaultError extends Error {
 export const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const slash = (value: string) => value.split(path.sep).join('/');
 const ignored = new Set(['.git', '.obsidian', '.atlas', 'node_modules']);
+const deletionLevels = { project: 0, workline: 1, milestone: 2, todo: 3 };
+const frontmatter = /^(\uFEFF?---\r?\n)([\s\S]*?)(^---(?:\r?\n|$))/m;
+const backupSchema = z.object({
+  version: z.literal(1),
+  createdAt: z.iso.datetime(),
+  kind: z.enum(['manual', 'delete', 'restore', 'recovery']).default('manual'),
+  files: z.array(z.object({ path: z.string().min(1), content: z.string() })),
+});
+const backupLimits = { manual: 3, delete: 1, restore: 1 };
+const backupName = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.json$/;
+type BackupFile = { path: string; content: string };
 async function readText(filename: string) {
   const bytes = await fs.readFile(filename);
   try {
@@ -32,7 +50,7 @@ async function readText(filename: string) {
 
 // Replace only our top-level YAML value; other keys, comments and body remain byte-for-byte intact.
 export function decodeNote(source: string) {
-  const match = /^(\uFEFF?---\r?\n)([\s\S]*?)(^---(?:\r?\n|$))/m.exec(source);
+  const match = frontmatter.exec(source);
   if (!match || match.index !== 0) {
     if (/^\uFEFF?---(?:\r?\n|$)/.test(source)) throw new VaultError('Frontmatter 未闭合');
     return null;
@@ -74,7 +92,7 @@ export function updateNote(source: string, data: RecordData) {
   );
 }
 export const newNote = (data: RecordData) =>
-  `---\n${stringify({ atlas: { managed: true, record: data } })}---\n\n# ${'title' in data ? data.title : 'ATLAS ' + data.type}\n\n此处正文由你在 Obsidian 中自由编辑。ATLAS 仅更新 atlas 字段。\n`;
+  `---\n${stringify({ atlas: { managed: true, record: data } })}---\n\n# ${'title' in data ? data.title : 'ATLAS ' + data.type}\n\n`;
 
 export class Vault {
   readonly sessionId = randomUUID();
@@ -246,7 +264,7 @@ export class Vault {
       });
     }
   }
-  private async backupFile(relative: string, source: string) {
+  private async writeBackup(files: BackupFile[], kind: z.infer<typeof backupSchema>['kind']) {
     const id = randomUUID();
     await this.atomic(
       `.atlas/backups/${id}.json`,
@@ -254,7 +272,8 @@ export class Vault {
         {
           version: 1,
           createdAt: new Date().toISOString(),
-          files: [{ path: relative, content: source }],
+          kind,
+          files,
         },
         null,
         2,
@@ -293,7 +312,7 @@ export class Vault {
               : [],
         };
       }
-      if (data.type === 'resource' && data.location === 'vault') {
+      if (data.type === 'resource' && data.location === 'vault' && data.noteId !== data.id) {
         const target = await this.safe(data.target);
         const stat = await fs.stat(target);
         const targetPath = slash(data.target);
@@ -304,6 +323,16 @@ export class Vault {
           noteId: note?.data.id ?? null,
         };
       }
+      if (
+        data.type === 'resource' &&
+        data.noteId === data.id &&
+        (!existing ||
+          existing.data.type !== 'resource' ||
+          existing.data.noteId !== data.id ||
+          data.target !== existing.data.target ||
+          data.tag !== existing.data.tag)
+      )
+        throw new VaultError('笔记路径和标签由创建时确定，请在 Obsidian 中整理文件');
       validateChange(data, snapshot.entries);
       const now = new Date().toISOString();
       data = { ...data, createdAt: existing?.data.createdAt ?? data.createdAt, updatedAt: now };
@@ -313,13 +342,239 @@ export class Vault {
         const original = await readText(await this.safe(relative));
         if (hash(original) !== revision) throw new VaultError('外部修改冲突', 409);
         source = updateNote(original, data);
-        await this.backupFile(relative, original);
       }
       await this.atomic(relative, source, existing?.revision ?? null);
       return { data, path: relative, revision: hash(source) };
     });
   }
-  async backups() {
+  async createMarkdown(input: unknown): Promise<Entry> {
+    const fields = noteInputSchema.parse(input);
+    return this.serialized(async () => {
+      const id = randomUUID(),
+        now = new Date().toISOString();
+      const name =
+        fields.title
+          .replace(/[<>:"/\\|?*\x00-\x1f]/g, '-')
+          .replace(/[. ]+$/g, '')
+          .slice(0, 60) || '笔记';
+      const relative = `ATLAS/knowledge/${fields.tag || '未分类'}/${name}-${id}.md`;
+      const data = parseRecord({
+        schemaVersion: 1,
+        id,
+        createdAt: now,
+        updatedAt: now,
+        type: 'resource',
+        ...fields,
+        target: relative,
+        location: 'vault',
+        noteId: id,
+      });
+      const source = newNote(data);
+      await this.atomic(relative, source, null);
+      return { data, path: relative, revision: hash(source) };
+    });
+  }
+  private async milestoneSource(id: string, resourceId?: string) {
+    const snapshot = await this.scan();
+    const matches = snapshot.entries.filter((e) => e.data.id === id);
+    if (matches.length > 1) throw new VaultError('重复 ID，拒绝读写正文', 409);
+    const entry = matches[0];
+    if (entry?.data.type !== 'milestone') throw new VaultError('节点不存在或无法读取', 409);
+    let relative = entry.path;
+    let resource: Entry | undefined;
+    if (resourceId) {
+      const resources = snapshot.entries.filter((e) => e.data.id === resourceId);
+      if (!entry.data.resourceIds.includes(resourceId) || resources.length !== 1)
+        throw new VaultError('节点的文件绑定已更改，请保留草稿并重新打开详情', 409);
+      resource = resources[0];
+      const resolved = await this.resolveResource(resourceId);
+      if (resolved.location !== 'vault' || !/\.md$/i.test(resolved.target))
+        throw new VaultError('节点只能读写 Vault 中绑定的 Markdown');
+      relative = resolved.target;
+    }
+    const absolute = await this.safe(relative);
+    if ((await fs.stat(absolute)).size > 5 * 1024 * 1024)
+      throw new VaultError('笔记超过 5 MB，请在 Obsidian 中编辑');
+    const source = await readText(absolute);
+    const note = decodeNote(source);
+    if (note && snapshot.entries.filter((e) => e.data.id === note.data.id).length !== 1)
+      throw new VaultError('重复 ID，拒绝读写正文', 409);
+    if (!resourceId && hash(source) !== entry.revision)
+      throw new VaultError('文件已更改，请重新加载正文', 409);
+    const match = frontmatter.exec(source);
+    const header = match?.index === 0 ? match[0] : source.startsWith('\uFEFF') ? '\uFEFF' : '';
+    return { source, relative, note, header, resource };
+  }
+  async readMilestoneContent(id: string, resourceId?: string): Promise<MilestoneContent> {
+    const { source, relative, header } = await this.milestoneSource(id, resourceId);
+    return { body: source.slice(header.length), revision: hash(source), path: relative };
+  }
+  async saveMilestoneContent(
+    id: string,
+    body: string,
+    revision: string,
+    resourceId?: string,
+  ): Promise<MilestoneContent> {
+    return this.serialized(async () => {
+      const { source, relative, note, header, resource } = await this.milestoneSource(
+        id,
+        resourceId,
+      );
+      if (hash(source) !== revision)
+        throw new VaultError('文件已被外部修改，未覆盖你的正文；请保留草稿并重新加载正文', 409);
+      const joined =
+        header + (header && header !== '\uFEFF' && !header.endsWith('\n') ? '\n' : '') + body;
+      const changed = note
+        ? updateNote(joined, {
+            ...note.data,
+            updatedAt: new Date().toISOString(),
+          })
+        : joined;
+      let resourceUpdate: { path: string; source: string; revision: string } | undefined;
+      if (resource?.data.type === 'resource' && !resource.data.noteId) {
+        const original = await readText(await this.safe(resource.path));
+        if (hash(original) !== resource.revision) throw new VaultError('文件绑定已被外部修改', 409);
+        resourceUpdate = {
+          path: resource.path,
+          revision: resource.revision,
+          source: updateNote(original, {
+            ...resource.data,
+            target: relative,
+            fingerprint: hash(changed),
+            updatedAt: new Date().toISOString(),
+          }),
+        };
+      }
+      await this.atomic(relative, changed, revision);
+      if (resourceUpdate) {
+        try {
+          await this.atomic(resourceUpdate.path, resourceUpdate.source, resourceUpdate.revision);
+        } catch {
+          throw new VaultError(
+            '正文已保存，但资源引用更新失败；请保留草稿，重新载入并检查文件绑定',
+            409,
+          );
+        }
+      }
+      return { body, revision: hash(changed), path: relative };
+    });
+  }
+  async obsidianUrl(relative: string) {
+    return 'obsidian://open?path=' + encodeURIComponent(await this.safe(relative));
+  }
+  async deletePreview(id: string): Promise<DeletePreview> {
+    const snapshot = await this.scan();
+    const entries = spaceSubtree(snapshot.entries, id).sort(
+      (a, b) =>
+        deletionLevels[a.data.type as keyof typeof deletionLevels] -
+          deletionLevels[b.data.type as keyof typeof deletionLevels] ||
+        a.data.createdAt.localeCompare(b.data.createdAt) ||
+        a.data.id.localeCompare(b.data.id),
+    );
+    if (!entries.length) throw new VaultError('工作内容不存在或无法读取，请重新加载', 409);
+    const ids = new Set(entries.map((e) => e.data.id));
+    const paths = new Set(entries.map((e) => e.path));
+    const linkedActuals = snapshot.entries.filter(
+      (e) => e.data.type === 'actual' && actualTodoIds(e.data).some((todoId) => ids.has(todoId)),
+    );
+    const linkedResources = snapshot.entries.filter(
+      (e) =>
+        e.data.type === 'resource' &&
+        ((e.data.noteId && ids.has(e.data.noteId)) ||
+          (e.data.location === 'vault' && paths.has(e.data.target.replaceAll('\\', '/')))),
+    );
+    const blockedReason = snapshot.issues.length
+      ? 'Vault 存在诊断，请先处理后再删除：' + snapshot.issues[0].message
+      : linkedActuals.length
+        ? `这些待办已关联 ${linkedActuals.length} 条实际工作记录，请先到今日编辑对应记录，解除待办关联后再删除。`
+        : linkedResources.length
+          ? '待删除的 Markdown 本身被资源引用，请先解除对应资源引用后再删除。'
+          : null;
+    return { entries, blockedReason };
+  }
+  async deleteSpace(id: string, expectations: Record<string, string>): Promise<DeleteResult> {
+    return this.serialized(async () => {
+      const preview = await this.deletePreview(id);
+      if (preview.blockedReason) throw new VaultError(preview.blockedReason, 409);
+      if (
+        Object.keys(expectations).length !== preview.entries.length ||
+        preview.entries.some((e) => expectations[e.data.id] !== e.revision)
+      )
+        throw new VaultError('删除范围或文件已更改，请重新检查后再删除', 409);
+      const files = await Promise.all(
+        preview.entries.map(async (entry) => {
+          const content = await readText(await this.safe(entry.path));
+          if (hash(content) !== entry.revision)
+            throw new VaultError('外部修改冲突，未删除文件', 409);
+          return { path: entry.path, content };
+        }),
+      );
+      const backupId = await this.writeBackup(files, 'recovery');
+      const moved: { source: string; trash: string }[] = [];
+      const ordered = [...preview.entries].sort(
+        (a, b) =>
+          deletionLevels[b.data.type as keyof typeof deletionLevels] -
+          deletionLevels[a.data.type as keyof typeof deletionLevels],
+      );
+      try {
+        for (const entry of ordered) {
+          const source = await this.safe(entry.path);
+          const trashPath = `.atlas/trash/${backupId}/${entry.path}`;
+          const trash = await this.safe(trashPath, true);
+          await fs.mkdir(path.dirname(trash), { recursive: true });
+          await this.safe(slash(path.relative(this.root, path.dirname(trash))));
+          if (hash(await readText(source)) !== entry.revision)
+            throw new VaultError('外部修改冲突', 409);
+          await this.safe(entry.path);
+          await fs.rename(source, trash);
+          moved.push({ source, trash });
+          if (hash(await readText(trash)) !== entry.revision)
+            throw new VaultError('移动时发现外部修改冲突', 409);
+        }
+      } catch (error) {
+        let incomplete = false;
+        for (const file of moved.reverse()) {
+          try {
+            // Hard links restore only missing paths; a recreated user file is never overwritten.
+            await this.safe(slash(path.relative(this.root, file.source)), true);
+            await this.safe(slash(path.relative(this.root, file.trash)));
+            await fs.link(file.trash, file.source);
+            await fs.unlink(file.trash);
+          } catch {
+            incomplete = true;
+          }
+        }
+        if (!incomplete) await fs.unlink(await this.safe(`.atlas/backups/${backupId}.json`));
+        throw new VaultError(
+          incomplete
+            ? `删除中断，部分文件保留在 .atlas/trash/${backupId}；请从备份恢复。${String(error)}`
+            : `删除未完成，已还原移动的文件。${String(error)}`,
+          409,
+        );
+      }
+      let warning: string | undefined;
+      try {
+        const backupPath = `.atlas/backups/${backupId}.json`;
+        const source = await readText(await this.safe(backupPath));
+        const backup = backupSchema.parse(JSON.parse(source));
+        await this.atomic(
+          backupPath,
+          JSON.stringify({ ...backup, kind: 'delete' }, null, 2),
+          hash(source),
+        );
+        await this.clearTrash(backupId, files);
+        await this.pruneBackups(backupId);
+      } catch (error) {
+        warning = '删除已完成，旧备份清理未完成：' + String(error);
+      }
+      return {
+        deletedIds: preview.entries.map((e) => e.data.id),
+        backupId,
+        ...(warning ? { warning } : {}),
+      };
+    });
+  }
+  private async storedBackups() {
     const dir = await this.safe('.atlas/backups', true);
     let names: string[];
     try {
@@ -329,17 +584,104 @@ export class Vault {
       throw error;
     }
     const results = [];
-    for (const name of names.filter((n) => /^[\da-f-]+\.json$/.test(n))) {
-      const content = JSON.parse(
-        await fs.readFile(await this.safe('.atlas/backups/' + name), 'utf8'),
-      );
+    for (const name of names.filter((n) => backupName.test(n))) {
+      const absolute = await this.safe('.atlas/backups/' + name);
+      const content = backupSchema.parse(JSON.parse(await readText(absolute)));
       results.push({
+        ...content,
         id: name.slice(0, -5),
-        createdAt: content.createdAt,
-        count: content.files.length,
+        modified: (await fs.stat(absolute)).mtimeMs,
       });
     }
-    return results.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return results.sort(
+      (a, b) => b.createdAt.localeCompare(a.createdAt) || b.modified - a.modified,
+    );
+  }
+  async backups() {
+    return (await this.storedBackups()).map((b) => ({
+      id: b.id,
+      createdAt: b.createdAt,
+      count: b.files.length,
+      kind: b.kind,
+    }));
+  }
+  private async removeEmptyParents(relative: string, base: string) {
+    while (relative === base || relative.startsWith(base + '/')) {
+      try {
+        await fs.rmdir(await this.safe(relative));
+      } catch (error) {
+        if (['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes((error as NodeJS.ErrnoException).code ?? ''))
+          return;
+        throw error;
+      }
+      if (relative === base) return;
+      relative = slash(path.dirname(relative));
+    }
+  }
+  private async clearTrash(id: string, files: BackupFile[]) {
+    let removed = 0;
+    for (const file of files) {
+      const relative = `.atlas/trash/${id}/${file.path}`;
+      let original: string;
+      try {
+        original = await readText(await this.safe(relative));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        throw error;
+      }
+      if (original !== file.content)
+        throw new VaultError('回收文件与快照内容不同，已保留：' + relative);
+      await fs.unlink(await this.safe(relative));
+      removed++;
+      await this.removeEmptyParents(slash(path.dirname(relative)), '.atlas/trash');
+    }
+    return removed;
+  }
+  private async pruneBackups(currentId?: string) {
+    const backups = await this.storedBackups();
+    backups.sort((a, b) => Number(b.id === currentId) - Number(a.id === currentId));
+    const counts = { manual: 0, delete: 0, restore: 0 };
+    let removed = 0;
+    for (const backup of backups) {
+      if (backup.kind === 'recovery') continue;
+      if (++counts[backup.kind] <= backupLimits[backup.kind]) continue;
+      removed += await this.clearTrash(backup.id, backup.files);
+      await fs.unlink(await this.safe(`.atlas/backups/${backup.id}.json`));
+      removed++;
+    }
+    return removed;
+  }
+  async cleanupBackups() {
+    return this.serialized(async () => {
+      let removed = await this.pruneBackups();
+      for (const backup of await this.storedBackups()) {
+        if (backup.kind !== 'recovery') removed += await this.clearTrash(backup.id, backup.files);
+      }
+      const cleanNotes = async (relative: string) => {
+        let children;
+        try {
+          children = await fs.readdir(await this.safe(relative), { withFileTypes: true });
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+          throw error;
+        }
+        for (const child of children) {
+          const target = relative + '/' + child.name;
+          if (child.isDirectory()) await cleanNotes(target);
+          else if (
+            child.isFile() &&
+            /\.md$/i.test(relative) &&
+            backupName.test(child.name.replace(/\.md$/, '.json'))
+          ) {
+            await fs.unlink(await this.safe(target));
+            removed++;
+          }
+        }
+        await this.removeEmptyParents(relative, '.atlas/note-backups');
+      };
+      await cleanNotes('.atlas/note-backups');
+      return { removed };
+    });
   }
   async backup() {
     return this.serialized(async () => {
@@ -351,21 +693,26 @@ export class Vault {
           content: await readText(await this.safe(e.path)),
         })),
       );
-      const id = randomUUID();
-      await this.atomic(
-        `.atlas/backups/${id}.json`,
-        JSON.stringify({ version: 1, createdAt: new Date().toISOString(), files }, null, 2),
-        null,
-      );
+      files.sort((a, b) => a.path.localeCompare(b.path));
+      const last = (await this.storedBackups()).find((b) => b.kind === 'manual');
+      const existing = last && JSON.stringify(last.files) === JSON.stringify(files) ? last : null;
+      const id = existing?.id ?? (await this.writeBackup(files, 'manual'));
+      await this.pruneBackups(id);
       return { id, count: files.length };
     });
   }
   async restore(id: string, expectations: Record<string, string>) {
     return this.serialized(async () => {
       if (!/^[\da-f-]{36}$/.test(id)) throw new VaultError('无效备份 ID');
-      const backup = JSON.parse(
-        await fs.readFile(await this.safe(`.atlas/backups/${id}.json`), 'utf8'),
-      );
+      let backupSource: string;
+      try {
+        backupSource = await readText(await this.safe(`.atlas/backups/${id}.json`));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+          throw new VaultError('该快照已被新的备份替换或清理，请重新加载备份列表。', 409);
+        throw error;
+      }
+      const backup = JSON.parse(backupSource);
       if (backup.version !== 1 || !Array.isArray(backup.files)) throw new VaultError('非法备份');
       const changes: { path: string; content: string; current: string | null }[] = [];
       for (const file of backup.files) {
@@ -386,23 +733,34 @@ export class Vault {
         }
         if (
           current !== null &&
+          current !== file.content &&
           (!decodeNote(current) || expectations[note.data.id] !== hash(current))
         )
           throw new VaultError('恢复冲突，请刷新并检查当前记录', 409);
         changes.push({ path: target, content: file.content, current });
       }
-      // Preflight all files first. Each replacement has its own undo backup; interrupted batches are recoverable.
+      const originals = changes
+        .filter((change) => change.current !== null && change.current !== change.content)
+        .map((change) => ({ path: change.path, content: change.current! }));
+      const undoId = originals.length ? await this.writeBackup(originals, 'restore') : undefined;
+      // Preflight the whole batch, then keep one combined snapshot of replaced files.
       let restored = 0;
       for (const change of changes) {
-        if (change.current !== null) await this.backupFile(change.path, change.current);
-        await this.atomic(
-          change.path,
-          change.content,
-          change.current === null ? null : hash(change.current),
-        );
+        if (change.current !== change.content) {
+          await this.atomic(
+            change.path,
+            change.content,
+            change.current === null ? null : hash(change.current),
+          );
+        }
         restored++;
       }
-      return { restored };
+      try {
+        await this.pruneBackups(undoId);
+        return { restored };
+      } catch (error) {
+        return { restored, warning: '恢复已完成，旧备份清理未完成：' + String(error) };
+      }
     });
   }
   async resolveResource(id: string) {
@@ -432,11 +790,7 @@ export class Vault {
     return {
       location: 'vault' as const,
       target,
-      obsidianUrl:
-        'obsidian://open?vault=' +
-        encodeURIComponent(path.basename(this.root)) +
-        '&file=' +
-        encodeURIComponent(target),
+      obsidianUrl: await this.obsidianUrl(target),
       absolute: await this.safe(target),
     };
   }

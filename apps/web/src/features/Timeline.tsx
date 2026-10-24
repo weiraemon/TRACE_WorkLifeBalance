@@ -81,11 +81,9 @@ export function Timeline({
       <div className="timeline-head">
         <div>
           <h3>计划</h3>
-          <span>节点按时刻定位 · 可展开待办</span>
         </div>
         <div className="actual-heading">
           <h3>实际</h3>
-          <span>点击补录 · 拖动调整</span>
         </div>
       </div>
       {untimed.length > 0 && (

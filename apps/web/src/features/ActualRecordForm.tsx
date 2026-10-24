@@ -156,7 +156,6 @@ export function ActualRecordForm({
                   )}
                 </div>
               ))}
-            {!contexts.length && <p className="hint">尚无待办也可以直接记录实际工作。</p>}
           </div>
         </details>
         <details className="optional-settings">

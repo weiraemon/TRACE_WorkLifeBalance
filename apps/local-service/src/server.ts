@@ -125,6 +125,59 @@ const server = http.createServer(async (req, res) => {
         throw new VaultError('其他窗口已切换 Vault；此窗口停止读写，请重新连接原 Vault', 409);
       if (url.pathname === '/api/snapshot' && req.method === 'GET')
         return send(res, 200, await active.scan());
+      if (url.pathname === '/api/delete-preview' && req.method === 'POST') {
+        const input = z
+          .object({ id: z.string().uuid() })
+          .strict()
+          .parse(await body(req));
+        return send(res, 200, await active.deletePreview(input.id));
+      }
+      if (url.pathname === '/api/delete-space' && req.method === 'POST') {
+        const input = z
+          .object({
+            id: z.string().uuid(),
+            expectations: z.record(z.string().uuid(), z.string().regex(/^[a-f0-9]{64}$/)),
+          })
+          .strict()
+          .parse(await body(req));
+        return send(res, 200, await active.deleteSpace(input.id, input.expectations));
+      }
+      if (url.pathname === '/api/notes' && req.method === 'POST')
+        return send(res, 200, await active.createMarkdown(await body(req)));
+      if (url.pathname === '/api/milestone-content' && req.method === 'POST') {
+        const input = z
+          .discriminatedUnion('action', [
+            z
+              .object({
+                action: z.literal('read'),
+                id: z.string().uuid(),
+                resourceId: z.string().uuid().optional(),
+              })
+              .strict(),
+            z
+              .object({
+                action: z.literal('save'),
+                id: z.string().uuid(),
+                body: z.string().max(500000),
+                revision: z.string().regex(/^[a-f0-9]{64}$/),
+                resourceId: z.string().uuid().optional(),
+              })
+              .strict(),
+          ])
+          .parse(await body(req));
+        return send(
+          res,
+          200,
+          input.action === 'read'
+            ? await active.readMilestoneContent(input.id, input.resourceId)
+            : await active.saveMilestoneContent(
+                input.id,
+                input.body,
+                input.revision,
+                input.resourceId,
+              ),
+        );
+      }
       if (url.pathname === '/api/records' && req.method === 'POST') {
         const input = z
           .object({
@@ -139,6 +192,12 @@ const server = http.createServer(async (req, res) => {
       }
       if (url.pathname === '/api/backups' && req.method === 'GET')
         return send(res, 200, await active.backups());
+      if (url.pathname === '/api/cleanup-backups' && req.method === 'POST') {
+        z.object({})
+          .strict()
+          .parse(await body(req));
+        return send(res, 200, await active.cleanupBackups());
+      }
       if (url.pathname === '/api/backup' && req.method === 'POST')
         return send(res, 200, await active.backup());
       if (url.pathname === '/api/restore' && req.method === 'POST') {
@@ -165,14 +224,12 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname === '/api/obsidian' && req.method === 'POST') {
         const input = z.object({ id: z.string().uuid() }).parse(await body(req));
         const snapshot = await active.scan();
-        const e = snapshot.entries.find((e) => e.data.id === input.id);
+        const matches = snapshot.entries.filter((e) => e.data.id === input.id);
+        if (matches.length > 1) throw new VaultError('重复 ID，无法唯一定位文件', 409);
+        const e = matches[0];
         if (!e) throw new VaultError('记录不存在');
         return send(res, 200, {
-          url:
-            'obsidian://open?vault=' +
-            encodeURIComponent(path.basename(active.root)) +
-            '&file=' +
-            encodeURIComponent(e.path),
+          url: await active.obsidianUrl(e.path),
         });
       }
       return send(res, 404, { error: '接口不存在' });

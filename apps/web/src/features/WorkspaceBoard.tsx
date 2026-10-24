@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDownIcon, ChevronRightIcon, PlusIcon, CheckIcon } from '@radix-ui/react-icons';
 import {
   lineKindLabel,
@@ -16,6 +17,7 @@ import { createRecord, save } from '../api';
 import { Button, EmptyState } from '../components/ui';
 import { ImportanceDot, importanceLabel } from '../components/Importance';
 import type { Editor } from './editor';
+import { spaceLabel } from './WorkItemForm';
 export function TodoRows({
   todos,
   entries,
@@ -32,7 +34,7 @@ export function TodoRows({
       {todos.map((todo) => {
         const done = todoStatus(todo, entries) === 'Done';
         return (
-          <li key={todo.id} className={done ? 'todo-done' : ''}>
+          <li key={todo.id} data-space-id={todo.id} className={done ? 'todo-done' : ''}>
             <button
               type="button"
               role="checkbox"
@@ -79,6 +81,7 @@ export function WorkspaceBoard({
   run,
   query,
   showArchived,
+  requestDelete,
 }: {
   snapshot: Snapshot;
   edit: (e: Editor) => void;
@@ -87,8 +90,57 @@ export function WorkspaceBoard({
   run: (fn: () => Promise<unknown>) => void;
   query: string;
   showArchived: boolean;
+  requestDelete: (entry: Entry) => void;
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [menu, setMenu] = useState<{
+    entry: Entry;
+    x: number;
+    y: number;
+    trigger: HTMLElement;
+  } | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const key = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        menu.trigger.querySelector('button')?.focus();
+        close();
+      } else if (event.key === 'Tab') close();
+      else if (['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) event.preventDefault();
+    };
+    document.addEventListener('pointerdown', close);
+    document.addEventListener('keydown', key);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      document.removeEventListener('pointerdown', close);
+      document.removeEventListener('keydown', key);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [menu]);
+  const contextMenu = (event: MouseEvent<HTMLDivElement> | KeyboardEvent<HTMLDivElement>) => {
+    if (
+      event.type === 'keydown' &&
+      (event as KeyboardEvent).key !== 'ContextMenu' &&
+      !((event as KeyboardEvent).shiftKey && (event as KeyboardEvent).key === 'F10')
+    )
+      return;
+    const target = (event.target as Element).closest<HTMLElement>('[data-space-id]');
+    const entry = snapshot.entries.find((e) => e.data.id === target?.dataset.spaceId);
+    if (!target || !entry || !isSpaceItem(entry.data)) return;
+    event.preventDefault();
+    const rect = target.getBoundingClientRect();
+    const mouse = event as MouseEvent;
+    setMenu({
+      entry,
+      trigger: target,
+      x: Math.max(8, Math.min(mouse.clientX || rect.left + 16, window.innerWidth - 238)),
+      y: Math.max(8, Math.min(mouse.clientY || rect.top + 16, window.innerHeight - 100)),
+    });
+  };
   const records = snapshot.entries
     .map((e) => e.data)
     .filter(isSpaceItem)
@@ -116,10 +168,39 @@ export function WorkspaceBoard({
     change(todo, { status: todo.status === 'Done' ? 'Ready' : 'Done' });
   };
   return (
-    <div className="space-board">
-      {projects.length === 0 && (
-        <EmptyState>先建立一个项目作为“面”，再向其中添加横向业务线。</EmptyState>
-      )}
+    <div className="space-board" onContextMenu={contextMenu} onKeyDown={contextMenu}>
+      {menu &&
+        isSpaceItem(menu.entry.data) &&
+        createPortal(
+          <div
+            className="space-context-menu"
+            role="menu"
+            aria-label={`${menu.entry.data.title} 操作`}
+            style={{ left: menu.x, top: menu.y }}
+            onPointerDown={(event) => event.stopPropagation()}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+          >
+            <span title={menu.entry.data.title}>{menu.entry.data.title}</span>
+            <button
+              role="menuitem"
+              className="button danger"
+              ref={(node) => {
+                node?.focus({ preventScroll: true });
+              }}
+              onClick={() => {
+                requestDelete(menu.entry);
+                setMenu(null);
+              }}
+            >
+              删除{spaceLabel[menu.entry.data.type]}
+            </button>
+          </div>,
+          document.body,
+        )}
+      {projects.length === 0 && <EmptyState>暂无项目</EmptyState>}
       {projects.map((project) => {
         const lines = records
           .filter(
@@ -148,6 +229,7 @@ export function WorkspaceBoard({
           <section
             className="project-plane"
             key={project.id}
+            data-space-id={project.id}
             aria-label={`项目面 · ${project.title}`}
           >
             <div className="project-heading">
@@ -200,6 +282,7 @@ export function WorkspaceBoard({
                     <section
                       className="business-track"
                       key={line.id}
+                      data-space-id={line.id}
                       aria-label={`业务线 · ${line.title}`}
                     >
                       <div className="track-heading">
@@ -226,6 +309,7 @@ export function WorkspaceBoard({
                             <article
                               className="milestone-point"
                               key={point.id}
+                              data-space-id={point.id}
                               aria-label={`关键节点 · ${point.title}`}
                             >
                               <button
@@ -292,9 +376,7 @@ export function WorkspaceBoard({
                     </section>
                   );
                 })}
-                {!lines.length && (
-                  <p className="plane-empty">添加一条论文、专利、报告、代码、研究或测试线。</p>
-                )}
+                {!lines.length && <p className="plane-empty">暂无业务线</p>}
               </div>
             )}
           </section>

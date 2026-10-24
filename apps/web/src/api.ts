@@ -4,6 +4,9 @@ import {
   type RecordData,
   type Entry,
   type Snapshot,
+  type MilestoneContent,
+  type DeletePreview,
+  type DeleteResult,
 } from '../../../packages/domain/index';
 let token = '';
 let vaultId = '';
@@ -36,6 +39,12 @@ export async function session() {
   return value;
 }
 export const load = () => api<Snapshot>('snapshot');
+export const deletePreview = (id: string) => api<DeletePreview>('delete-preview', { id });
+export const deleteSpace = (id: string, entries: Entry[]) =>
+  api<DeleteResult>('delete-space', {
+    id,
+    expectations: Object.fromEntries(entries.map((e) => [e.data.id, e.revision])),
+  });
 export const save = (data: RecordData, entry?: Entry) =>
   api<Entry>('records', { data, revision: entry?.revision });
 export function createRecord(type: RecordData['type'], fields: object): RecordData {
@@ -51,8 +60,17 @@ export function createRecord(type: RecordData['type'], fields: object): RecordDa
 }
 export async function openResource(id: string, native = false) {
   const result = await api<{ url?: string }>('open', { id, native });
-  if (result.url) window.open(result.url, '_blank', 'noopener,noreferrer');
+  if (result.url?.startsWith('obsidian://')) window.location.href = result.url;
+  else if (result.url) window.open(result.url, '_blank', 'noopener,noreferrer');
 }
+export const readMilestoneContent = (id: string, resourceId?: string) =>
+  api<MilestoneContent>('milestone-content', { action: 'read', id, resourceId });
+export const saveMilestoneContent = (
+  id: string,
+  body: string,
+  revision: string,
+  resourceId?: string,
+) => api<MilestoneContent>('milestone-content', { action: 'save', id, body, revision, resourceId });
 export async function openObsidian(id: string) {
   const result = await api<{ url: string }>('obsidian', { id });
   window.location.href = result.url;

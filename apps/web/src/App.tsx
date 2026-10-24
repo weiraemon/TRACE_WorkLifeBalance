@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useEffect, useState, lazy, Suspense } from 'react';
+import { useCallback, useDeferredValue, useEffect, useState, useRef, lazy, Suspense } from 'react';
 import {
   SunIcon,
   LayersIcon,
@@ -9,8 +9,16 @@ import {
   GearIcon,
   ReloadIcon,
 } from '@radix-ui/react-icons';
-import { localDay, weekStart, isSpaceItem, type Snapshot } from '../../../packages/domain/index';
-import { load, session } from './api';
+import {
+  localDay,
+  weekStart,
+  isSpaceItem,
+  type Entry,
+  type Snapshot,
+  type DeleteResult,
+} from '../../../packages/domain/index';
+import { api, load, session } from './api';
+import { spaceSubtree } from '../../../packages/domain/workspace';
 import { Button, Modal, EmptyState, ErrorMessage, DatePicker } from './components/ui';
 import { Connect, Backup } from './features/VaultSettings';
 import { ReferenceForm } from './features/ReferenceForm';
@@ -19,6 +27,7 @@ import { WorkItemForm } from './features/WorkItemForm';
 import { ActualRecordForm } from './features/ActualRecordForm';
 import { WorkspaceBoard } from './features/WorkspaceBoard';
 import { SpaceDetails } from './features/SpaceDetails';
+import { DeleteSpaceDialog } from './features/DeleteSpaceDialog';
 import { Knowledge } from './pages/Knowledge';
 import { Review } from './pages/Review';
 import { Today } from './pages/Today';
@@ -42,6 +51,10 @@ export default function App() {
     [date, setDate] = useState(localDay()),
     [showArchived, setShowArchived] = useState(false);
   const query = useDeferredValue(search.toLowerCase());
+  const [contentDirty, setContentDirty] = useState(false);
+  const [deleting, setDeleting] = useState<Entry | null>(null);
+  const [deletion, setDeletion] = useState<DeleteResult | null>(null);
+  const canLeaveContent = () => !contentDirty || window.confirm('正文尚未保存，确定放弃并离开？');
   const reload = useCallback(async () => {
     setSyncing(true);
     try {
@@ -77,6 +90,7 @@ export default function App() {
     return () => clearInterval(timer);
   }, [Boolean(snapshot), reload]);
   const goWorkspace = (id?: string) => {
+    if (!canLeaveContent()) return;
     setPage('workspace');
     setSearch('');
     setSelected(id ?? null);
@@ -88,7 +102,9 @@ export default function App() {
         e.key.toLowerCase() === 'k' &&
         snapshot &&
         !editor &&
-        !settings
+        !settings &&
+        !deleting &&
+        !contentDirty
       ) {
         e.preventDefault();
         setPage('today');
@@ -98,9 +114,21 @@ export default function App() {
     };
     window.addEventListener('keydown', listener);
     return () => window.removeEventListener('keydown', listener);
-  }, [snapshot, date, editor, settings]);
-  const selectedEntry = snapshot?.entries.find((e) => e.data.id === selected);
+  }, [snapshot, date, editor, settings, deleting, contentDirty]);
+  const lastSelected = useRef<{ vaultId: string; entry: Entry } | null>(null);
+  let selectedEntry = snapshot?.entries.find((e) => e.data.id === selected);
+  if (selectedEntry && snapshot)
+    lastSelected.current = { vaultId: snapshot.vaultId, entry: selectedEntry };
+  // Keep an unsaved editor mounted if an external deletion or invalid YAML removes its index entry.
+  if (
+    !selectedEntry &&
+    contentDirty &&
+    lastSelected.current?.vaultId === snapshot?.vaultId &&
+    lastSelected.current?.entry.data.id === selected
+  )
+    selectedEntry = lastSelected.current.entry;
   const navigate = (id: string) => {
+    if (!canLeaveContent()) return;
     setPage(id);
     setSelected(null);
     setSearch('');
@@ -134,14 +162,13 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <p>
-            工作空间安排计划，
-            <br />
-            今日记录实际。
-            <br />
-            <kbd>Ctrl K</kbd> 记录实际
-          </p>
-          <Button onClick={() => setSettings(true)}>
+          <Button
+            onClick={() => {
+              if (!canLeaveContent()) return;
+              setSelected(null);
+              setSettings(true);
+            }}
+          >
             <GearIcon />
             {snapshot ? 'Vault 与备份' : '连接 Vault'}
           </Button>
@@ -209,13 +236,6 @@ export default function App() {
                       ? '从这里，继续今天。'
                       : pages.find((p) => p.id === page)?.name}
                   </h1>
-                  <p className="subtitle">
-                    {page === 'workspace'
-                      ? '项目是面，业务线是线，关键节点是点。'
-                      : page === 'today'
-                        ? '计划留在工作空间，这里只记录真实发生的事。'
-                        : '让线索留在原处，让记录能被找回。'}
-                  </p>
                 </div>
                 <div className="actions">
                   {page === 'today' && (
@@ -241,9 +261,17 @@ export default function App() {
                     </Button>
                   )}
                   {page === 'knowledge' && (
-                    <Button className="primary" onClick={() => setEditor({ type: 'resource' })}>
-                      关联资源
+                    <Button
+                      className="primary"
+                      onClick={() =>
+                        setEditor({ type: 'resource', defaults: { createMarkdown: true } })
+                      }
+                    >
+                      新建笔记
                     </Button>
+                  )}
+                  {page === 'knowledge' && (
+                    <Button onClick={() => setEditor({ type: 'resource' })}>关联资源</Button>
                   )}
                   {page === 'review' && (
                     <Button
@@ -278,6 +306,26 @@ export default function App() {
               )}
               {page === 'workspace' && (
                 <>
+                  {deletion && (
+                    <div className="deletion-result">
+                      <span role="status">已删除 {deletion.deletedIds.length} 项内容</span>
+                      <Button
+                        onClick={() =>
+                          run(async () => {
+                            const result = await api<{ warning?: string }>('restore', {
+                              id: deletion.backupId,
+                              expectations: {},
+                            });
+                            setDeletion(null);
+                            await reload();
+                            if (result.warning) setError(result.warning);
+                          })
+                        }
+                      >
+                        撤销删除
+                      </Button>
+                    </div>
+                  )}
                   <div className="list-tools">
                     <label className="check-label">
                       <input
@@ -291,11 +339,15 @@ export default function App() {
                   <WorkspaceBoard
                     snapshot={snapshot}
                     edit={setEditor}
-                    select={setSelected}
+                    select={(id) => {
+                      if (id !== selected && !canLeaveContent()) return;
+                      setSelected(id);
+                    }}
                     reload={reload}
                     run={run}
                     query={query}
                     showArchived={showArchived}
+                    requestDelete={setDeleting}
                   />
                 </>
               )}
@@ -318,8 +370,12 @@ export default function App() {
           entry={selectedEntry}
           snapshot={snapshot}
           edit={setEditor}
-          close={() => setSelected(null)}
+          close={() => {
+            if (canLeaveContent()) setSelected(null);
+          }}
           run={run}
+          reload={reload}
+          onDirtyChange={setContentDirty}
         />
       )}
       {editor &&
@@ -344,10 +400,36 @@ export default function App() {
           <ReferenceForm
             key={editor.entry?.revision ?? JSON.stringify(editor)}
             editor={editor}
+            snapshot={snapshot}
             close={() => setEditor(null)}
             reload={reload}
           />
         ))}
+      {deleting && snapshot && (
+        <DeleteSpaceDialog
+          key={deleting.data.id}
+          entry={deleting}
+          draftAffected={
+            contentDirty &&
+            spaceSubtree(snapshot.entries, deleting.data.id).some((e) => e.data.id === selected)
+          }
+          close={() => setDeleting(null)}
+          deleted={async (result) => {
+            if (selected && result.deletedIds.includes(selected)) {
+              setSelected(null);
+              setContentDirty(false);
+            }
+            setDeleting(null);
+            setDeletion(result);
+            if (result.warning) setError(result.warning);
+            try {
+              await reload();
+            } catch (e) {
+              setError(e instanceof Error ? e.message : String(e));
+            }
+          }}
+        />
+      )}
       {settings && (
         <Modal title="Vault 与数据安全" onClose={() => setSettings(false)} wide>
           <Connect
@@ -355,6 +437,8 @@ export default function App() {
               setSnapshot(s);
               setSelected(null);
               setEditor(null);
+              setDeleting(null);
+              setDeletion(null);
               setSettings(false);
             }}
           />

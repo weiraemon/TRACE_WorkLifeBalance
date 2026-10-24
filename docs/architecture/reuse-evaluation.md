@@ -21,6 +21,8 @@
 
 另外采用 React / React DOM（MIT）、YAML（ISC）、Vite / Vitest / tsx / Playwright（各包 LICENSE 见 node_modules 与 lockfile）。TS 类型与原生浏览器输入控件具备成熟生态，无需自建日期选择器或状态框架。
 
+2026-10-24 新增 react-markdown 10.1.0（MIT），用于节点详情的正文阅读，按需加载；使用其默认安全 URL 处理，禁用原始 HTML。编辑只使用 textarea，不引入第二套文档存储或富文本编辑器。本地附件、Obsidian 嵌入与专有 Markdown 扩展暂不预览。
+
 ## 维护与性能取舍
 
 - 日历单独懒加载；数据不复制到 localStorage、IndexedDB 或数据库。

@@ -11,21 +11,45 @@ import { ImportanceDot } from '../components/Importance';
 import { openObsidian, openResource } from '../api';
 import type { Editor } from './editor';
 import { spaceLabel } from './WorkItemForm';
+import { MilestoneContent } from './MilestoneContent';
 export function SpaceDetails({
   entry,
   snapshot,
   edit,
   close,
   run,
+  reload,
+  onDirtyChange,
 }: {
   entry: Entry;
   snapshot: Snapshot;
   edit: (e: Editor) => void;
   close: () => void;
   run: (f: () => Promise<unknown>) => void;
+  reload: () => Promise<void>;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const item = entry.data;
   if (!isSpaceItem(item)) return null;
+  const linkedNote =
+    item.type === 'milestone'
+      ? snapshot.entries.find(
+          (e) => item.resourceIds.includes(e.data.id) && e.data.type === 'resource',
+        )
+      : undefined;
+  const resource = linkedNote?.data;
+  const linkedEntry =
+    resource?.type === 'resource'
+      ? snapshot.entries.find((e) => e.data.id === resource.noteId)
+      : undefined;
+  const linkedFile =
+    resource?.type === 'resource' && linkedNote
+      ? {
+          id: resource.id,
+          path: linkedEntry?.path ?? resource.target,
+          kind: resource.kind,
+        }
+      : undefined;
   const child =
     item.type === 'project'
       ? { type: 'workline' as const, defaults: { projectId: item.id } }
@@ -55,7 +79,9 @@ export function SpaceDetails({
             {spaceLabel[child.type]}
           </Button>
         )}
-        <Button onClick={() => run(() => openObsidian(item.id))}>Obsidian ↗</Button>
+        {item.type !== 'milestone' && (
+          <Button onClick={() => run(() => openObsidian(item.id))}>Obsidian ↗</Button>
+        )}
       </div>
       {item.type === 'milestone' && (
         <p className="hint">
@@ -63,6 +89,16 @@ export function SpaceDetails({
         </p>
       )}
       {item.description && <p className="preserve">{item.description}</p>}
+      {item.type === 'milestone' && (
+        <MilestoneContent
+          key={snapshot.vaultId + item.id}
+          id={item.id}
+          snapshot={snapshot}
+          reload={reload}
+          onDirtyChange={onDirtyChange}
+          linkedFile={linkedFile}
+        />
+      )}
       {item.type === 'todo' && (
         <p className="hint">
           {item.direction === 'self'
@@ -76,17 +112,19 @@ export function SpaceDetails({
         item.status !== 'Done' && (
           <p className="hint">已由实际工作记录联动完成。修改完成关联请到今日编辑该记录。</p>
         )}
-      <section className="detail-section">
-        <h3>资源</h3>
-        {item.resourceIds.map((id) => {
-          const resource = snapshot.entries.find((e) => e.data.id === id)?.data;
-          return resource?.type === 'resource' ? (
-            <button className="text-link" key={id} onClick={() => run(() => openResource(id))}>
-              {resource.title} ↗
-            </button>
-          ) : null;
-        })}
-      </section>
+      {item.type !== 'milestone' && item.resourceIds.length > 0 && (
+        <section className="detail-section">
+          <h3>资源</h3>
+          {item.resourceIds.map((id) => {
+            const resource = snapshot.entries.find((e) => e.data.id === id)?.data;
+            return resource?.type === 'resource' ? (
+              <button className="text-link" key={id} onClick={() => run(() => openResource(id))}>
+                {resource.title} ↗
+              </button>
+            ) : null;
+          })}
+        </section>
+      )}
     </aside>
   );
 }

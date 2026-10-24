@@ -1,21 +1,23 @@
 import { useState } from 'react';
-import type { Snapshot } from '../../../../packages/domain/index';
-import { save, createRecord } from '../api';
+import { noteKinds, noteKindLabel, type Snapshot } from '../../../../packages/domain/index';
+import { api, save, createRecord } from '../api';
 import { Modal, Field, Button, ErrorMessage, DatePicker } from '../components/ui';
 import type { Editor } from './editor';
 export function ReferenceForm({
   editor,
   close,
   reload,
+  snapshot,
 }: {
   editor: Editor;
   close: () => void;
   reload: () => Promise<void>;
+  snapshot: Snapshot;
 }) {
   const old = editor.entry?.data;
   const [value, setValue] = useState<Record<string, string>>(() =>
     old?.type === 'resource'
-      ? { title: old.title, target: old.target, location: old.location }
+      ? { title: old.title, target: old.target, location: old.location, kind: old.kind }
       : old?.type === 'review'
         ? {
             week: old.week,
@@ -30,32 +32,48 @@ export function ReferenceForm({
     [busy, setBusy] = useState(false);
   const set = (key: string, v: string) => setValue((s) => ({ ...s, [key]: v }));
   const resource = editor.type === 'resource';
+  const markdown = resource && !old && editor.defaults?.createMarkdown === true;
+  const ownedMarkdown = old?.type === 'resource' && old.noteId === old.id;
+  const tags = [
+    ...new Set(
+      snapshot.entries.flatMap(({ data }) =>
+        data.type === 'resource' && data.tag ? [data.tag] : [],
+      ),
+    ),
+  ].sort();
   const input = (key: string, label: string) => (
     <Field key={key} label={label}>
       <textarea rows={3} value={value[key] ?? ''} onChange={(e) => set(key, e.target.value)} />
     </Field>
   );
   return (
-    <Modal title={resource ? '关联资源' : '每周回顾'} onClose={close}>
+    <Modal title={markdown ? '新建笔记' : resource ? '关联资源' : '每周回顾'} onClose={close}>
       <form
         onSubmit={async (e) => {
           e.preventDefault();
           setBusy(true);
           setError('');
           try {
-            await save(
-              createRecord(editor.type, {
-                ...(old ?? {}),
-                ...value,
-                ...(resource
-                  ? {
-                      location:
-                        value.location ?? (/^https?:\/\//i.test(value.target) ? 'url' : 'vault'),
-                    }
-                  : {}),
-              }),
-              editor.entry,
-            );
+            if (markdown) {
+              await api('notes', {
+                title: value.title,
+                kind: value.kind ?? 'note',
+                tag: value.tag ?? '',
+              });
+            } else
+              await save(
+                createRecord(editor.type, {
+                  ...(old ?? {}),
+                  ...value,
+                  ...(resource
+                    ? {
+                        location:
+                          value.location ?? (/^https?:\/\//i.test(value.target) ? 'url' : 'vault'),
+                      }
+                    : {}),
+                }),
+                editor.entry,
+              );
             await reload();
             close();
           } catch (e) {
@@ -65,7 +83,43 @@ export function ReferenceForm({
           }
         }}
       >
-        {resource ? (
+        {markdown ? (
+          <>
+            <Field label="标题">
+              <input
+                required
+                autoFocus
+                value={value.title ?? ''}
+                onChange={(e) => set('title', e.target.value)}
+              />
+            </Field>
+            <details className="optional-settings">
+              <summary>可选设置</summary>
+              <Field label="笔记类型">
+                <select value={value.kind ?? 'note'} onChange={(e) => set('kind', e.target.value)}>
+                  {noteKinds.map((kind) => (
+                    <option key={kind} value={kind}>
+                      {noteKindLabel[kind]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="标签">
+                <input
+                  list="note-tags"
+                  maxLength={60}
+                  value={value.tag ?? ''}
+                  onChange={(e) => set('tag', e.target.value)}
+                />
+                <datalist id="note-tags">
+                  {tags.map((tag) => (
+                    <option key={tag} value={tag} />
+                  ))}
+                </datalist>
+              </Field>
+            </details>
+          </>
+        ) : resource ? (
           <>
             <Field label="资源名称">
               <input
@@ -75,27 +129,40 @@ export function ReferenceForm({
                 onChange={(e) => set('title', e.target.value)}
               />
             </Field>
-            <Field label="路径 / URL">
-              <input
-                required
-                value={value.target ?? ''}
-                onChange={(e) => set('target', e.target.value)}
-              />
-            </Field>
+            {!ownedMarkdown && (
+              <Field label="路径 / URL">
+                <input
+                  required
+                  value={value.target ?? ''}
+                  onChange={(e) => set('target', e.target.value)}
+                />
+              </Field>
+            )}
             <details className="optional-settings">
               <summary>可选设置</summary>
-              <Field label="资源位置">
-                <select
-                  value={
-                    value.location ?? (/^https?:\/\//i.test(value.target ?? '') ? 'url' : 'vault')
-                  }
-                  onChange={(e) => set('location', e.target.value)}
-                >
-                  <option value="vault">Vault 文件或文件夹</option>
-                  <option value="url">网页链接</option>
-                  <option value="external">外部文件或文件夹（只打开）</option>
+              <Field label="笔记类型">
+                <select value={value.kind ?? 'note'} onChange={(e) => set('kind', e.target.value)}>
+                  {noteKinds.map((kind) => (
+                    <option key={kind} value={kind}>
+                      {noteKindLabel[kind]}
+                    </option>
+                  ))}
                 </select>
               </Field>
+              {!ownedMarkdown && (
+                <Field label="资源位置">
+                  <select
+                    value={
+                      value.location ?? (/^https?:\/\//i.test(value.target ?? '') ? 'url' : 'vault')
+                    }
+                    onChange={(e) => set('location', e.target.value)}
+                  >
+                    <option value="vault">Vault 文件或文件夹</option>
+                    <option value="url">网页链接</option>
+                    <option value="external">外部文件或文件夹（只打开）</option>
+                  </select>
+                </Field>
+              )}
             </details>
           </>
         ) : (

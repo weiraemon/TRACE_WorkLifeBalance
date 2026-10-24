@@ -9,9 +9,6 @@ export function Connect({ onConnected }: { onConnected: (snapshot: Snapshot) => 
   return (
     <section className="connect">
       <h2>从你的 Obsidian Vault 开始</h2>
-      <p>
-        填写一个已有文件夹的绝对路径。首次试用请使用复制的示例 Vault。ATLAS 仅创建自己的管理目录。
-      </p>
       <form
         onSubmit={async (e) => {
           e.preventDefault();
@@ -40,15 +37,21 @@ export function Connect({ onConnected }: { onConnected: (snapshot: Snapshot) => 
         </Button>
       </form>
       <p className="hint">
-        可读 Markdown
-        为唯一事实来源。原有笔记不会被批量转换；每次修改前保留备份，外部修改产生冲突时停止保存。
+        可读 Markdown 为唯一事实来源。原有笔记不会被批量转换，外部修改产生冲突时停止保存。
       </p>
     </section>
   );
 }
 
 export function Backup({ snapshot, reload }: { snapshot: Snapshot; reload: () => Promise<void> }) {
-  const [backups, setBackups] = useState<{ id: string; createdAt: string; count: number }[]>([]),
+  const [backups, setBackups] = useState<
+      {
+        id: string;
+        createdAt: string;
+        count: number;
+        kind: 'manual' | 'delete' | 'restore' | 'recovery';
+      }[]
+    >([]),
     [error, setError] = useState(''),
     [message, setMessage] = useState(''),
     [busy, setBusy] = useState(false);
@@ -73,9 +76,12 @@ export function Backup({ snapshot, reload }: { snapshot: Snapshot; reload: () =>
     <section className="backup">
       <h2>备份与恢复</h2>
       <p className="hint">
-        此处备份仅包含 ATLAS 管理的 Markdown；原生附件与普通笔记请另用 Vault
-        全量备份。恢复会保留当下版本的撤销备份，不删除备份后新增的记录。
+        普通保存不生成快照。手动快照保留 3 份、删除撤销保留最近 1 次、恢复前备份保留 1 份。
+        快照仅包含 ATLAS 管理的 Markdown，附件与普通笔记请另行备份。
       </p>
+      {backups.some((b) => b.kind === 'recovery') && (
+        <p className="error">存在删除中断的恢复备份，已保留，请检查后恢复。</p>
+      )}
       <Button
         disabled={busy}
         onClick={() =>
@@ -87,30 +93,56 @@ export function Backup({ snapshot, reload }: { snapshot: Snapshot; reload: () =>
       >
         创建管理数据快照
       </Button>
+      <Button
+        disabled={busy}
+        onClick={() => {
+          if (
+            !window.confirm(
+              '将清理超出保留数量的快照、重复回收文件和旧版普通笔记备份。清理后这些历史无法恢复，当前 Markdown 文件保持原样。继续？',
+            )
+          )
+            return;
+          void task(async () => {
+            const result = await api<{ removed: number }>('cleanup-backups', {});
+            setMessage(`已清理 ${result.removed} 份历史文件`);
+          });
+        }}
+      >
+        清理旧备份
+      </Button>
       <p role="status">{message}</p>
       <ErrorMessage message={error} />
-      {backups.slice(0, 20).map((b) => (
+      {backups.map((b) => (
         <div className="backup-row" key={b.id}>
           <span>
-            {new Date(b.createdAt).toLocaleString('zh-CN')} · {b.count} 份记录
+            {
+              {
+                manual: '手动快照',
+                delete: '最近删除',
+                restore: '恢复前备份',
+                recovery: '中断恢复',
+              }[b.kind]
+            }{' '}
+            · {new Date(b.createdAt).toLocaleString('zh-CN')} · {b.count} 份记录
           </span>
           <Button
             disabled={busy}
             onClick={() => {
               if (
                 !window.confirm(
-                  `将恢复此备份中的 ${b.count} 份记录（含笔记正文）。当前版本会先备份。继续？`,
+                  `将恢复此备份中的 ${b.count} 份记录（含笔记正文）。被替换的当前内容将合并保留一份恢复前备份。继续？`,
                 )
               )
                 return;
               void task(async () => {
-                const result = await api<{ restored: number }>('restore', {
+                const result = await api<{ restored: number; warning?: string }>('restore', {
                   id: b.id,
                   expectations: Object.fromEntries(
                     snapshot.entries.map((e) => [e.data.id, e.revision]),
                   ),
                 });
                 setMessage(`已恢复 ${result.restored} 份记录`);
+                if (result.warning) setError(result.warning);
               });
             }}
           >

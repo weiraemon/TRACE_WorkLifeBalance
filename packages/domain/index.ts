@@ -1,5 +1,53 @@
 import { z } from 'zod';
-export const recordContract = 'atlas-r0-space-2';
+export const recordContract = 'atlas-r0-space-7';
+export const noteKinds = ['note', 'idea', 'meeting', 'draft'] as const;
+export const noteKindLabel = { note: '笔记', idea: '灵感', meeting: '纪要', draft: '待细化' };
+export function noteKindFromPath(target: string, fallback: (typeof noteKinds)[number] = 'note') {
+  const folders: Record<string, (typeof noteKinds)[number]> = {
+    note: 'note',
+    notes: 'note',
+    笔记: 'note',
+    idea: 'idea',
+    ideas: 'idea',
+    灵感: 'idea',
+    meeting: 'meeting',
+    meetings: 'meeting',
+    纪要: 'meeting',
+    draft: 'draft',
+    drafts: 'draft',
+    待细化: 'draft',
+  };
+  return (
+    target
+      .split(/[\\/]/)
+      .slice(0, -1)
+      .reverse()
+      .map((folder) =>
+        Object.hasOwn(folders, folder.toLowerCase()) ? folders[folder.toLowerCase()] : undefined,
+      )
+      .find(Boolean) ?? fallback
+  );
+}
+export const noteTagSchema = z
+  .string()
+  .trim()
+  .max(60)
+  .refine(
+    (value) =>
+      !value ||
+      (!/[<>:"/\\|?*\x00-\x1f]/.test(value) &&
+        !/[. ]$/.test(value) &&
+        !/^(\.git|\.obsidian|\.atlas|node_modules)$/i.test(value) &&
+        !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(value)),
+    '标签不能包含路径分隔符、特殊文件名或末尾句点',
+  );
+export const noteInputSchema = z
+  .object({
+    title: z.string().trim().min(1).max(300),
+    kind: z.enum(noteKinds).default('note'),
+    tag: noteTagSchema.default(''),
+  })
+  .strict();
 export const statuses = [
   'Inbox',
   'Ready',
@@ -129,6 +177,8 @@ const resourceSchema = z
     location: z.enum(['vault', 'url', 'external']),
     fingerprint: z.string().nullable().default(null),
     noteId: id.nullable().default(null),
+    kind: z.enum(noteKinds).default('note'),
+    tag: noteTagSchema.default(''),
   })
   .strict();
 const reviewSchema = z
@@ -161,6 +211,9 @@ export type SpaceItem = Project | BusinessLine | Milestone | Todo;
 export const isSpaceItem = (record: RecordData): record is SpaceItem =>
   ['project', 'workline', 'milestone', 'todo'].includes(record.type);
 export type Entry = { data: RecordData; path: string; revision: string };
+export type DeletePreview = { entries: Entry[]; blockedReason: string | null };
+export type DeleteResult = { deletedIds: string[]; backupId: string; warning?: string };
+export type MilestoneContent = { body: string; revision: string; path: string };
 export type Snapshot = {
   entries: Entry[];
   files: { path: string; directory: boolean }[];
@@ -205,6 +258,20 @@ export function validateChange(record: RecordData, entries: Entry[]) {
       throw new Error('所属项目、业务线或关键节点不存在，不能跨层级关联');
     if (record.resourceIds.some((id) => all.get(id)?.type !== 'resource'))
       throw new Error('资源不存在');
+    if (record.type === 'milestone' && record.resourceIds.length > 1)
+      throw new Error('每个节点只绑定一个 Markdown 文件');
+    if (
+      record.type === 'milestone' &&
+      record.resourceIds.some((id) => {
+        const resource = all.get(id);
+        return (
+          resource?.type !== 'resource' ||
+          resource.location !== 'vault' ||
+          !/\.md$/i.test(resource.target)
+        );
+      })
+    )
+      throw new Error('节点只能绑定 Vault 中的 Markdown 文件');
     if (record.type === 'todo' && record.direction !== 'self' && !record.person)
       throw new Error('To / From 待办需要填写联系人');
   }

@@ -57,6 +57,28 @@ export function WorkItemForm({
   const [status, setStatus] = useState(item?.status ?? 'Ready');
   const [description, setDescription] = useState(item?.description ?? '');
   const [resources, setResources] = useState(item?.resourceIds ?? []);
+  const linkedMarkdown = snapshot.entries.find(
+    ({ data }) =>
+      resources.includes(data.id) &&
+      data.type === 'resource' &&
+      data.location === 'vault' &&
+      /\.md$/i.test(data.target),
+  );
+  const [markdownPath, setMarkdownPath] = useState(() => {
+    const data = linkedMarkdown?.data;
+    return data?.type === 'resource'
+      ? (snapshot.entries.find((e) => e.data.id === data.noteId)?.path ?? data.target)
+      : '';
+  });
+  const markdownFiles = snapshot.files
+    .filter(
+      (file) =>
+        !file.directory &&
+        /\.md$/i.test(file.path) &&
+        !snapshot.entries.some((e) => e.path === file.path && e.data.type !== 'resource'),
+    )
+    .map((file) => file.path)
+    .sort();
   const [order, setOrder] = useState(item?.order ?? Number(defaults.order ?? 0));
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
@@ -80,13 +102,39 @@ export function WorkItemForm({
           setBusy(true);
           setError('');
           try {
+            let resourceIds = resources;
+            if (type === 'milestone') {
+              resourceIds = [];
+              if (markdownPath) {
+                const existing = snapshot.entries.find(
+                  ({ data }) =>
+                    data.type === 'resource' &&
+                    data.location === 'vault' &&
+                    (data.target === markdownPath ||
+                      snapshot.entries.some(
+                        (e) => e.data.id === data.noteId && e.path === markdownPath,
+                      )),
+                );
+                const resource =
+                  existing ??
+                  (await save(
+                    createRecord('resource', {
+                      title: markdownPath.split('/').pop()?.replace(/\.md$/i, ''),
+                      target: markdownPath,
+                      location: 'vault',
+                    }),
+                  ));
+                resourceIds = [resource.data.id];
+                setResources(resourceIds);
+              }
+            }
             const fields = {
               ...(item ?? {}),
               title,
               importance,
               description,
               status: !item && type === 'todo' && direction === 'from' ? 'Waiting' : status,
-              resourceIds: resources,
+              resourceIds,
               order,
               ...(type !== 'project' ? { [parentKey]: location[parentKey] } : {}),
               ...(type === 'workline' || type === 'milestone' ? { kind } : {}),
@@ -247,7 +295,23 @@ export function WorkItemForm({
               />
             </Field>
           )}
-          <ResourcePicker snapshot={snapshot} values={resources} onChange={setResources} />
+          {type === 'milestone' ? (
+            <Field label="绑定 Markdown（可选）">
+              <select value={markdownPath} onChange={(e) => setMarkdownPath(e.target.value)}>
+                <option value="">不绑定</option>
+                {markdownPath && !markdownFiles.includes(markdownPath) && (
+                  <option value={markdownPath}>{markdownPath}（文件未找到）</option>
+                )}
+                {markdownFiles.map((filename) => (
+                  <option key={filename} value={filename}>
+                    {filename}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : (
+            <ResourcePicker snapshot={snapshot} values={resources} onChange={setResources} />
+          )}
         </details>
         <ErrorMessage message={error} />
         <div className="form-actions">

@@ -1,6 +1,7 @@
 import {
   localDay,
   minutes,
+  isSpaceItem,
   type Entry,
   type RecordData,
   type Todo,
@@ -101,6 +102,22 @@ export const spaceParentId = (record: RecordData) =>
       : record.type === 'todo'
         ? record.milestoneId
         : null;
+export function spaceSubtree(entries: Entry[], id: string): Entry[] {
+  if (!entries.some((e) => e.data.id === id && isSpaceItem(e.data))) return [];
+  const ids = new Set([id]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const { data } of entries) {
+      const parent = spaceParentId(data);
+      if (isSpaceItem(data) && parent && ids.has(parent) && !ids.has(data.id)) {
+        ids.add(data.id);
+        changed = true;
+      }
+    }
+  }
+  return entries.filter((e) => isSpaceItem(e.data) && ids.has(e.data.id));
+}
 export function isForDay(context: Pick<MilestoneContext, 'milestone'>, date: string) {
   return context.milestone.dueDate === date;
 }
