@@ -58,3 +58,48 @@ test('1 只有三份手动快照，删除无逐次撤销，手动快照可恢复
   await expect(dialog.getByRole('status')).toContainText('已恢复 1');
   await expect(dialog.locator('.backup-row')).toHaveCount(3);
 });
+
+async function seed(page: Page) {
+  const project = await write(page, 'project', { title: '项目' });
+  const line = await write(page, 'workline', { title: '业务线', projectId: project.data.id });
+  const point = await write(page, 'milestone', { title: '节点', lineId: line.data.id });
+  const todo = await write(page, 'todo', { title: '待办', milestoneId: point.data.id });
+  await refresh(page);
+  return { project, line, point, todo };
+}
+
+test('2 四层实体只有右键通用编辑，日期和颜色快捷编辑保留', async ({ page }) => {
+  const { project, line, point, todo } = await seed(page);
+  await nav(page, '工作空间');
+  await page.getByRole('button', { name: /查看节点 节点/ }).click();
+  const detail = page.getByRole('complementary', { name: '工作详情' });
+  await expect(detail.getByRole('button', { name: '编辑', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '编辑项目 项目', exact: true })).toHaveCount(0);
+  for (const [entry, selector, label] of [
+    [project, '.plane-toggle', '项目'], [line, '.track-heading > button:first-child', '业务线'],
+    [point, '.point-title', '关键节点'], [todo, '.todo-title', '待办'],
+  ] as const) {
+    const target = page.locator(`[data-space-id="${entry.data.id}"]`).first().locator(selector);
+    await target.click({ button: 'right' });
+    const menu = page.getByRole('menu');
+    await expect(menu.getByRole('menuitem')).toHaveCount(2);
+    await expect(menu.getByRole('menuitem', { name: `编辑${label}`, exact: true })).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(menu.getByRole('menuitem', { name: `删除${label}`, exact: true })).toBeFocused();
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('heading', { name: `编辑${label}`, exact: true })).toBeVisible();
+    await page.getByLabel('标题', { exact: true }).fill(label + '改名');
+    await page.getByRole('button', { name: '保存到 Vault', exact: true }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(target).toContainText(label + '改名');
+  }
+  await detail.getByRole('heading', { name: '关键节点改名', exact: true }).click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: '编辑关键节点' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: '调整日期 · 关键节点改名' }).click();
+  await expect(page.getByRole('heading', { name: '编辑关键节点', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '取消', exact: true }).click();
+  await page.getByRole('button', { name: '编辑重要性 · 业务线改名' }).click();
+  await expect(page.getByRole('heading', { name: '编辑业务线', exact: true })).toBeVisible();
+});

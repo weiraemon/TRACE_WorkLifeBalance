@@ -26,6 +26,7 @@ import type { Editor } from './features/editor';
 import { WorkItemForm } from './features/WorkItemForm';
 import { ActualRecordForm } from './features/ActualRecordForm';
 import { WorkspaceBoard } from './features/WorkspaceBoard';
+import { SpaceMenu } from './features/SpaceMenu';
 import { SpaceDetails } from './features/SpaceDetails';
 import { DeleteSpaceDialog } from './features/DeleteSpaceDialog';
 import { Knowledge } from './pages/Knowledge';
@@ -332,7 +333,6 @@ export default function App() {
                     run={run}
                     query={query}
                     showArchived={showArchived}
-                    requestDelete={setDeleting}
                   />
                 </>
               )}
@@ -350,6 +350,9 @@ export default function App() {
           )}
         </div>
       </main>
+      {page === 'workspace' && snapshot && (
+        <SpaceMenu snapshot={snapshot} edit={setEditor} remove={setDeleting} />
+      )}
       {selectedEntry && snapshot && isSpaceItem(selectedEntry.data) && (
         <SpaceDetails
           entry={selectedEntry}

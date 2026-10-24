@@ -70,9 +70,10 @@ export function SpaceDetails({
           <Cross2Icon />
         </Button>
       </div>
-      <h2>{item.title}</h2>
+      <h2 data-space-id={item.id} tabIndex={0}>
+        {item.title}
+      </h2>
       <div className="actions">
-        <Button onClick={() => edit({ type: item.type, entry })}>编辑</Button>
         {child && (
           <Button onClick={() => edit(child)}>
             <PlusIcon />
