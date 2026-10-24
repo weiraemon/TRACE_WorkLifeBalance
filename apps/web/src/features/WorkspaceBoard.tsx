@@ -55,7 +55,6 @@ export function TodoRows({
               {(todo.dueDate || todo.direction !== 'self' || todo.estimatedMinutes) && (
                 <small>
                   {[
-                    todo.dueDate,
                     todo.direction !== 'self'
                       ? `${todo.direction === 'to' ? 'To' : 'From'} ${todo.person}`
                       : '',
@@ -63,6 +62,15 @@ export function TodoRows({
                   ]
                     .filter(Boolean)
                     .join(' · ')}
+                  {todo.dueDate && (
+                    <button
+                      className="todo-date"
+                      type="button"
+                      aria-label={`待办日期 · ${todo.title}`}
+                    >
+                      {todo.dueDate}
+                    </button>
+                  )}
                 </small>
               )}
             </div>

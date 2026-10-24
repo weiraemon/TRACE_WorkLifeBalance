@@ -1281,6 +1281,16 @@ input[type='checkbox'] {
   color: var(--muted);
   margin-top: 3px;
 }
+.todo-date {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+.todo-date:hover {
+  color: var(--sage-deep);
+}
 .todo-done .todo-title {
   text-decoration: line-through;
   color: var(--muted);

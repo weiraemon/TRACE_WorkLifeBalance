@@ -351,7 +351,13 @@ export default function App() {
         </div>
       </main>
       {page === 'workspace' && snapshot && (
-        <SpaceMenu snapshot={snapshot} edit={setEditor} remove={setDeleting} />
+        <SpaceMenu
+          snapshot={snapshot}
+          edit={setEditor}
+          remove={setDeleting}
+          run={run}
+          reload={reload}
+        />
       )}
       {selectedEntry && snapshot && isSpaceItem(selectedEntry.data) && (
         <SpaceDetails
