@@ -211,9 +211,13 @@ export function WorkspaceBoard({
                       </div>
                       <div className="track-scroll">
                         <div className="track-points">
-                          {points.map((point) => (
+                          {points.map((point, index) => (
                             <article
-                              className="milestone-point"
+                              className={`milestone-point${
+                                !point.dueDate && (index === 0 || points[index - 1].dueDate)
+                                  ? ' undated-start'
+                                  : ''
+                              }`}
                               key={point.id}
                               data-space-id={point.id}
                               aria-label={`关键节点 · ${point.title}`}

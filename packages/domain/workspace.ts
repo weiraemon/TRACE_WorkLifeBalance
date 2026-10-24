@@ -17,11 +17,19 @@ export type MilestoneContext = {
 };
 export type TodoContext = MilestoneContext & { todo: Todo };
 export const todoDate = (context: TodoContext) => context.todo.dueDate ?? context.milestone.dueDate;
-export const compareMilestones = (a: Milestone, b: Milestone) =>
-  (a.dueDate ?? '9999-12-31').localeCompare(b.dueDate ?? '9999-12-31') ||
-  (a.dueTime ?? '23:59').localeCompare(b.dueTime ?? '23:59') ||
-  a.createdAt.localeCompare(b.createdAt) ||
-  a.id.localeCompare(b.id);
+export function compareMilestones(a: Milestone, b: Milestone) {
+  if (!a.dueDate || !b.dueDate) {
+    if (a.dueDate) return -1;
+    if (b.dueDate) return 1;
+    return b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id);
+  }
+  return (
+    a.dueDate.localeCompare(b.dueDate) ||
+    (a.dueTime ?? '23:59').localeCompare(b.dueTime ?? '23:59') ||
+    a.createdAt.localeCompare(b.createdAt) ||
+    a.id.localeCompare(b.id)
+  );
+}
 export function milestoneTimeOnDay(milestone: Milestone, date: string) {
   return milestone.dueDate === date && milestone.dueTime ? minutes(milestone.dueTime) : null;
 }
