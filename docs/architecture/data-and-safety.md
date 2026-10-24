@@ -17,7 +17,7 @@ atlas:
     # 其他字段由契约定义
 ```
 
-记录仅有 project、workline、milestone、todo、actual、resource、review 七种类型。项目 → 业务线 → 节点 → 待办是四个独立实体，分别只保存直接父级 ID；节点只保存截止日期 dueDate 与截止时刻 dueTime，不保存开始日期或时长；待办没有自己的日期 / 时刻。actual 只保存本地日期、起止时间、事件、推进待办 ID（workedTodoIds）、完成待办 ID（completedTodoIds）和修改历史，没有计划模式。完成状态与项目归属从关系即时推导，不重复写一份状态或上级归属。
+记录仅有 project、workline、milestone、todo、actual、resource、review 七种类型。项目 → 业务线 → 节点 → 待办是四个独立实体，分别只保存直接父级 ID；节点只保存截止日期 dueDate 与截止时刻 dueTime，不保存开始日期或时长；待办可选独立 dueDate，没有时刻，未填日期时从节点推导，不复制节点日期。actual 只保存本地日期、起止时间、事件、推进待办 ID（workedTodoIds）、完成待办 ID（completedTodoIds）和修改历史，没有计划模式。完成状态与项目归属从关系即时推导，不重复写一份状态或上级归属。
 
 UUID 不随路径变化。目录只是初始组织方式，扫描按 `atlas.managed` 与 record.id 找回移动的文件。严格契约拒绝未定义类型、额外字段和非 1 的 schemaVersion；没有兼容分支或自动迁移。普通 Obsidian 笔记不被接管；发现不支持的管理记录会显示诊断，不自动删除。旧代码和仓库示例已移除，不扫描或删除用户真实 Vault 的历史内容。
 

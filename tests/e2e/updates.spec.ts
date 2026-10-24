@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { parseRecord, type Entry } from '../../packages/domain/index';
+import { localDay, parseRecord, type Entry } from '../../packages/domain/index';
 
 test.beforeEach(async ({ page }) => {
   await fs.mkdir('.test-vault', { recursive: true });
@@ -102,4 +102,42 @@ test('2 四层实体只有右键通用编辑，日期和颜色快捷编辑保留
   await page.getByRole('button', { name: '取消', exact: true }).click();
   await page.getByRole('button', { name: '编辑重要性 · 业务线改名' }).click();
   await expect(page.getByRole('heading', { name: '编辑业务线', exact: true })).toBeVisible();
+});
+
+test('3 待办只填日期即可提前安排，今日跳转后可完成，节点日期不变', async ({ page }) => {
+  const project = await write(page, 'project', { title: '项目' });
+  const line = await write(page, 'workline', { title: '业务线', projectId: project.data.id });
+  const point = await write(page, 'milestone', { title: '未来交付', lineId: line.data.id, dueDate: '2099-12-31', dueTime: '18:00' });
+  const todo = await write(page, 'todo', { title: '提前准备', milestoneId: point.data.id });
+  await refresh(page);
+  await nav(page, '工作空间');
+  const row = page.locator(`[data-space-id="${todo.data.id}"]`).first();
+  await row.locator('.todo-title').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '编辑待办', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.locator('input[type="time"]')).toHaveCount(0);
+  const date = dialog.getByLabel('待办日期（可选）', { exact: true });
+  await expect(date).toHaveValue('');
+  await date.fill(localDay());
+  await dialog.getByRole('button', { name: '保存到 Vault', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(row).toContainText(localDay());
+  const session = await page.request.get('/api/session').then((r) => r.json());
+  const response = await page.request.get('/api/snapshot', { headers: { 'X-Atlas-Token': session.token, 'X-Atlas-Vault': session.vaultId } });
+  expect(response.ok()).toBe(true);
+  const snapshot = await response.json();
+  const markdown = await fs.readFile(path.join(snapshot.root, todo.path), 'utf8');
+  expect(markdown).toContain(localDay());
+  expect(markdown).not.toContain('dueTime');
+  expect(snapshot.entries.find((e: Entry) => e.data.id === point.data.id).data).toMatchObject({ dueDate: '2099-12-31', dueTime: '18:00' });
+  await page.reload();
+  await nav(page, '今日');
+  const today = page.getByRole('region', { name: '当天待办', exact: true });
+  await expect(today).toContainText('提前准备');
+  await today.getByRole('button', { name: /提前准备/ }).click();
+  await page.getByRole('checkbox', { name: '完成 提前准备', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: '完成 提前准备', exact: true })).toBeChecked();
+  await expect(page.getByRole('button', { name: '调整日期 · 未来交付' })).toContainText('2099-12-31');
+  await nav(page, '今日');
+  await expect(today).not.toContainText('提前准备');
 });

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-export const recordContract = 'atlas-r0-space-8';
+export const recordContract = 'atlas-r0-space-9';
 export const noteKinds = ['note', 'idea', 'meeting', 'draft'] as const;
 export const noteKindLabel = { note: '笔记', idea: '灵感', meeting: '纪要', draft: '待细化' };
 export function noteKindFromPath(target: string, fallback: (typeof noteKinds)[number] = 'note') {
@@ -140,6 +140,7 @@ const todoSchema = z
     ...workFields,
     type: z.literal('todo'),
     milestoneId: id,
+    dueDate: optionalDay,
     direction: z.enum(['self', 'to', 'from']).default('self'),
     person: z.string().trim().max(200).default(''),
     estimatedMinutes: z.number().int().min(5).max(1440).nullable().default(null),

@@ -102,6 +102,7 @@ export function SpaceDetails({
       )}
       {item.type === 'todo' && (
         <p className="hint">
+          {item.dueDate ? `${item.dueDate} · ` : ''}
           {item.direction === 'self'
             ? '自己做'
             : `${item.direction === 'to' ? 'To' : 'From'} · ${item.person}`}

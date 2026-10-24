@@ -52,7 +52,9 @@ export function WorkItemForm({
       ? item.kind
       : String(defaults.kind ?? (type === 'workline' ? 'research' : 'milestone')),
   );
-  const [dueDate, setDueDate] = useState(item?.type === 'milestone' ? (item.dueDate ?? '') : '');
+  const [dueDate, setDueDate] = useState(
+    item?.type === 'milestone' || item?.type === 'todo' ? (item.dueDate ?? '') : '',
+  );
   const [dueTime, setDueTime] = useState(item?.type === 'milestone' ? (item.dueTime ?? '') : '');
   const [status, setStatus] = useState(item?.status ?? 'Ready');
   const [description, setDescription] = useState(item?.description ?? '');
@@ -143,6 +145,7 @@ export function WorkItemForm({
                 : {}),
               ...(type === 'todo'
                 ? {
+                    dueDate: dueDate || null,
                     direction,
                     person: direction === 'self' ? '' : person,
                     estimatedMinutes: estimate ? Number(estimate) : null,
@@ -207,6 +210,11 @@ export function WorkItemForm({
               />
             </Field>
           </div>
+        )}
+        {type === 'todo' && (
+          <Field label="待办日期（可选）">
+            <DatePicker value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+          </Field>
         )}
         <div className="inline-field">
           <span>重要性</span>

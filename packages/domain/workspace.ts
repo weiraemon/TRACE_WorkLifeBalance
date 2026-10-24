@@ -16,6 +16,7 @@ export type MilestoneContext = {
   project: Project;
 };
 export type TodoContext = MilestoneContext & { todo: Todo };
+export const todoDate = (context: TodoContext) => context.todo.dueDate ?? context.milestone.dueDate;
 export const compareMilestones = (a: Milestone, b: Milestone) =>
   (a.dueDate ?? '9999-12-31').localeCompare(b.dueDate ?? '9999-12-31') ||
   (a.dueTime ?? '23:59').localeCompare(b.dueTime ?? '23:59') ||
@@ -77,7 +78,7 @@ export function recentTodos(entries: Entry[], today = localDay()) {
     .sort(
       (a, b) =>
         b.todo.importance - a.todo.importance ||
-        bucket(a.milestone.dueDate) - bucket(b.milestone.dueDate) ||
+        bucket(todoDate(a)) - bucket(todoDate(b)) ||
         b.milestone.importance - a.milestone.importance ||
         b.line.importance - a.line.importance ||
         (a.todo.estimatedMinutes ?? 30) - (b.todo.estimatedMinutes ?? 30) ||
@@ -122,14 +123,15 @@ export function isForDay(context: Pick<MilestoneContext, 'milestone'>, date: str
   return context.milestone.dueDate === date;
 }
 export const todosForDay = (entries: Entry[], date = localDay()) =>
-  recentTodos(entries, date).filter((c) => isForDay(c, date));
+  recentTodos(entries, date).filter((c) => todoDate(c) === date);
 export const contactsForDay = (entries: Entry[], date = localDay()) =>
   contactGroups(entries, date)
     .map((g) => ({
       ...g,
-      todos: g.todos.filter(
-        (c) => isForDay(c, date) || Boolean(c.milestone.dueDate && c.milestone.dueDate < date),
-      ),
+      todos: g.todos.filter((c) => {
+        const due = todoDate(c);
+        return due !== null && due <= date;
+      }),
     }))
     .filter((g) => g.todos.length);
 

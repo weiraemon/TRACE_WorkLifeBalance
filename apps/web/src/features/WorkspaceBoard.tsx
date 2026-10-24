@@ -52,9 +52,10 @@ export function TodoRows({
               ) : (
                 <span>{todo.title}</span>
               )}
-              {(todo.direction !== 'self' || todo.estimatedMinutes) && (
+              {(todo.dueDate || todo.direction !== 'self' || todo.estimatedMinutes) && (
                 <small>
                   {[
+                    todo.dueDate,
                     todo.direction !== 'self'
                       ? `${todo.direction === 'to' ? 'To' : 'From'} ${todo.person}`
                       : '',
