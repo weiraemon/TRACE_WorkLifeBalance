@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import {
   isSpaceItem,
   localDay,
-  weekStart,
   type Entry,
   type Snapshot,
 } from '../../../../packages/domain/index';
@@ -110,16 +109,11 @@ export function SpaceMenu({
     const lastDay = new Date(year, month + 1, 0).getDate();
     return `${year + Math.floor(month / 12)}-${String((month % 12) + 1).padStart(2, '0')}-${String(Math.min(day, lastDay)).padStart(2, '0')}`;
   };
-  const nextWeek = () => {
-    const date = new Date(`${weekStart(today)}T12:00:00`);
-    date.setDate(date.getDate() + 7);
-    return localDay(date);
-  };
   const dateOptions = [
     ['今日', today],
     ['明日', addDays(1)],
     ['后日', addDays(2)],
-    ['下周', nextWeek()],
+    ['下周', addDays(7)],
     ['两周后', addDays(14)],
     ['下月', nextMonth()],
   ];
