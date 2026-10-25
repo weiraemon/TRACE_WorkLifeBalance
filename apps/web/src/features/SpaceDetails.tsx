@@ -42,7 +42,9 @@ export function SpaceDetails({
         <span className="eyebrow">
           {item.type === 'todo' ? item.kind.toUpperCase() : spaceLabel[item.type]}
           {isComplete(item, snapshot.entries) ? ' · 已完成' : ''}{' '}
-          <ImportanceDot value={item.importance} />
+          <span data-space-id={item.id}>
+            <ImportanceDot value={item.importance} />
+          </span>
         </span>
         <Button className="icon" aria-label="关闭详情" onClick={close}>
           <Cross2Icon />

@@ -154,9 +154,8 @@ test('节点和条目快速删除，业务线删除额外确认，保留纪要�
   await expect(page.locator(`[data-space-id="${todo.data.id}"]`)).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page
-    .locator(`[data-space-id="${line.data.id}"]`)
-    .first()
-    .locator('.track-heading')
+    .locator(`.workspace-content [data-space-id="${line.data.id}"]`)
+    .locator('.line-title')
     .click({ button: 'right' });
   await page.getByRole('menuitem', { name: '删除业务线', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('删除不可撤销');
@@ -182,7 +181,7 @@ test('业务线手动完成后收起，下属未完成条目不被连带划掉�
   const { line, todo } = await seed(page);
   await nav(page, '工作空间');
   const track = page.getByRole('region', { name: '业务线 · 论文研究', exact: true });
-  await track.locator('.track-heading').click({ button: 'right' });
+  await track.locator('.line-title').click({ button: 'right' });
   await page.getByRole('menuitem', { name: '完成业务线', exact: true }).click();
   await expect(track).toHaveCount(0);
   let s = await snapshot(page);
@@ -196,7 +195,7 @@ test('业务线手动完成后收起，下属未完成条目不被连带划掉�
   );
   await page.getByRole('checkbox', { name: '显示已完成项目 / 业务线', exact: true }).check();
   await expect(track).toBeVisible();
-  await track.locator('.track-heading').click({ button: 'right' });
+  await track.locator('.line-title').click({ button: 'right' });
   await Promise.all([
     page.waitForResponse(
       (response) =>
@@ -238,7 +237,7 @@ test('Notes 保存外部修改冲突保留草稿，界面窄屏不横向溢出',
   await nav(page, '工作空间');
   await page
     .getByRole('region', { name: '业务线 · 论文研究', exact: true })
-    .locator('.track-heading > button')
+    .locator('.line-title')
     .first()
     .click();
   const detail = page.getByRole('complementary', { name: '工作详情' });

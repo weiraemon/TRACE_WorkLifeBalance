@@ -24,7 +24,10 @@ export async function connect(page: Page) {
   await expect(page.getByRole('heading', { name: '从这里，继续今天。' })).toBeVisible();
 }
 export const nav = (page: Page, name: string) =>
-  page.getByRole('navigation').getByRole('button', { name, exact: true }).click();
+  page
+    .getByRole('navigation', { name: '主导航', exact: true })
+    .getByRole('button', { name, exact: true })
+    .click();
 export async function headers(page: Page) {
   const s = await page.request.get('/api/session').then((r) => r.json());
   return { 'X-Atlas-Token': s.token, 'X-Atlas-Vault': s.vaultId };

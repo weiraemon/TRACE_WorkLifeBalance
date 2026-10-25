@@ -128,7 +128,8 @@ test('节点按截止点排序，池固定末端，改期立即重排，桌面�
   await checkPool(track);
   await checkPool(emptyTrack);
   await expect(titles).toHaveText(['上午', '下午', '后来未定', '最早未定', '待办池']);
-  await page.getByRole('button', { name: '调整日期 · 后来未定', exact: true }).click();
+  await track.getByRole('button', { name: '后来未定', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '编辑节点', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByText('可选设置', { exact: true }).click();
   await dialog.getByLabel('截止日期', { exact: true }).fill('2026-10-24');

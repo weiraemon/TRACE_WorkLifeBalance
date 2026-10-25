@@ -28,6 +28,7 @@ import { ActualRecordForm } from './features/ActualRecordForm';
 import { CommentForm } from './features/CommentForm';
 import { WorkspaceBoard } from './features/WorkspaceBoard';
 import { SpaceMenu } from './features/SpaceMenu';
+import { QuickEdit } from './features/QuickEdit';
 import { SpaceDetails } from './features/SpaceDetails';
 import { DeleteSpaceDialog } from './features/DeleteSpaceDialog';
 import { Knowledge } from './pages/Knowledge';
@@ -156,7 +157,13 @@ export default function App() {
     });
   };
   return (
-    <div className={'shell ' + (selectedEntry ? 'has-detail' : '')}>
+    <div
+      className={
+        'shell ' +
+        (selectedEntry ? 'has-detail ' : '') +
+        (page === 'workspace' && snapshot ? 'workspace-shell' : '')
+      }
+    >
       <aside className="sidebar">
         <a
           className="brand"
@@ -201,7 +208,7 @@ export default function App() {
           )}
         </div>
       </aside>
-      <main className="main">
+      <main className={`main${page === 'workspace' && snapshot ? ' workspace-main' : ''}`}>
         <header className="topbar">
           <span>{pages.find((p) => p.id === page)?.name}</span>
           <label className="search">
@@ -223,7 +230,7 @@ export default function App() {
             <ReloadIcon />
           </Button>
         </header>
-        <div className="content">
+        <div className={`content${page === 'workspace' && snapshot ? ' workspace-page' : ''}`}>
           <ErrorMessage message={error} />
           {error && <Button onClick={() => setError('')}>收起提示</Button>}
           {loading ? (
@@ -242,71 +249,67 @@ export default function App() {
                   ))}
                 </details>
               )}
-              <div className="page-heading">
-                <div>
-                  <p className="eyebrow">
-                    {page === 'today'
-                      ? new Date(date + 'T12:00:00').toLocaleDateString('zh-CN', {
-                          month: 'long',
-                          day: 'numeric',
-                          weekday: 'long',
-                        })
-                      : 'PERSONAL RESEARCH & LIFE'}
-                  </p>
-                  <h1>
-                    {page === 'today'
-                      ? '从这里，继续今天。'
-                      : pages.find((p) => p.id === page)?.name}
-                  </h1>
+              {page !== 'workspace' && (
+                <div className="page-heading">
+                  <div>
+                    <p className="eyebrow">
+                      {page === 'today'
+                        ? new Date(date + 'T12:00:00').toLocaleDateString('zh-CN', {
+                            month: 'long',
+                            day: 'numeric',
+                            weekday: 'long',
+                          })
+                        : 'PERSONAL RESEARCH & LIFE'}
+                    </p>
+                    <h1>
+                      {page === 'today'
+                        ? '从这里，继续今天。'
+                        : pages.find((p) => p.id === page)?.name}
+                    </h1>
+                  </div>
+                  <div className="actions">
+                    {page === 'today' && (
+                      <DatePicker
+                        aria-label="查看日期"
+                        value={date}
+                        onChange={(e) => e.target.value && setDate(e.target.value)}
+                      />
+                    )}{' '}
+                    {page === 'today' && (
+                      <Button
+                        className="primary"
+                        onClick={() => setEditor({ type: 'actual', defaults: { date } })}
+                      >
+                        <PlusIcon />
+                        记录实际
+                      </Button>
+                    )}
+                    {page === 'knowledge' && (
+                      <Button
+                        className="primary"
+                        onClick={() =>
+                          setEditor({ type: 'resource', defaults: { createMarkdown: true } })
+                        }
+                      >
+                        新建笔记
+                      </Button>
+                    )}
+                    {page === 'knowledge' && (
+                      <Button onClick={() => setEditor({ type: 'resource' })}>关联资源</Button>
+                    )}
+                    {page === 'review' && (
+                      <Button
+                        className="primary"
+                        onClick={() =>
+                          setEditor({ type: 'review', defaults: { week: weekStart(date) } })
+                        }
+                      >
+                        写周复盘
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                <div className="actions">
-                  {page === 'today' && (
-                    <DatePicker
-                      aria-label="查看日期"
-                      value={date}
-                      onChange={(e) => e.target.value && setDate(e.target.value)}
-                    />
-                  )}{' '}
-                  {page === 'today' && (
-                    <Button
-                      className="primary"
-                      onClick={() => setEditor({ type: 'actual', defaults: { date } })}
-                    >
-                      <PlusIcon />
-                      记录实际
-                    </Button>
-                  )}
-                  {page === 'workspace' && (
-                    <Button className="primary" onClick={() => setEditor({ type: 'project' })}>
-                      <PlusIcon />
-                      新增项目
-                    </Button>
-                  )}
-                  {page === 'knowledge' && (
-                    <Button
-                      className="primary"
-                      onClick={() =>
-                        setEditor({ type: 'resource', defaults: { createMarkdown: true } })
-                      }
-                    >
-                      新建笔记
-                    </Button>
-                  )}
-                  {page === 'knowledge' && (
-                    <Button onClick={() => setEditor({ type: 'resource' })}>关联资源</Button>
-                  )}
-                  {page === 'review' && (
-                    <Button
-                      className="primary"
-                      onClick={() =>
-                        setEditor({ type: 'review', defaults: { week: weekStart(date) } })
-                      }
-                    >
-                      写周复盘
-                    </Button>
-                  )}
-                </div>
-              </div>
+              )}
               {page === 'today' && (
                 <Today
                   snapshot={snapshot}
@@ -335,16 +338,6 @@ export default function App() {
                       <span role="status">已删除 {deletion.deletedIds.length} 项内容</span>
                     </div>
                   )}
-                  <div className="list-tools">
-                    <label className="check-label">
-                      <input
-                        type="checkbox"
-                        checked={showArchived}
-                        onChange={(e) => setShowArchived(e.target.checked)}
-                      />
-                      显示已完成项目 / 业务线
-                    </label>
-                  </div>
                   <WorkspaceBoard
                     snapshot={snapshot}
                     edit={setEditor}
@@ -356,6 +349,7 @@ export default function App() {
                     run={run}
                     query={query}
                     showArchived={showArchived}
+                    onShowArchivedChange={setShowArchived}
                   />
                 </>
               )}
@@ -373,6 +367,7 @@ export default function App() {
           )}
         </div>
       </main>
+      {snapshot && <QuickEdit snapshot={snapshot} reload={reload} />}
       {snapshot && (
         <SpaceMenu snapshot={snapshot} edit={setEditor} remove={remove} run={run} reload={reload} />
       )}

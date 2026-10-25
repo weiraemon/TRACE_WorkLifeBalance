@@ -4,6 +4,7 @@ import {
   Children,
   cloneElement,
   isValidElement,
+  useEffect,
   type ButtonHTMLAttributes,
   type ReactNode,
   type ReactElement,
@@ -22,6 +23,18 @@ export function Modal({
   onClose: () => void;
   wide?: boolean;
 }) {
+  useEffect(() => {
+    const closePicker = (event: KeyboardEvent) => {
+      if (
+        event.key === 'Escape' &&
+        CSS.supports('selector(select:open)') &&
+        document.querySelector('[role="dialog"] select:open')
+      )
+        event.stopPropagation();
+    };
+    window.addEventListener('keydown', closePicker, true);
+    return () => window.removeEventListener('keydown', closePicker, true);
+  }, []);
   return (
     <Dialog.Root
       open
