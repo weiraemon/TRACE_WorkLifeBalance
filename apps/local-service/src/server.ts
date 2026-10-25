@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { z } from 'zod';
 import { Vault, VaultError } from './vault';
-import { recordContract } from '../../../packages/domain/index';
+import { recordContract, saveOptionsSchema } from '../../../packages/domain/index';
 
 const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const port = Number(process.env.ATLAS_PORT ?? 4317);
@@ -102,8 +102,10 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname === '/api/connect' && req.method === 'POST') {
         const input = z.object({ path: z.string().min(1) }).parse(await body(req));
         if (switching) throw new VaultError('Vault 正在切换，请稍后重试', 409);
-        if (vault && path.resolve(input.path) === vault.root)
+        if (vault && path.resolve(input.path) === vault.root) {
+          await vault.recover();
           return send(res, 200, await vault.scan());
+        }
         switching = true;
         try {
           const next = await Vault.open(input.path);
@@ -144,14 +146,20 @@ const server = http.createServer(async (req, res) => {
       }
       if (url.pathname === '/api/notes' && req.method === 'POST')
         return send(res, 200, await active.createMarkdown(await body(req)));
-      if (url.pathname === '/api/milestone-content' && req.method === 'POST') {
+      if (url.pathname === '/api/promote' && req.method === 'POST') {
+        const input = z
+          .object({ id: z.string().uuid(), revision: z.string().regex(/^[a-f0-9]{64}$/) })
+          .strict()
+          .parse(await body(req));
+        return send(res, 200, await active.promote(input.id, input.revision));
+      }
+      if (url.pathname === '/api/content' && req.method === 'POST') {
         const input = z
           .discriminatedUnion('action', [
             z
               .object({
                 action: z.literal('read'),
                 id: z.string().uuid(),
-                resourceId: z.string().uuid().optional(),
               })
               .strict(),
             z
@@ -160,7 +168,6 @@ const server = http.createServer(async (req, res) => {
                 id: z.string().uuid(),
                 body: z.string().max(500000),
                 revision: z.string().regex(/^[a-f0-9]{64}$/),
-                resourceId: z.string().uuid().optional(),
               })
               .strict(),
           ])
@@ -169,26 +176,22 @@ const server = http.createServer(async (req, res) => {
           res,
           200,
           input.action === 'read'
-            ? await active.readMilestoneContent(input.id, input.resourceId)
-            : await active.saveMilestoneContent(
-                input.id,
-                input.body,
-                input.revision,
-                input.resourceId,
-              ),
+            ? await active.readContent(input.id)
+            : await active.saveContent(input.id, input.body, input.revision),
         );
       }
       if (url.pathname === '/api/records' && req.method === 'POST') {
         const input = z
           .object({
             data: z.unknown(),
+            options: saveOptionsSchema.optional(),
             revision: z
               .string()
               .regex(/^[a-f0-9]{64}$/)
               .optional(),
           })
           .parse(await body(req));
-        return send(res, 200, await active.save(input.data, input.revision));
+        return send(res, 200, await active.save(input.data, input.revision, input.options));
       }
       if (url.pathname === '/api/backups' && req.method === 'GET')
         return send(res, 200, await active.backups());
@@ -202,7 +205,7 @@ const server = http.createServer(async (req, res) => {
       }
       if (url.pathname === '/api/open' && req.method === 'POST') {
         const input = z
-          .object({ id: z.string().uuid(), native: z.boolean().default(false) })
+          .object({ id: z.string().uuid(), native: z.boolean().default(true) })
           .parse(await body(req));
         const resolved = await active.resolveResource(input.id);
         if (resolved.location === 'url') return send(res, 200, { url: resolved.target });

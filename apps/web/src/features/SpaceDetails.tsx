@@ -1,17 +1,12 @@
 import { Cross2Icon, PlusIcon } from '@radix-ui/react-icons';
-import {
-  isSpaceItem,
-  statusLabel,
-  type Entry,
-  type Snapshot,
-} from '../../../../packages/domain/index';
-import { todoStatus } from '../../../../packages/domain/workspace';
+import { isSpaceItem, type Entry, type Snapshot } from '../../../../packages/domain/index';
+import { lineFor, isComplete } from '../../../../packages/domain/workspace';
 import { Button } from '../components/ui';
 import { ImportanceDot } from '../components/Importance';
-import { openObsidian, openResource } from '../api';
+import { openResource } from '../api';
 import type { Editor } from './editor';
 import { spaceLabel } from './WorkItemForm';
-import { MilestoneContent } from './MilestoneContent';
+import { NotesContent } from './NotesContent';
 export function SpaceDetails({
   entry,
   snapshot,
@@ -31,25 +26,8 @@ export function SpaceDetails({
 }) {
   const item = entry.data;
   if (!isSpaceItem(item)) return null;
-  const linkedNote =
-    item.type === 'milestone'
-      ? snapshot.entries.find(
-          (e) => item.resourceIds.includes(e.data.id) && e.data.type === 'resource',
-        )
-      : undefined;
-  const resource = linkedNote?.data;
-  const linkedEntry =
-    resource?.type === 'resource'
-      ? snapshot.entries.find((e) => e.data.id === resource.noteId)
-      : undefined;
-  const linkedFile =
-    resource?.type === 'resource' && linkedNote
-      ? {
-          id: resource.id,
-          path: linkedEntry?.path ?? resource.target,
-          kind: resource.kind,
-        }
-      : undefined;
+  const line = lineFor(item, snapshot.entries);
+  const note = snapshot.entries.find((e) => e.data.id === line?.notesId);
   const child =
     item.type === 'project'
       ? { type: 'workline' as const, defaults: { projectId: item.id } }
@@ -62,8 +40,8 @@ export function SpaceDetails({
     <aside className="detail" aria-label="工作详情">
       <div className="section-heading">
         <span className="eyebrow">
-          {spaceLabel[item.type]} ·{' '}
-          {statusLabel[item.type === 'todo' ? todoStatus(item, snapshot.entries) : item.status]}{' '}
+          {item.type === 'todo' ? item.kind.toUpperCase() : spaceLabel[item.type]}
+          {isComplete(item, snapshot.entries) ? ' · 已完成' : ''}{' '}
           <ImportanceDot value={item.importance} />
         </span>
         <Button className="icon" aria-label="关闭详情" onClick={close}>
@@ -77,51 +55,52 @@ export function SpaceDetails({
         {child && (
           <Button onClick={() => edit(child)}>
             <PlusIcon />
-            {spaceLabel[child.type]}
+            {child.type === 'todo' ? 'TODO' : spaceLabel[child.type]}
           </Button>
         )}
-        {item.type !== 'milestone' && (
-          <Button onClick={() => run(() => openObsidian(item.id))}>Obsidian ↗</Button>
+        {item.type === 'milestone' && (
+          <Button
+            onClick={() => edit({ type: 'todo', defaults: { milestoneId: item.id, kind: 'idea' } })}
+          >
+            <PlusIcon />
+            IDEA
+          </Button>
+        )}
+        {item.type === 'workline' && item.notesId && (
+          <Button onClick={() => run(() => openResource(item.notesId!))}>打开 Notes ↗</Button>
         )}
       </div>
-      {item.type === 'milestone' && (
-        <p className="hint">
-          截止 {item.dueDate ?? '日期未定'} {item.dueTime}
+      {item.type === 'milestone' && !item.pool && (
+        <p>
+          {item.dueDate ?? '未定日期'} {item.dueTime} {item.tags.join(' · ')}
         </p>
-      )}
-      {item.description && <p className="preserve">{item.description}</p>}
-      {item.type === 'milestone' && (
-        <MilestoneContent
-          key={snapshot.vaultId + item.id}
-          id={item.id}
-          snapshot={snapshot}
-          reload={reload}
-          onDirtyChange={onDirtyChange}
-          linkedFile={linkedFile}
-        />
       )}
       {item.type === 'todo' && (
-        <p className="hint">
-          {item.dueDate ? `${item.dueDate} · ` : ''}
-          {item.direction === 'self'
-            ? '自己做'
-            : `${item.direction === 'to' ? 'To' : 'From'} · ${item.person}`}
-          {item.estimatedMinutes ? ` · ${item.estimatedMinutes} 分钟` : ''}
+        <p>
+          {item.dueDate}{' '}
+          {item.direction !== 'self'
+            ? `${item.direction === 'from' ? '等' : '找'} ${item.person}`
+            : ''}
         </p>
       )}
-      {item.type === 'todo' &&
-        todoStatus(item, snapshot.entries) === 'Done' &&
-        item.status !== 'Done' && (
-          <p className="hint">已由实际工作记录联动完成。修改完成关联请到今日编辑该记录。</p>
-        )}
-      {item.type !== 'milestone' && item.resourceIds.length > 0 && (
+      {line && (
+        <NotesContent
+          key={snapshot.vaultId + item.id}
+          id={item.id}
+          revision={note?.revision}
+          editable={item.type === 'workline'}
+          reload={reload}
+          onDirtyChange={onDirtyChange}
+        />
+      )}
+      {item.resourceIds.length > 0 && (
         <section className="detail-section">
-          <h3>资源</h3>
+          <h3>资料</h3>
           {item.resourceIds.map((id) => {
-            const resource = snapshot.entries.find((e) => e.data.id === id)?.data;
-            return resource?.type === 'resource' ? (
+            const data = snapshot.entries.find((e) => e.data.id === id)?.data;
+            return data?.type === 'resource' ? (
               <button className="text-link" key={id} onClick={() => run(() => openResource(id))}>
-                {resource.title} ↗
+                {data.title} ↗
               </button>
             ) : null;
           })}

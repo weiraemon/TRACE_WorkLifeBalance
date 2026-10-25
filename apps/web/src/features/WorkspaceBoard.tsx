@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { ChevronDownIcon, ChevronRightIcon, PlusIcon, CheckIcon } from '@radix-ui/react-icons';
 import {
-  lineKindLabel,
   isSpaceItem,
   type Project,
   type BusinessLine,
@@ -11,7 +10,7 @@ import {
   type SpaceItem,
   type Todo,
 } from '../../../../packages/domain/index';
-import { todoStatus, compareMilestones } from '../../../../packages/domain/workspace';
+import { isComplete, compareMilestones } from '../../../../packages/domain/workspace';
 import { createRecord, save } from '../api';
 import { Button, EmptyState } from '../components/ui';
 import { ImportanceDot, importanceLabel } from '../components/Importance';
@@ -30,7 +29,7 @@ export function TodoRows({
   return (
     <ul className="todo-rows">
       {todos.map((todo) => {
-        const done = todoStatus(todo, entries) === 'Done';
+        const done = isComplete(todo, entries);
         return (
           <li key={todo.id} data-space-id={todo.id} className={done ? 'todo-done' : ''}>
             <button
@@ -47,18 +46,21 @@ export function TodoRows({
             <div>
               {select ? (
                 <button className="todo-title" onClick={() => select(todo.id)}>
+                  {todo.kind === 'idea' ? 'IDEA · ' : ''}
                   {todo.title}
                 </button>
               ) : (
-                <span>{todo.title}</span>
+                <span>
+                  {todo.kind === 'idea' ? 'IDEA · ' : ''}
+                  {todo.title}
+                </span>
               )}
-              {(todo.dueDate || todo.direction !== 'self' || todo.estimatedMinutes) && (
+              {(todo.dueDate || todo.direction !== 'self') && (
                 <small>
                   {[
                     todo.direction !== 'self'
                       ? `${todo.direction === 'to' ? 'To' : 'From'} ${todo.person}`
                       : '',
-                    todo.estimatedMinutes ? `${todo.estimatedMinutes} 分钟` : '',
                   ]
                     .filter(Boolean)
                     .join(' · ')}
@@ -105,24 +107,21 @@ export function WorkspaceBoard({
       (a, b) =>
         a.order - b.order || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
     );
-  const live = (r: SpaceItem) => showArchived || !['Done', 'Cancelled'].includes(r.status);
+  const live = (r: SpaceItem) => showArchived || !r.completedAt;
   const projects = records.filter((r): r is Project => r.type === 'project' && live(r));
   const change = (r: SpaceItem, fields: object) =>
     run(async () => {
       await save(
         createRecord(r.type, { ...r, ...fields }),
         snapshot.entries.find((e) => e.data.id === r.id),
+        'completedAt' in fields
+          ? { completion: Boolean((fields as { completedAt: string | null }).completedAt) }
+          : undefined,
       );
       await reload();
     });
   const toggle = (todo: Todo) => {
-    if (todoStatus(todo, snapshot.entries) === 'Done' && todo.status !== 'Done') {
-      run(async () => {
-        throw new Error('这项待办已关联实际工作；请到今日编辑对应实际记录，移除完成关联后恢复。');
-      });
-      return;
-    }
-    change(todo, { status: todo.status === 'Done' ? 'Ready' : 'Done' });
+    change(todo, { completedAt: todo.completedAt ? null : new Date().toISOString() });
   };
   return (
     <div className="space-board">
@@ -187,11 +186,90 @@ export function WorkspaceBoard({
               <div className="plane-content">
                 {lines.map((line) => {
                   const points = records
-                    .filter(
-                      (r): r is Milestone =>
-                        r.type === 'milestone' && r.lineId === line.id && live(r),
-                    )
+                    .filter((r): r is Milestone => r.type === 'milestone' && r.lineId === line.id)
                     .sort(compareMilestones);
+                  const renderPoint = (point: Milestone, index: number) => (
+                    <article
+                      className={`milestone-point${point.pool ? ' todo-pool' : ''}${isComplete(point, snapshot.entries) ? ' milestone-done' : ''}${
+                        !point.pool && !point.dueDate && (index === 0 || points[index - 1].dueDate)
+                          ? ' undated-start'
+                          : ''
+                      }`}
+                      key={point.id}
+                      data-space-id={point.id}
+                      aria-label={`关键节点 · ${point.title}`}
+                    >
+                      {!point.pool && (
+                        <button
+                          className="point-dates"
+                          aria-label={`调整日期 · ${point.title}`}
+                          onClick={() =>
+                            edit({
+                              type: 'milestone',
+                              entry: snapshot.entries.find((e) => e.data.id === point.id),
+                            })
+                          }
+                        >
+                          <span>
+                            截止 {point.dueDate ?? '未定'} {point.dueTime}
+                          </span>
+                        </button>
+                      )}
+                      {!point.pool && (
+                        <div className="point-marker-row">
+                          <button
+                            className={`point-dot priority-${point.importance}`}
+                            role="checkbox"
+                            aria-checked={isComplete(point, snapshot.entries)}
+                            aria-label={`完成节点 ${point.title}`}
+                            title={`${point.title} · ${importanceLabel(point.importance)}`}
+                            onClick={() =>
+                              change(point, {
+                                completedAt: isComplete(point, snapshot.entries)
+                                  ? null
+                                  : new Date().toISOString(),
+                              })
+                            }
+                          >
+                            {isComplete(point, snapshot.entries) && <CheckIcon />}
+                          </button>
+                        </div>
+                      )}
+                      <button className="point-title" onClick={() => select(point.id)}>
+                        {point.title}
+                      </button>
+                      {point.tags.length > 0 && (
+                        <small className="node-tags">{point.tags.join(' · ')}</small>
+                      )}
+                      <TodoRows
+                        entries={snapshot.entries}
+                        todos={records.filter(
+                          (r): r is Todo => r.type === 'todo' && r.milestoneId === point.id,
+                        )}
+                        select={select}
+                        toggle={toggle}
+                      />
+                      <Button
+                        className="add-todo"
+                        onClick={() => edit({ type: 'todo', defaults: { milestoneId: point.id } })}
+                      >
+                        <PlusIcon />
+                        TODO
+                      </Button>
+                      <Button
+                        className="add-todo"
+                        onClick={() =>
+                          edit({
+                            type: 'todo',
+                            defaults: { milestoneId: point.id, kind: 'idea' },
+                          })
+                        }
+                      >
+                        <PlusIcon />
+                        IDEA
+                      </Button>
+                    </article>
+                  );
                   return (
                     <section
                       className="business-track"
@@ -202,7 +280,6 @@ export function WorkspaceBoard({
                       <div className="track-heading">
                         <button onClick={() => select(line.id)}>
                           <strong>{line.title}</strong>
-                          <small>{lineKindLabel[line.kind]}</small>
                         </button>
                         <button
                           className="line-importance"
@@ -219,76 +296,22 @@ export function WorkspaceBoard({
                       </div>
                       <div className="track-scroll">
                         <div className="track-points">
-                          {points.map((point, index) => (
-                            <article
-                              className={`milestone-point${
-                                !point.dueDate && (index === 0 || points[index - 1].dueDate)
-                                  ? ' undated-start'
-                                  : ''
-                              }`}
-                              key={point.id}
-                              data-space-id={point.id}
-                              aria-label={`关键节点 · ${point.title}`}
+                          <div className="track-nodes">
+                            {points.filter((point) => !point.pool).map(renderPoint)}
+                            <button
+                              className="add-point"
+                              onClick={() =>
+                                edit({
+                                  type: 'milestone',
+                                  defaults: { lineId: line.id },
+                                })
+                              }
                             >
-                              <button
-                                className="point-dates"
-                                aria-label={`调整日期 · ${point.title}`}
-                                onClick={() =>
-                                  edit({
-                                    type: 'milestone',
-                                    entry: snapshot.entries.find((e) => e.data.id === point.id),
-                                  })
-                                }
-                              >
-                                <span>
-                                  截止 {point.dueDate ?? '未定'} {point.dueTime}
-                                </span>
-                              </button>
-                              <div className="point-marker-row">
-                                <button
-                                  className={`point-dot priority-${point.importance}`}
-                                  aria-label={`查看节点 ${point.title} · ${importanceLabel(point.importance)}`}
-                                  title={`${point.title} · ${importanceLabel(point.importance)}`}
-                                  onClick={() => select(point.id)}
-                                />
-                              </div>
-                              <button className="point-title" onClick={() => select(point.id)}>
-                                {point.title}
-                              </button>
-                              <TodoRows
-                                entries={snapshot.entries}
-                                todos={records.filter(
-                                  (r): r is Todo =>
-                                    r.type === 'todo' &&
-                                    r.milestoneId === point.id &&
-                                    (showArchived || r.status !== 'Cancelled'),
-                                )}
-                                select={select}
-                                toggle={toggle}
-                              />
-                              <Button
-                                className="add-todo"
-                                onClick={() =>
-                                  edit({ type: 'todo', defaults: { milestoneId: point.id } })
-                                }
-                              >
-                                <PlusIcon />
-                                待办
-                              </Button>
-                            </article>
-                          ))}
-                          <button
-                            className="add-point"
-                            onClick={() =>
-                              edit({
-                                type: 'milestone',
-                                defaults: { lineId: line.id },
-                              })
-                            }
-                          >
-                            <PlusIcon />
-                            关键节点
-                          </button>
+                              <PlusIcon />
+                              关键节点
+                            </button>
+                          </div>
+                          {points.filter((point) => point.pool).map(renderPoint)}
                         </div>
                       </div>
                     </section>

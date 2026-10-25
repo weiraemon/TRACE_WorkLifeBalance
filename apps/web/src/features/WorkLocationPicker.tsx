@@ -8,22 +8,24 @@ export function initialLocation(
 ): WorkLocation {
   const records = entries.map((e) => e.data);
   let milestoneId = item?.type === 'todo' ? item.milestoneId : String(defaults.milestoneId ?? '');
-  if (!milestoneId && records.filter((r) => r.type === 'milestone').length === 1)
-    milestoneId = records.find((r) => r.type === 'milestone')!.id;
-  const milestone = records.find((r) => r.id === milestoneId);
+  const point = records.find((r) => r.id === milestoneId);
   let lineId =
     item?.type === 'milestone'
       ? item.lineId
-      : String(defaults.lineId ?? (milestone?.type === 'milestone' ? milestone.lineId : ''));
-  if (!lineId && records.filter((r) => r.type === 'workline').length === 1)
-    lineId = records.find((r) => r.type === 'workline')!.id;
+      : String(defaults.lineId ?? (point?.type === 'milestone' ? point.lineId : ''));
+  if (!lineId && records.filter((r) => r.type === 'workline' && !r.completedAt).length === 1)
+    lineId = records.find((r) => r.type === 'workline' && !r.completedAt)!.id;
   const line = records.find((r) => r.id === lineId);
   let projectId =
     item?.type === 'workline'
       ? item.projectId
       : String(defaults.projectId ?? (line?.type === 'workline' ? line.projectId : ''));
-  if (!projectId && records.filter((r) => r.type === 'project').length === 1)
-    projectId = records.find((r) => r.type === 'project')!.id;
+  if (!projectId && records.filter((r) => r.type === 'project' && !r.completedAt).length === 1)
+    projectId = records.find((r) => r.type === 'project' && !r.completedAt)!.id;
+  if (line?.type === 'workline' && line.projectId !== projectId) lineId = '';
+  if (!milestoneId)
+    milestoneId =
+      records.find((r) => r.type === 'milestone' && r.lineId === lineId && r.pool)?.id ?? '';
   return { projectId, lineId, milestoneId };
 }
 export function WorkLocationPicker({
@@ -38,9 +40,6 @@ export function WorkLocationPicker({
   onChange: (value: WorkLocation) => void;
 }) {
   const records = entries.map((e) => e.data);
-  const projects = records.filter((r) => r.type === 'project');
-  const lines = records.filter((r) => r.type === 'workline' && r.projectId === value.projectId);
-  const milestones = records.filter((r) => r.type === 'milestone' && r.lineId === value.lineId);
   const options = (items: typeof records) => (
     <>
       <option value="">请选择</option>
@@ -51,6 +50,8 @@ export function WorkLocationPicker({
       ))}
     </>
   );
+  const poolId = (lineId: string) =>
+    records.find((r) => r.type === 'milestone' && r.lineId === lineId && r.pool)?.id ?? '';
   return (
     <div className="location-picker">
       <Field label="所属项目">
@@ -58,19 +59,18 @@ export function WorkLocationPicker({
           required
           value={value.projectId}
           onChange={(e) => {
-            const available = records.filter(
-              (r) => r.type === 'workline' && r.projectId === e.target.value,
+            const lines = records.filter(
+              (r) => r.type === 'workline' && r.projectId === e.target.value && !r.completedAt,
             );
-            const lineId = available.length === 1 ? available[0].id : '';
-            const points = records.filter((r) => r.type === 'milestone' && r.lineId === lineId);
-            onChange({
-              projectId: e.target.value,
-              lineId,
-              milestoneId: points.length === 1 ? points[0].id : '',
-            });
+            const lineId = lines.length === 1 ? lines[0].id : '';
+            onChange({ projectId: e.target.value, lineId, milestoneId: poolId(lineId) });
           }}
         >
-          {options(projects)}
+          {options(
+            records.filter(
+              (r) => r.type === 'project' && (!r.completedAt || r.id === value.projectId),
+            ),
+          )}
         </select>
       </Field>
       {level !== 'workline' && (
@@ -78,29 +78,29 @@ export function WorkLocationPicker({
           <select
             required
             value={value.lineId}
-            onChange={(e) => {
-              const available = records.filter(
-                (r) => r.type === 'milestone' && r.lineId === e.target.value,
-              );
-              onChange({
-                ...value,
-                lineId: e.target.value,
-                milestoneId: available.length === 1 ? available[0].id : '',
-              });
-            }}
+            onChange={(e) =>
+              onChange({ ...value, lineId: e.target.value, milestoneId: poolId(e.target.value) })
+            }
           >
-            {options(lines)}
+            {options(
+              records.filter(
+                (r) =>
+                  r.type === 'workline' &&
+                  r.projectId === value.projectId &&
+                  (!r.completedAt || r.id === value.lineId),
+              ),
+            )}
           </select>
         </Field>
       )}
       {level === 'todo' && (
-        <Field label="所属关键节点">
+        <Field label="所属节点">
           <select
             required
             value={value.milestoneId}
             onChange={(e) => onChange({ ...value, milestoneId: e.target.value })}
           >
-            {options(milestones)}
+            {options(records.filter((r) => r.type === 'milestone' && r.lineId === value.lineId))}
           </select>
         </Field>
       )}

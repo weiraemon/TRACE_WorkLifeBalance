@@ -1,9 +1,16 @@
 import { useState } from 'react';
-import { clock, localDay, actualTodoIds, type Snapshot } from '../../../../packages/domain/index';
+import {
+  clock,
+  localDay,
+  type Snapshot,
+  type Todo,
+  type BusinessLine,
+} from '../../../../packages/domain/index';
 import { todoContexts } from '../../../../packages/domain/workspace';
 import { createRecord, save } from '../api';
 import { Modal, Field, Button, ErrorMessage, DatePicker } from '../components/ui';
 import type { Editor } from './editor';
+import { QuickCapture } from './QuickCapture';
 export function ActualRecordForm({
   editor,
   snapshot,
@@ -16,26 +23,37 @@ export function ActualRecordForm({
   reload: () => Promise<void>;
 }) {
   const old = editor.entry?.data.type === 'actual' ? editor.entry.data : undefined;
-  const now = new Date();
-  const minute = Math.min(1439, now.getHours() * 60 + now.getMinutes());
+  const now = new Date(),
+    minute = Math.min(1439, now.getHours() * 60 + now.getMinutes());
+  const [id] = useState(() => old?.id ?? crypto.randomUUID());
   const [startTime, setStart] = useState(
     old?.startTime ?? String(editor.defaults?.startTime ?? clock(Math.max(0, minute - 30))),
   );
   const [endTime, setEnd] = useState(
     old?.endTime ?? String(editor.defaults?.endTime ?? clock(minute || 1)),
   );
-  const [description, setDescription] = useState(
-    old?.description ?? String(editor.defaults?.description ?? ''),
-  );
+  const [description, setDescription] = useState(old?.description ?? '');
   const [date, setDate] = useState(old?.date ?? String(editor.defaults?.date ?? localDay()));
-  const [linked, setLinked] = useState<string[]>(() => (old ? actualTodoIds(old) : []));
-  const [completed, setCompleted] = useState<string[]>(old?.completedTodoIds ?? []);
-  const [query, setQuery] = useState('');
+  const [linked, setLinked] = useState<string[]>(old?.itemIds ?? []);
+  const [completed, setCompleted] = useState<string[]>([]);
+  const [drafts, setDrafts] = useState<Todo[]>([]);
+  const [comments, setComments] = useState<Record<string, { id: string; text: string }>>({});
+  const [lineId, setLineId] = useState('');
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
-  const contexts = todoContexts(snapshot.entries).filter(
-    (c) => linked.includes(c.todo.id) || c.todo.status !== 'Cancelled',
+  const virtual = [
+    ...snapshot.entries,
+    ...drafts.map((data) => ({ data, path: '', revision: '' })),
+  ];
+  const contexts = todoContexts(virtual).filter(
+    (c) =>
+      linked.includes(c.todo.id) ||
+      (!c.todo.completedAt && !c.line.completedAt && !c.project.completedAt),
   );
+  const selected = contexts.filter((c) => linked.includes(c.todo.id));
+  const lines = snapshot.entries
+    .map((e) => e.data)
+    .filter((r): r is BusinessLine => r.type === 'workline' && !r.completedAt);
   return (
     <Modal title={`${old ? '编辑' : '记录'}实际工作 · ${date}`} onClose={close}>
       <form
@@ -47,14 +65,21 @@ export function ActualRecordForm({
             await save(
               createRecord('actual', {
                 ...(old ?? {}),
+                id,
                 date,
                 startTime,
                 endTime,
                 description,
-                workedTodoIds: linked.filter((id) => !completed.includes(id)),
-                completedTodoIds: completed,
+                itemIds: linked,
               }),
               editor.entry,
+              {
+                newItems: drafts.filter((r) => linked.includes(r.id)),
+                completeIds: completed.filter((target) => linked.includes(target)),
+                comments: Object.entries(comments)
+                  .filter(([target, value]) => linked.includes(target) && value.text.trim())
+                  .map(([targetId, value]) => ({ ...value, targetId, date })),
+              },
             );
             await reload();
             close();
@@ -69,7 +94,6 @@ export function ActualRecordForm({
           <Field label="开始时间">
             <input
               type="time"
-              step="60"
               required
               value={startTime}
               onChange={(e) => setStart(e.target.value)}
@@ -78,9 +102,8 @@ export function ActualRecordForm({
           <Field label="结束时间">
             <input
               required
-              value={endTime}
               pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]|24:00"
-              placeholder="18:30"
+              value={endTime}
               onChange={(e) => setEnd(e.target.value)}
             />
           </Field>
@@ -92,82 +115,113 @@ export function ActualRecordForm({
             rows={3}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="这段时间实际做了什么？"
           />
         </Field>
         <details className="optional-settings" open={linked.length ? true : undefined}>
-          <summary>关联待办（可选）{linked.length ? ` · ${linked.length} 项` : ''}</summary>
-          <Field label="查找待办">
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜索事件、联系人或项目"
-            />
-          </Field>
-          <div className="completion-picker">
-            {contexts
-              .filter((c) => `${c.todo.title} ${c.todo.person} ${c.project.title}`.includes(query))
-              .map((c) => (
-                <div className="actual-todo-choice" key={c.todo.id}>
+          <summary>关联 TODO / IDEA</summary>
+          <section className="linked-todos" aria-label="已关联条目">
+            {selected.map((c) => (
+              <div className="actual-item" key={c.todo.id} data-space-id={c.todo.id}>
+                <div className="actual-todo-choice">
                   <label>
                     <input
                       type="checkbox"
+                      checked
                       aria-label={`关联 ${c.todo.title}`}
-                      checked={linked.includes(c.todo.id)}
-                      onChange={(e) => {
-                        setLinked((ids) =>
-                          e.target.checked
-                            ? [...ids, c.todo.id]
-                            : ids.filter((id) => id !== c.todo.id),
-                        );
-                        if (!e.target.checked)
-                          setCompleted((ids) => ids.filter((id) => id !== c.todo.id));
+                      onChange={() => {
+                        setLinked((ids) => ids.filter((target) => target !== c.todo.id));
+                        setCompleted((ids) => ids.filter((target) => target !== c.todo.id));
                       }}
                     />
                     <span>
-                      {c.todo.title}
+                      {c.todo.kind.toUpperCase()} · {c.todo.title}
                       <small>
-                        {c.project.title} / {c.milestone.title}
+                        {c.project.title} / {c.line.title}
                       </small>
                     </span>
                   </label>
-                  {linked.includes(c.todo.id) && (
-                    <label className="completion-toggle">
-                      <input
-                        type="checkbox"
-                        aria-label={`本次完成 ${c.todo.title}`}
-                        checked={completed.includes(c.todo.id)}
-                        disabled={snapshot.entries.some(
-                          (e) =>
-                            e.data.type === 'actual' &&
-                            e.data.id !== old?.id &&
-                            e.data.completedTodoIds.includes(c.todo.id),
-                        )}
-                        onChange={(e) =>
-                          setCompleted((ids) =>
-                            e.target.checked
-                              ? [...ids, c.todo.id]
-                              : ids.filter((id) => id !== c.todo.id),
-                          )
-                        }
-                      />
-                      本次完成
-                    </label>
-                  )}
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(c.todo.completedAt) || completed.includes(c.todo.id)}
+                      disabled={Boolean(c.todo.completedAt)}
+                      aria-label={`本次完成 ${c.todo.title}`}
+                      onChange={(e) =>
+                        setCompleted((ids) =>
+                          e.target.checked
+                            ? [...ids, c.todo.id]
+                            : ids.filter((target) => target !== c.todo.id),
+                        )
+                      }
+                    />
+                    本次完成
+                  </label>
                 </div>
+                <Field label={`批注 · ${c.todo.title}`}>
+                  <textarea
+                    rows={2}
+                    value={comments[c.todo.id]?.text ?? ''}
+                    onChange={(e) =>
+                      setComments((values) => ({
+                        ...values,
+                        [c.todo.id]: {
+                          id: values[c.todo.id]?.id ?? crypto.randomUUID(),
+                          text: e.target.value,
+                        },
+                      }))
+                    }
+                  />
+                </Field>
+              </div>
+            ))}
+          </section>
+          <Field label="先选择业务线">
+            <select value={lineId} onChange={(e) => setLineId(e.target.value)}>
+              <option value="">选择业务线</option>
+              {lines.map((line) => (
+                <option key={line.id} value={line.id}>
+                  {line.title}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <div className="completion-picker">
+            {contexts
+              .filter((c) => c.line.id === lineId && !linked.includes(c.todo.id))
+              .map((c) => (
+                <label className="actual-todo-choice" key={c.todo.id}>
+                  <input
+                    type="checkbox"
+                    checked={false}
+                    aria-label={`关联 ${c.todo.title}`}
+                    onChange={() => setLinked((ids) => [...ids, c.todo.id])}
+                  />
+                  {c.todo.kind.toUpperCase()} · {c.todo.title}
+                </label>
               ))}
           </div>
         </details>
         <details className="optional-settings">
-          <summary>调整记录日期 / 查看历史</summary>
+          <summary>新建 TODO / IDEA</summary>
+          <QuickCapture
+            snapshot={snapshot}
+            defaultLineId={lineId}
+            onCreate={async (item, comment) => {
+              setDrafts((items) => [...items, item]);
+              setLinked((ids) => [...ids, item.id]);
+              if (comment.trim())
+                setComments((values) => ({
+                  ...values,
+                  [item.id]: { id: crypto.randomUUID(), text: comment },
+                }));
+            }}
+          />
+        </details>
+        <details className="optional-settings">
+          <summary>调整记录日期</summary>
           <Field label="记录日期">
             <DatePicker value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
           </Field>
-          {old?.history.map((h, i) => (
-            <p className="hint" key={i}>
-              {h.date} {h.startTime}–{h.endTime} · {h.description}
-            </p>
-          ))}
         </details>
         <ErrorMessage message={error} />
         <div className="form-actions">

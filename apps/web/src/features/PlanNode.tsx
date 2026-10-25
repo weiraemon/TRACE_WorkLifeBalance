@@ -4,6 +4,7 @@ import type { Snapshot, Todo } from '../../../../packages/domain/index';
 import type { MilestoneContext } from '../../../../packages/domain/workspace';
 import { ImportanceDot } from '../components/Importance';
 import { TodoRows } from './WorkspaceBoard';
+import { isComplete } from '../../../../packages/domain/workspace';
 export function PlanNode({
   context,
   snapshot,
@@ -19,17 +20,15 @@ export function PlanNode({
   const { milestone, project } = context;
   const todos = snapshot.entries
     .map((e) => e.data)
-    .filter(
-      (r): r is Todo =>
-        r.type === 'todo' && r.milestoneId === milestone.id && r.status !== 'Cancelled',
-    )
+    .filter((r): r is Todo => r.type === 'todo' && r.milestoneId === milestone.id)
     .sort(
       (a, b) =>
         a.order - b.order || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
     );
   return (
     <div
-      className={`scheduled-plan priority-${milestone.importance}${expanded ? ' plan-expanded' : ''}${milestone.status === 'Done' ? ' plan-done' : ''}`}
+      data-space-id={milestone.id}
+      className={`scheduled-plan priority-${milestone.importance}${expanded ? ' plan-expanded' : ''}${isComplete(milestone, snapshot.entries) ? ' plan-done' : ''}`}
     >
       <button
         className="plan-node-toggle"

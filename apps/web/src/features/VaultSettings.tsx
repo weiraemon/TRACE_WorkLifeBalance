@@ -8,7 +8,7 @@ export function Connect({ onConnected }: { onConnected: (snapshot: Snapshot) => 
     [busy, setBusy] = useState(false);
   return (
     <section className="connect">
-      <h2>从你的 Obsidian Vault 开始</h2>
+      <h2>选择 Markdown 工作目录</h2>
       <form
         onSubmit={async (e) => {
           e.preventDefault();
@@ -23,7 +23,7 @@ export function Connect({ onConnected }: { onConnected: (snapshot: Snapshot) => 
           }
         }}
       >
-        <Field label="Vault 绝对路径">
+        <Field label="工作目录绝对路径">
           <input
             required
             placeholder="E:\\Notes\\MyVault"
@@ -33,7 +33,7 @@ export function Connect({ onConnected }: { onConnected: (snapshot: Snapshot) => 
         </Field>
         <ErrorMessage message={error} />
         <Button disabled={busy} className="primary">
-          {busy ? '正在扫描…' : '连接本地 Vault'}
+          {busy ? '正在扫描…' : '连接工作目录'}
         </Button>
       </form>
       <p className="hint">

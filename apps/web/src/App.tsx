@@ -17,7 +17,7 @@ import {
   type Snapshot,
   type DeleteResult,
 } from '../../../packages/domain/index';
-import { load, session } from './api';
+import { load, session, deletePreview, deleteSpace } from './api';
 import { spaceSubtree } from '../../../packages/domain/workspace';
 import { Button, Modal, EmptyState, ErrorMessage, DatePicker } from './components/ui';
 import { Connect, Backup } from './features/VaultSettings';
@@ -25,6 +25,7 @@ import { ReferenceForm } from './features/ReferenceForm';
 import type { Editor } from './features/editor';
 import { WorkItemForm } from './features/WorkItemForm';
 import { ActualRecordForm } from './features/ActualRecordForm';
+import { CommentForm } from './features/CommentForm';
 import { WorkspaceBoard } from './features/WorkspaceBoard';
 import { SpaceMenu } from './features/SpaceMenu';
 import { SpaceDetails } from './features/SpaceDetails';
@@ -133,6 +134,26 @@ export default function App() {
     setPage(id);
     setSelected(null);
     setSearch('');
+  };
+  const handleDeleted = async (result: DeleteResult) => {
+    if (selected && result.deletedIds.includes(selected)) {
+      setSelected(null);
+      setContentDirty(false);
+    }
+    setDeleting(null);
+    setDeletion(result);
+    await reload();
+  };
+  const remove = (entry: Entry) => {
+    if (entry.data.type === 'project' || entry.data.type === 'workline') {
+      setDeleting(entry);
+      return;
+    }
+    run(async () => {
+      const preview = await deletePreview(entry.data.id);
+      if (preview.blockedReason) throw new Error(preview.blockedReason);
+      await handleDeleted(await deleteSpace(entry.data.id, preview.entries));
+    });
   };
   return (
     <div className={'shell ' + (selectedEntry ? 'has-detail' : '')}>
@@ -290,6 +311,8 @@ export default function App() {
                 <Today
                   snapshot={snapshot}
                   date={date}
+                  reload={reload}
+                  run={run}
                   goWorkspace={goWorkspace}
                   timeline={
                     <Suspense fallback={<EmptyState>正在加载时间线…</EmptyState>}>
@@ -319,7 +342,7 @@ export default function App() {
                         checked={showArchived}
                         onChange={(e) => setShowArchived(e.target.checked)}
                       />
-                      含完成 / 归档
+                      显示已完成项目 / 业务线
                     </label>
                   </div>
                   <WorkspaceBoard
@@ -350,14 +373,8 @@ export default function App() {
           )}
         </div>
       </main>
-      {page === 'workspace' && snapshot && (
-        <SpaceMenu
-          snapshot={snapshot}
-          edit={setEditor}
-          remove={setDeleting}
-          run={run}
-          reload={reload}
-        />
+      {snapshot && (
+        <SpaceMenu snapshot={snapshot} edit={setEditor} remove={remove} run={run} reload={reload} />
       )}
       {selectedEntry && snapshot && isSpaceItem(selectedEntry.data) && (
         <SpaceDetails
@@ -374,7 +391,14 @@ export default function App() {
       )}
       {editor &&
         snapshot &&
-        (['project', 'workline', 'milestone', 'todo'].includes(editor.type) ? (
+        (editor.defaults?.comment && editor.entry ? (
+          <CommentForm
+            key={editor.entry.data.id}
+            entry={editor.entry}
+            close={() => setEditor(null)}
+            reload={reload}
+          />
+        ) : ['project', 'workline', 'milestone', 'todo'].includes(editor.type) ? (
           <WorkItemForm
             key={editor.entry?.revision ?? JSON.stringify(editor)}
             editor={editor}
@@ -408,19 +432,7 @@ export default function App() {
             spaceSubtree(snapshot.entries, deleting.data.id).some((e) => e.data.id === selected)
           }
           close={() => setDeleting(null)}
-          deleted={async (result) => {
-            if (selected && result.deletedIds.includes(selected)) {
-              setSelected(null);
-              setContentDirty(false);
-            }
-            setDeleting(null);
-            setDeletion(result);
-            try {
-              await reload();
-            } catch (e) {
-              setError(e instanceof Error ? e.message : String(e));
-            }
-          }}
+          deleted={handleDeleted}
         />
       )}
       {settings && (

@@ -6,7 +6,8 @@ import {
   type Entry,
   type Snapshot,
 } from '../../../../packages/domain/index';
-import { createRecord, save } from '../api';
+import { createRecord, save, promote } from '../api';
+import { isComplete } from '../../../../packages/domain/workspace';
 import type { Editor } from './editor';
 import { spaceLabel } from './WorkItemForm';
 
@@ -63,7 +64,7 @@ export function SpaceMenu({
           8,
           Math.min(
             event instanceof MouseEvent ? event.clientY : rect.top + 16,
-            innerHeight - (date ? 290 : 140),
+            innerHeight - (date ? 290 : 360),
           ),
         ),
       });
@@ -98,6 +99,7 @@ export function SpaceMenu({
   }, [menu]);
   if (!menu || !isSpaceItem(menu.entry.data)) return null;
   const item = menu.entry.data;
+  const pool = item.type === 'milestone' && item.pool;
   const today = localDay();
   const addDays = (days: number) => {
     const date = new Date(`${today}T12:00:00`);
@@ -145,7 +147,7 @@ export function SpaceMenu({
       }}
     >
       {!menu.date && <span title={item.title}>{item.title}</span>}
-      {menu.date && (
+      {menu.date && !pool && (
         <>
           <span>设置日期</span>
           {dateOptions.map(([label, value]) => (
@@ -169,6 +171,54 @@ export function SpaceMenu({
         </>
       )}
       {!menu.date && (
+        <>
+          {(item.type === 'todo' || item.type === 'milestone') && (
+            <button
+              role="menuitem"
+              className="button"
+              onClick={() => {
+                edit({ type: item.type, entry: menu.entry, defaults: { comment: true } });
+                setMenu(null);
+              }}
+            >
+              添加批注
+            </button>
+          )}
+          {!pool && (
+            <button
+              role="menuitem"
+              className="button"
+              onClick={() => {
+                const complete = !isComplete(item, snapshot.entries);
+                run(async () => {
+                  await save(createRecord(item.type, item), menu.entry, { completion: complete });
+                  await reload();
+                });
+                setMenu(null);
+              }}
+            >
+              {isComplete(item, snapshot.entries) ? '重新打开' : '完成'}
+              {item.type === 'todo' ? item.kind.toUpperCase() : spaceLabel[item.type]}
+            </button>
+          )}
+          {!pool && (item.type === 'todo' || item.type === 'milestone') && (
+            <button
+              role="menuitem"
+              className="button"
+              onClick={() => {
+                run(async () => {
+                  await promote(menu.entry);
+                  await reload();
+                });
+                setMenu(null);
+              }}
+            >
+              升级为业务线
+            </button>
+          )}
+        </>
+      )}
+      {!menu.date && !pool && (
         <button
           role="menuitem"
           className="button"
@@ -181,7 +231,7 @@ export function SpaceMenu({
           编辑{spaceLabel[item.type]}
         </button>
       )}
-      {!menu.date && (
+      {!menu.date && !pool && (
         <button
           role="menuitem"
           className="button danger"

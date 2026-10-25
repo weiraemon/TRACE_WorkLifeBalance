@@ -3,7 +3,7 @@ import FullCalendar from '@fullcalendar/react';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import type { CalendarOptions, EventChangeArg } from '@fullcalendar/core';
-import { clock, localDay, actualTodoIds, type Snapshot } from '../../../../packages/domain/index';
+import { clock, localDay, type Snapshot } from '../../../../packages/domain/index';
 import { milestonesForDay, milestoneTimeOnDay } from '../../../../packages/domain/workspace';
 import { ImportanceDot } from '../components/Importance';
 import { save, createRecord } from '../api';
@@ -94,6 +94,7 @@ export function Timeline({
               <button
                 className="plan-node"
                 key={milestone.id}
+                data-space-id={milestone.id}
                 onClick={() => goWorkspace(milestone.id)}
               >
                 <ImportanceDot value={milestone.importance} />
@@ -160,7 +161,7 @@ export function Timeline({
               eventContent={(arg) => {
                 const record = blocks.find((e) => e.data.id === arg.event.id)?.data;
                 if (record?.type !== 'actual') return null;
-                const titles = actualTodoIds(record)
+                const titles = record.itemIds
                   .map((id) => snapshot.entries.find((e) => e.data.id === id)?.data)
                   .map((r) => (r && 'title' in r ? r.title : '待办已移除'));
                 return (
@@ -170,9 +171,16 @@ export function Timeline({
                   >
                     <div className="fc-event-time">{arg.timeText}</div>
                     <div className="fc-event-title">{record.description}</div>
-                    {titles.length > 0 && (
-                      <div className="actual-todo-line">关联：{titles.join(' / ')}</div>
-                    )}
+                    {titles.map((title, index) => (
+                      <div
+                        className="actual-todo-line"
+                        data-space-id={record.itemIds[index]}
+                        key={`${index}-${title}`}
+                      >
+                        {index === 0 ? '关联：' : ''}
+                        {title}
+                      </div>
+                    ))}
                   </div>
                 );
               }}

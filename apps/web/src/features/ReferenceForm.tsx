@@ -192,38 +192,3 @@ export function ReferenceForm({
     </Modal>
   );
 }
-export function ResourcePicker({
-  values,
-  snapshot,
-  onChange,
-}: {
-  values: string[];
-  snapshot: Snapshot;
-  onChange: (ids: string[]) => void;
-}) {
-  const resources = snapshot.entries.filter((e) => e.data.type === 'resource');
-  return (
-    <fieldset className="resource-picker">
-      <legend>关联资源（可选）</legend>
-      {resources.map(
-        (e) =>
-          e.data.type === 'resource' && (
-            <label key={e.data.id}>
-              <input
-                type="checkbox"
-                checked={values.includes(e.data.id)}
-                onChange={(event) =>
-                  onChange(
-                    event.target.checked
-                      ? [...values, e.data.id]
-                      : values.filter((id) => id !== e.data.id),
-                  )
-                }
-              />
-              {e.data.title}
-            </label>
-          ),
-      )}
-    </fieldset>
-  );
-}

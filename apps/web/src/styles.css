@@ -405,6 +405,7 @@ nav svg {
   background: #dfe7eb;
   border-left-color: #8b9eaf;
   color: #3b5260;
+  padding: 4px 7px;
 }
 .fc .fc-event-time {
   font-size: 10px;
@@ -527,78 +528,6 @@ nav svg {
   align-items: center;
   gap: 12px;
   margin-bottom: 16px;
-}
-.milestone-content textarea {
-  width: 100%;
-  resize: vertical;
-  line-height: 1.7;
-  margin-bottom: 12px;
-}
-.note-tabs {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 14px;
-  min-width: 0;
-  align-items: stretch;
-}
-.note-tabs .button {
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  border: none;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-}
-.note-tabs .button[aria-pressed='true'] {
-  border-bottom-color: var(--sage-deep);
-  color: var(--sage-deep);
-}
-.note-tabs .note-file {
-  flex: 1;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 0;
-  text-align: left;
-  color: var(--note-color);
-  background: var(--note-background);
-}
-.note-tabs .note-file[aria-pressed='true'] {
-  border-bottom-color: var(--note-color);
-  color: var(--note-color);
-}
-.note-file :is(span, small) {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-.note-file small {
-  font-size: 10px;
-}
-.note-kind-note {
-  --note-color: #315f8a;
-  --note-background: #eaf0f7;
-}
-.note-kind-idea {
-  --note-color: #795093;
-  --note-background: #f1eaf7;
-}
-.note-kind-meeting {
-  --note-color: #286f66;
-  --note-background: #e7f2ed;
-}
-.note-kind-draft {
-  --note-color: #8b601c;
-  --note-background: #f8efdf;
-}
-.note-path {
-  font-size: 11px;
-  color: var(--muted);
-  overflow-wrap: anywhere;
-  margin-bottom: 12px;
 }
 .markdown-body {
   overflow-wrap: anywhere;
@@ -1166,7 +1095,15 @@ input[type='checkbox'] {
   position: relative;
   min-width: max-content;
 }
-.track-points:before {
+.track-nodes {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  gap: 40px;
+  position: relative;
+  min-width: max-content;
+}
+.track-nodes:before {
   content: '';
   position: absolute;
   left: 12px;
@@ -1178,6 +1115,9 @@ input[type='checkbox'] {
   position: relative;
   width: 224px;
   flex: 0 0 224px;
+}
+.todo-pool {
+  padding-top: 80px;
 }
 .milestone-point.undated-start {
   margin-left: auto;
@@ -1387,6 +1327,10 @@ input[type='checkbox'] {
   max-height: 260px;
   overflow: auto;
 }
+.linked-todos {
+  max-height: 180px;
+  overflow: auto;
+}
 .actual-todo-choice > label {
   display: flex;
   gap: 10px;
@@ -1490,6 +1434,10 @@ input[type='checkbox'] {
   font-size: 16px;
   font-weight: 600;
   white-space: nowrap;
+}
+.today-row-done .today-task {
+  text-decoration: line-through;
+  color: var(--muted);
 }
 .daily-timeline .timeline-scroll {
   border-bottom: 0;
@@ -1756,21 +1704,103 @@ input[type='checkbox'] {
   color: var(--muted);
 }
 .actual-todo-line {
-  font-size: 9px;
+  font-size: 14px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-height: 10px;
+  line-height: 18px;
 }
 .actual-content {
   height: 100%;
   overflow: hidden;
 }
 .actual-content .fc-event-time {
-  font-size: 9px;
-  line-height: 10px;
+  font-size: 12px;
+  line-height: 15px;
 }
 .actual-content .fc-event-title {
-  font-size: 10px;
-  line-height: 11px;
+  font-size: 14px;
+  line-height: 18px;
+}
+
+.quick-capture {
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+}
+.quick-capture-controls {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+.quick-capture-controls .field {
+  margin: 0;
+  min-width: 0;
+}
+.quick-capture-controls .button {
+  margin-bottom: 2px;
+}
+.quick-capture input,
+.quick-capture select,
+.quick-capture textarea {
+  min-width: 0;
+  width: 100%;
+}
+.today-item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.today-item-row .today-row {
+  flex: 1;
+  min-width: 0;
+}
+.actual-item {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.actual-item .actual-todo-choice {
+  border: 0;
+}
+.actual-item label {
+  min-width: 0;
+}
+.actual-item .field {
+  margin: 8px 0 0;
+}
+.node-tags {
+  display: block;
+  margin: 4px 0 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.milestone-done .point-title {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.point-dot[aria-checked='true'] {
+  color: var(--surface);
+  display: grid;
+  place-items: center;
+}
+.point-dot svg {
+  width: 12px;
+  height: 12px;
+}
+.notes-content textarea {
+  min-height: 300px;
+  line-height: 1.7;
+  resize: vertical;
+}
+@media (max-width: 600px) {
+  .quick-capture-controls {
+    grid-template-columns: 80px minmax(0, 1fr);
+  }
+  .quick-capture-controls .button {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+  .actual-todo-choice {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

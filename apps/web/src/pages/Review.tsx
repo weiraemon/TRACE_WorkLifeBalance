@@ -4,7 +4,7 @@ import {
   isSpaceItem,
   type Snapshot,
 } from '../../../../packages/domain/index';
-import { todoContexts, todoStatus } from '../../../../packages/domain/workspace';
+import { todoContexts } from '../../../../packages/domain/workspace';
 import type { Editor } from '../features/editor';
 import { DatePicker } from '../components/ui';
 export function Review({
@@ -27,23 +27,18 @@ export function Review({
   const actuals = snapshot.entries.filter(
     (e) => e.data.type === 'actual' && e.data.date >= week && e.data.date <= last,
   );
-  const completedIds = new Set(
-    actuals.flatMap((e) => (e.data.type === 'actual' ? e.data.completedTodoIds : [])),
-  );
   const completed = todoContexts(snapshot.entries).filter(
     (c) =>
-      completedIds.has(c.todo.id) ||
-      (c.todo.status === 'Done' &&
-        localDay(new Date(c.todo.updatedAt)) >= week &&
-        localDay(new Date(c.todo.updatedAt)) <= last),
+      c.todo.completedAt &&
+      localDay(new Date(c.todo.completedAt)) >= week &&
+      localDay(new Date(c.todo.completedAt)) <= last,
   );
   const waiting = snapshot.entries.filter(
     (e) =>
       isSpaceItem(e.data) &&
-      (['Waiting', 'Blocked'].includes(e.data.status) ||
-        (e.data.type === 'todo' &&
-          e.data.direction === 'from' &&
-          !['Done', 'Cancelled'].includes(todoStatus(e.data, snapshot.entries)))),
+      e.data.type === 'todo' &&
+      e.data.direction === 'from' &&
+      !e.data.completedAt,
   );
   return (
     <>
@@ -72,7 +67,7 @@ export function Review({
           {!completed.length && <p className="hint">本周暂无完成的待办。</p>}
         </section>
         <section>
-          <h3>阻塞与待反馈</h3>
+          <h3>等待反馈</h3>
           {waiting.map(
             (e) =>
               isSpaceItem(e.data) && (

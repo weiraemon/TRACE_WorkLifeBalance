@@ -10,7 +10,7 @@ if ((await fs.readdir(root)).some((name) => name !== '.gitkeep'))
 await fs.mkdir(path.join(root, '资料/阶段报告'), { recursive: true });
 await fs.writeFile(
   path.join(root, '欢迎.md'),
-  '# ATLAS 四层工作空间示例\n\n项目 → 业务线 → 关键节点 → 待办。\n工作空间安排计划，今日只记录实际。\n这些是可在 Obsidian 中直接读取的真实文件。\n',
+  '# ATLAS 四层工作空间示例\n\n项目 → 业务线 → 关键节点 → 待办。\n工作空间安排计划，今日记录实际与快速收集 TODO／IDEA。\n这些是可在 Markdown 编辑器中直接读取的真实文件。\n',
 );
 await fs.writeFile(
   path.join(root, '资料/阶段报告/说明.md'),
@@ -21,17 +21,20 @@ const today = localDay();
 const next = new Date(today + 'T12:00:00');
 next.setDate(next.getDate() + 1);
 const tomorrow = localDay(next);
-const write = async (type: RecordData['type'], fields: object) => {
-  const now = new Date().toISOString();
+const write = async (type: RecordData['type'], fields: object, comment = '') => {
+  const now = new Date().toISOString(),
+    id = randomUUID();
   return vault.save(
     parseRecord({
       schemaVersion: 1,
-      id: randomUUID(),
+      id,
       type,
       createdAt: now,
       updatedAt: now,
       ...fields,
     }),
+    undefined,
+    comment ? { comments: [{ id: randomUUID(), targetId: id, text: comment }] } : undefined,
   );
 };
 try {
@@ -44,7 +47,6 @@ try {
   const report = await write('workline', {
     title: '阶段报告',
     projectId: project.data.id,
-    kind: 'report',
     importance: 5,
     resourceIds: [folder.data.id],
   });
@@ -52,17 +54,14 @@ try {
     title: '指标讨论',
     dueTime: '10:00',
     lineId: report.data.id,
-    kind: 'discussion',
 
     dueDate: today,
-    status: 'Doing',
     importance: 4,
   });
   await write('todo', {
     title: '比较两组指标差异',
     milestoneId: discussion.data.id,
     importance: 5,
-    estimatedMinutes: 30,
   });
   await write('todo', {
     title: '把修改意见发给小王',
@@ -70,21 +69,18 @@ try {
     direction: 'to',
     person: '小王',
     importance: 4,
-    estimatedMinutes: 10,
   });
   await write('todo', {
     title: '收到实验图和原始数据',
     milestoneId: discussion.data.id,
     direction: 'from',
     person: '小王',
-    status: 'Waiting',
     importance: 5,
   });
   const review = await write('milestone', {
     title: 'V2 审阅',
     dueTime: '10:00',
     lineId: report.data.id,
-    kind: 'review',
 
     dueDate: tomorrow,
     importance: 5,
@@ -94,24 +90,20 @@ try {
     title: '核对报告图表编号',
     milestoneId: review.data.id,
     importance: 3,
-    estimatedMinutes: 20,
   });
   const revise = await write('milestone', {
     title: '补充修改',
     lineId: report.data.id,
-    kind: 'revision',
     order: 2,
   });
   await write('todo', {
     title: '补充误差分析',
     milestoneId: revise.data.id,
     importance: 4,
-    estimatedMinutes: 60,
   });
   const code = await write('workline', {
     title: '仿真与验证',
     projectId: project.data.id,
-    kind: 'code',
     importance: 4,
     order: 1,
   });
@@ -119,7 +111,6 @@ try {
     title: '边界工况检查',
     dueTime: '12:00',
     lineId: code.data.id,
-    kind: 'milestone',
 
     dueDate: today,
     importance: 4,
@@ -128,28 +119,38 @@ try {
     title: '核对参数单位',
     milestoneId: test.data.id,
     importance: 3,
-    estimatedMinutes: 30,
+    completedAt: new Date().toISOString(),
   });
   await write('todo', {
     title: '补跑边界工况',
     milestoneId: test.data.id,
     importance: 5,
-    estimatedMinutes: 60,
   });
   await write('actual', {
     date: today,
     startTime: '09:03',
     endTime: '09:37',
-    completedTodoIds: [checked.data.id],
+    itemIds: [checked.data.id],
     description: '核对参数单位，未发现错误',
   });
   const other = await write('project', { title: '科研 · 长期积累' });
   const paper = await write('workline', {
     title: '相对运动方法论文',
     projectId: other.data.id,
-    kind: 'paper',
   });
-  await write('milestone', { title: '选题交流', lineId: paper.data.id, kind: 'meeting' });
+  await write(
+    'milestone',
+    { title: '选题交流', lineId: paper.data.id, tags: ['会议'] },
+    '先比较两种方法，再选择需要验证的问题。',
+  );
+  const pool = (await vault.scan()).entries.find(
+    (e) => e.data.type === 'milestone' && e.data.pool && e.data.lineId === paper.data.id,
+  )!;
+  await write(
+    'todo',
+    { title: '异常是否来自样本分布？', kind: 'idea', milestoneId: pool.data.id },
+    '先保留这个问题，下一次实验检查分布差异。',
+  );
   console.log('Created real workspace Vault: ' + root);
 } finally {
   await vault.close();

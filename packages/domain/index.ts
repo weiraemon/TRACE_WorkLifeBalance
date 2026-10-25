@@ -1,33 +1,7 @@
 import { z } from 'zod';
-export const recordContract = 'atlas-r0-space-9';
+export const recordContract = 'atlas-lines-10';
 export const noteKinds = ['note', 'idea', 'meeting', 'draft'] as const;
 export const noteKindLabel = { note: '笔记', idea: '灵感', meeting: '纪要', draft: '待细化' };
-export function noteKindFromPath(target: string, fallback: (typeof noteKinds)[number] = 'note') {
-  const folders: Record<string, (typeof noteKinds)[number]> = {
-    note: 'note',
-    notes: 'note',
-    笔记: 'note',
-    idea: 'idea',
-    ideas: 'idea',
-    灵感: 'idea',
-    meeting: 'meeting',
-    meetings: 'meeting',
-    纪要: 'meeting',
-    draft: 'draft',
-    drafts: 'draft',
-    待细化: 'draft',
-  };
-  return (
-    target
-      .split(/[\\/]/)
-      .slice(0, -1)
-      .reverse()
-      .map((folder) =>
-        Object.hasOwn(folders, folder.toLowerCase()) ? folders[folder.toLowerCase()] : undefined,
-      )
-      .find(Boolean) ?? fallback
-  );
-}
 export const noteTagSchema = z
   .string()
   .trim()
@@ -48,43 +22,7 @@ export const noteInputSchema = z
     tag: noteTagSchema.default(''),
   })
   .strict();
-export const statuses = [
-  'Inbox',
-  'Ready',
-  'Doing',
-  'Waiting',
-  'Blocked',
-  'Paused',
-  'Done',
-  'Cancelled',
-] as const;
-export const statusLabel: Record<(typeof statuses)[number], string> = {
-  Inbox: '待整理',
-  Ready: '可开始',
-  Doing: '进行中',
-  Waiting: '待反馈',
-  Blocked: '受阻',
-  Paused: '暂停',
-  Done: '已完成',
-  Cancelled: '归档',
-};
-export const lineKinds = ['paper', 'patent', 'report', 'code', 'research', 'test'] as const;
-export const lineKindLabel = {
-  paper: '论文',
-  patent: '专利',
-  report: '报告',
-  code: '代码',
-  research: '研究',
-  test: '测试',
-};
-export const milestoneKinds = ['milestone', 'meeting', 'discussion', 'revision', 'review'] as const;
-export const milestoneKindLabel = {
-  milestone: '关键节点',
-  meeting: '开会',
-  discussion: '讨论',
-  revision: '修改',
-  review: '审阅',
-};
+export const milestoneTags = ['会议', '讨论', '专注', '实验', '审阅'];
 export const directionLabel = { self: '自己做', to: '交给他人 · To', from: '等待他人 · From' };
 const id = z.string().uuid();
 export const day = z
@@ -107,8 +45,7 @@ export const importanceSchema = z.number().int().min(1).max(5);
 const workFields = {
   ...base,
   title: z.string().trim().min(1).max(300),
-  description: text.default(''),
-  status: z.enum(statuses).default('Ready'),
+  completedAt: z.iso.datetime().nullable().default(null),
   importance: importanceSchema.default(3),
   order: z.number().finite().default(0),
   resourceIds: z.array(id).default([]),
@@ -119,7 +56,7 @@ const lineSchema = z
     ...workFields,
     type: z.literal('workline'),
     projectId: id,
-    kind: z.enum(lineKinds).default('research'),
+    notesId: id.nullable().default(null),
   })
   .strict();
 const milestoneSchema = z
@@ -127,7 +64,8 @@ const milestoneSchema = z
     ...workFields,
     type: z.literal('milestone'),
     lineId: id,
-    kind: z.enum(milestoneKinds).default('milestone'),
+    pool: z.boolean().default(false),
+    tags: z.array(z.string().trim().min(1).max(60)).max(20).default([]),
     dueDate: optionalDay,
     dueTime: time
       .refine((value) => value !== '24:00', '截止时刻请使用 00:00–23:59')
@@ -140,10 +78,10 @@ const todoSchema = z
     ...workFields,
     type: z.literal('todo'),
     milestoneId: id,
+    kind: z.enum(['todo', 'idea']).default('todo'),
     dueDate: optionalDay,
     direction: z.enum(['self', 'to', 'from']).default('self'),
     person: z.string().trim().max(200).default(''),
-    estimatedMinutes: z.number().int().min(5).max(1440).nullable().default(null),
   })
   .strict();
 const actualSchema = z
@@ -154,19 +92,7 @@ const actualSchema = z
     startTime: time,
     endTime: time,
     description: text.trim().min(1),
-    workedTodoIds: z.array(id).default([]),
-    completedTodoIds: z.array(id).default([]),
-    history: z
-      .array(
-        z.object({
-          changedAt: z.iso.datetime(),
-          date: day,
-          startTime: time,
-          endTime: time,
-          description: text,
-        }),
-      )
-      .default([]),
+    itemIds: z.array(id).default([]),
   })
   .strict();
 const resourceSchema = z
@@ -208,13 +134,37 @@ export type BusinessLine = Extract<RecordData, { type: 'workline' }>;
 export type Milestone = Extract<RecordData, { type: 'milestone' }>;
 export type Todo = Extract<RecordData, { type: 'todo' }>;
 export type ActualRecord = Extract<RecordData, { type: 'actual' }>;
+export const saveOptionsSchema = z
+  .object({
+    completion: z.boolean().optional(),
+    newItems: z.array(todoSchema).max(50).default([]),
+    completeIds: z.array(id).max(100).default([]),
+    comments: z
+      .array(
+        z
+          .object({
+            id,
+            targetId: id,
+            text: text
+              .trim()
+              .min(1)
+              .refine((value) => !/<!--\s*\/?atlas:/i.test(value), '批注不能包含系统段落标记'),
+            date: day.optional(),
+          })
+          .strict(),
+      )
+      .max(100)
+      .default([]),
+  })
+  .strict();
+export type SaveOptions = z.input<typeof saveOptionsSchema>;
 export type SpaceItem = Project | BusinessLine | Milestone | Todo;
 export const isSpaceItem = (record: RecordData): record is SpaceItem =>
   ['project', 'workline', 'milestone', 'todo'].includes(record.type);
 export type Entry = { data: RecordData; path: string; revision: string };
 export type DeletePreview = { entries: Entry[]; blockedReason: string | null };
 export type DeleteResult = { deletedIds: string[] };
-export type MilestoneContent = { body: string; revision: string; path: string };
+export type NoteContent = { body: string; revision: string; path: string };
 export type Snapshot = {
   entries: Entry[];
   files: { path: string; directory: boolean }[];
@@ -238,11 +188,14 @@ export function parseRecord(input: unknown): RecordData {
     throw new Error('结束时间必须晚于开始时间');
   if (record.type === 'milestone' && record.dueTime && !record.dueDate)
     throw new Error('设置截止时刻前，请先选择截止日期');
+  if (
+    record.type === 'milestone' &&
+    record.pool &&
+    (record.dueDate || record.dueTime || record.completedAt)
+  )
+    throw new Error('待办池不设置截止时间或完成');
   return record;
 }
-export const actualTodoIds = (record: ActualRecord) => [
-  ...new Set([...record.workedTodoIds, ...record.completedTodoIds]),
-];
 export function validateChange(record: RecordData, entries: Entry[]) {
   const records = entries.filter((e) => e.data.id !== record.id).map((e) => e.data);
   const all = new Map(records.map((r) => [r.id, r]));
@@ -259,38 +212,38 @@ export function validateChange(record: RecordData, entries: Entry[]) {
       throw new Error('所属项目、业务线或关键节点不存在，不能跨层级关联');
     if (record.resourceIds.some((id) => all.get(id)?.type !== 'resource'))
       throw new Error('资源不存在');
-    if (record.type === 'milestone' && record.resourceIds.length > 1)
-      throw new Error('每个节点只绑定一个 Markdown 文件');
+    if (record.type === 'workline') {
+      if (!record.notesId) throw new Error('业务线缺少专属 Notes');
+      const notes = all.get(record.notesId);
+      if (notes?.type !== 'resource' || notes.location !== 'vault' || !/\.md$/i.test(notes.target))
+        throw new Error('业务线 Notes 必须是工作目录内的 Markdown');
+      if (records.some((r) => r.type === 'workline' && r.notesId === record.notesId))
+        throw new Error('每条业务线使用自己的 Notes');
+      if (
+        records.filter((r) => r.type === 'milestone' && r.pool && r.lineId === record.id).length !==
+        1
+      )
+        throw new Error('业务线必须有一个待办池');
+    }
     if (
       record.type === 'milestone' &&
-      record.resourceIds.some((id) => {
-        const resource = all.get(id);
-        return (
-          resource?.type !== 'resource' ||
-          resource.location !== 'vault' ||
-          !/\.md$/i.test(resource.target)
-        );
-      })
+      record.pool &&
+      records.some((r) => r.type === 'milestone' && r.pool && r.lineId === record.lineId)
     )
-      throw new Error('节点只能绑定 Vault 中的 Markdown 文件');
+      throw new Error('每条业务线只能有一个待办池');
+    if (
+      record.type === 'todo' &&
+      record.kind === 'idea' &&
+      (record.direction !== 'self' || record.person)
+    )
+      throw new Error('IDEA 不设置交接联系人');
     if (record.type === 'todo' && record.direction !== 'self' && !record.person)
       throw new Error('To / From 待办需要填写联系人');
   }
   if (record.type === 'actual') {
-    if (
-      new Set(record.workedTodoIds).size !== record.workedTodoIds.length ||
-      record.workedTodoIds.some((id) => record.completedTodoIds.includes(id))
-    )
-      throw new Error('关联待办不能重复');
-    for (const todoId of record.workedTodoIds)
-      if (all.get(todoId)?.type !== 'todo') throw new Error('关联的待办不存在');
-    if (new Set(record.completedTodoIds).size !== record.completedTodoIds.length)
-      throw new Error('完成待办不能重复');
-    for (const todoId of record.completedTodoIds) {
-      if (all.get(todoId)?.type !== 'todo') throw new Error('完成的待办不存在');
-      if (records.some((r) => r.type === 'actual' && r.completedTodoIds.includes(todoId)))
-        throw new Error('该待办已有实际完成记录，请编辑原记录');
-    }
+    if (new Set(record.itemIds).size !== record.itemIds.length) throw new Error('关联条目不能重复');
+    for (const itemId of record.itemIds)
+      if (all.get(itemId)?.type !== 'todo') throw new Error('关联的 TODO 或 IDEA 不存在');
     if (
       records.some(
         (r) =>
@@ -330,7 +283,7 @@ export function timeTotals(entries: Entry[], from: string, to: string) {
       }
     occupied.set(r.date, used);
     const ids = new Set<string>();
-    for (const todoId of actualTodoIds(r)) {
+    for (const todoId of r.itemIds) {
       const todo = all.get(todoId);
       const point = todo?.type === 'todo' ? all.get(todo.milestoneId) : null;
       const line = point?.type === 'milestone' ? all.get(point.lineId) : null;

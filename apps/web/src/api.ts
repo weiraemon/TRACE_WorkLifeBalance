@@ -4,9 +4,10 @@ import {
   type RecordData,
   type Entry,
   type Snapshot,
-  type MilestoneContent,
+  type NoteContent,
   type DeletePreview,
   type DeleteResult,
+  type SaveOptions,
 } from '../../../packages/domain/index';
 let token = '';
 let vaultId = '';
@@ -45,8 +46,10 @@ export const deleteSpace = (id: string, entries: Entry[]) =>
     id,
     expectations: Object.fromEntries(entries.map((e) => [e.data.id, e.revision])),
   });
-export const save = (data: RecordData, entry?: Entry) =>
-  api<Entry>('records', { data, revision: entry?.revision });
+export const save = (data: RecordData, entry?: Entry, options?: SaveOptions) =>
+  api<Entry>('records', { data, revision: entry?.revision, options });
+export const promote = (entry: Entry) =>
+  api<Entry>('promote', { id: entry.data.id, revision: entry.revision });
 export function createRecord(type: RecordData['type'], fields: object): RecordData {
   const now = new Date().toISOString();
   return parseRecord({
@@ -58,19 +61,14 @@ export function createRecord(type: RecordData['type'], fields: object): RecordDa
     ...fields,
   });
 }
-export async function openResource(id: string, native = false) {
+export async function openResource(id: string, native = true) {
   const result = await api<{ url?: string }>('open', { id, native });
   if (result.url?.startsWith('obsidian://')) window.location.href = result.url;
   else if (result.url) window.open(result.url, '_blank', 'noopener,noreferrer');
 }
-export const readMilestoneContent = (id: string, resourceId?: string) =>
-  api<MilestoneContent>('milestone-content', { action: 'read', id, resourceId });
-export const saveMilestoneContent = (
-  id: string,
-  body: string,
-  revision: string,
-  resourceId?: string,
-) => api<MilestoneContent>('milestone-content', { action: 'save', id, body, revision, resourceId });
+export const readContent = (id: string) => api<NoteContent>('content', { action: 'read', id });
+export const saveContent = (id: string, body: string, revision: string) =>
+  api<NoteContent>('content', { action: 'save', id, body, revision });
 export async function openObsidian(id: string) {
   const result = await api<{ url: string }>('obsidian', { id });
   window.location.href = result.url;

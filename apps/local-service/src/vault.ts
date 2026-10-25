@@ -7,15 +7,29 @@ import {
   parseRecord,
   validateChange,
   noteInputSchema,
-  actualTodoIds,
+  saveOptionsSchema,
+  isSpaceItem,
+  localDay,
   type Entry,
   type Snapshot,
   type RecordData,
-  type MilestoneContent,
+  type NoteContent,
   type DeletePreview,
   type DeleteResult,
+  type SaveOptions,
+  type BusinessLine,
+  type Milestone,
+  type Todo,
 } from '../../../packages/domain/index';
-import { spaceSubtree } from '../../../packages/domain/workspace';
+import { spaceSubtree, lineFor } from '../../../packages/domain/workspace';
+import {
+  appendComment,
+  section,
+  putSection,
+  refreshHeadings,
+  unbindSections,
+  nodeHeading,
+} from './line-notes';
 
 export class VaultError extends Error {
   constructor(
@@ -28,7 +42,6 @@ export class VaultError extends Error {
 export const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const slash = (value: string) => value.split(path.sep).join('/');
 const ignored = new Set(['.git', '.obsidian', '.atlas', 'node_modules']);
-const deletionLevels = { project: 0, workline: 1, milestone: 2, todo: 3 };
 const frontmatter = /^(\uFEFF?---\r?\n)([\s\S]*?)(^---(?:\r?\n|$))/m;
 const backupSchema = z.object({
   version: z.literal(1),
@@ -36,6 +49,18 @@ const backupSchema = z.object({
   files: z.array(z.object({ path: z.string().min(1), content: z.string() })),
 });
 const backupName = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.json$/;
+const changesSchema = z
+  .array(
+    z
+      .object({
+        path: z.string().min(1),
+        expected: z.string().nullable(),
+        content: z.string().nullable(),
+      })
+      .strict(),
+  )
+  .max(10000);
+type FileChange = z.infer<typeof changesSchema>[number];
 async function readText(filename: string) {
   const bytes = await fs.readFile(filename);
   try {
@@ -72,7 +97,7 @@ export function updateNote(source: string, data: RecordData) {
   if (!range) throw new VaultError('无法安全定位 ATLAS 字段');
   const newline = source.includes('\r\n') ? '\r\n' : '\n';
   const replacement =
-    '\n' +
+    newline +
     stringify({ managed: true, record: data })
       .trimEnd()
       .split('\n')
@@ -82,7 +107,7 @@ export function updateNote(source: string, data: RecordData) {
   const yaml = note.match[2];
   return (
     note.match[1] +
-    yaml.slice(0, range[0]) +
+    yaml.slice(0, range[0]).trimEnd() +
     replacement +
     yaml.slice(range[2]) +
     source.slice(note.match[1].length + yaml.length)
@@ -118,7 +143,13 @@ export class Vault {
         );
       throw error;
     }
-    return vault;
+    try {
+      await vault.resumeChanges();
+      return vault;
+    } catch (error) {
+      await vault.close();
+      throw error;
+    }
   }
   async close() {
     this.closing = true;
@@ -154,7 +185,15 @@ export class Vault {
   }
   private serialized<T>(fn: () => Promise<T>): Promise<T> {
     if (this.closing) throw new VaultError('Vault 已关闭或正在切换，请重新连接', 409);
-    const task = this.tail.then(fn);
+    const task = this.tail.then(async () => {
+      try {
+        await fs.access(await this.safe('.atlas/pending.json', true));
+        throw new VaultError('有未完成的跨文件操作，请重新连接以恢复；不要重复提交', 409);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+      return fn();
+    });
     this.tail = task.catch(() => {});
     return task;
   }
@@ -163,6 +202,15 @@ export class Vault {
     const entries: Entry[] = [],
       files: Snapshot['files'] = [],
       issues: Snapshot['issues'] = [];
+    try {
+      await fs.access(await this.safe('.atlas/pending.json', true));
+      issues.push({
+        path: '.atlas/pending.json',
+        message: '跨文件操作未完成，请重新连接当前目录恢复',
+      });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
     const walk = async (relative: string) => {
       let children;
       try {
@@ -261,41 +309,181 @@ export class Vault {
       });
     }
   }
-  async save(input: unknown, revision?: string): Promise<Entry> {
+  private async resumeChanges() {
+    let changes: FileChange[];
+    try {
+      changes = changesSchema.parse(
+        JSON.parse(await readText(await this.safe('.atlas/pending.json'))),
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw error;
+    }
+    const current: (string | null)[] = [];
+    for (const change of changes) {
+      let value: string | null = null;
+      try {
+        value = hash(await readText(await this.safe(change.path)));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+      if (
+        value !== change.expected &&
+        value !== (change.content === null ? null : hash(change.content))
+      )
+        throw new VaultError('跨文件操作遇到外部修改，未覆盖文件：' + change.path, 409);
+      current.push(value);
+    }
+    for (const [index, change] of changes.entries()) {
+      const finalHash = change.content === null ? null : hash(change.content);
+      if (current[index] === finalHash) continue;
+      if (change.content === null) {
+        const absolute = await this.safe(change.path);
+        if (hash(await readText(absolute)) !== change.expected)
+          throw new VaultError('删除遇到外部修改', 409);
+        await fs.unlink(absolute);
+      } else await this.atomic(change.path, change.content, current[index]);
+    }
+    await fs.unlink(await this.safe('.atlas/pending.json'));
+  }
+  async recover() {
+    if (this.closing) throw new VaultError('工作目录正在关闭', 409);
+    const task = this.tail.then(() => this.resumeChanges());
+    this.tail = task.catch(() => {});
+    return task;
+  }
+  private async commitChanges(changes: FileChange[]) {
+    changesSchema.parse(changes);
+    if (!changes.length) return;
+    if (new Set(changes.map((c) => c.path)).size !== changes.length)
+      throw new VaultError('同一文件不能重复发布');
+    // The journal contains intended new content, not per-operation backups or undo history.
+    for (const change of changes) {
+      let current: string | null = null;
+      try {
+        current = hash(await readText(await this.safe(change.path)));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+      if (current !== change.expected)
+        throw new VaultError('文件已更改，未开始操作：' + change.path, 409);
+    }
+    await this.atomic('.atlas/pending.json', JSON.stringify(changes), null);
+    await this.resumeChanges();
+  }
+  private createLineParts(line: BusinessLine): RecordData[] {
+    const now = new Date().toISOString(),
+      notesId = randomUUID();
+    const relative = `ATLAS/knowledge/业务线/${notesId}.md`;
+    const notes = parseRecord({
+      schemaVersion: 1,
+      id: notesId,
+      createdAt: now,
+      updatedAt: now,
+      type: 'resource',
+      title: line.title + ' · Notes',
+      target: relative,
+      location: 'vault',
+      noteId: notesId,
+      tag: '业务线',
+    });
+    const pool = parseRecord({
+      schemaVersion: 1,
+      id: randomUUID(),
+      createdAt: now,
+      updatedAt: now,
+      type: 'milestone',
+      title: '待办池',
+      lineId: line.id,
+      pool: true,
+    });
+    return [{ ...line, notesId }, notes, pool];
+  }
+  private async notesBody(line: BusinessLine, entries: Entry[], bodies: Map<string, string>) {
+    if (!line.notesId) throw new VaultError('业务线缺少 Notes，请检查目录诊断', 409);
+    if (bodies.has(line.notesId)) return bodies.get(line.notesId)!;
+    const matches = entries.filter((e) => e.data.id === line.notesId);
+    if (matches.length !== 1) throw new VaultError('Notes 不存在或 ID 重复', 409);
+    const note = matches[0];
+    if (!note || note.data.type !== 'resource' || note.data.noteId !== note.data.id)
+      throw new VaultError('业务线 Notes 不存在或不是专属笔记', 409);
+    const source = await readText(await this.safe(note.path));
+    if (hash(source) !== note.revision) throw new VaultError('Notes 已被外部修改，请重新加载', 409);
+    const header = frontmatter.exec(source);
+    const body = source.slice(header?.index === 0 ? header[0].length : 0);
+    bodies.set(line.notesId, body);
+    return body;
+  }
+  private async prepareChanges(
+    entries: Entry[],
+    records: RecordData[],
+    bodies = new Map<string, string>(),
+  ) {
+    const changes: FileChange[] = [];
+    const changed = new Map(records.map((r) => [r.id, r]));
+    for (const id of bodies.keys()) {
+      const data = changed.get(id) ?? entries.find((e) => e.data.id === id)?.data;
+      if (!data) throw new VaultError('Notes 不存在', 409);
+      changed.set(id, data);
+    }
+    for (const data of changed.values()) {
+      const matches = entries.filter((e) => e.data.id === data.id);
+      if (matches.length > 1) throw new VaultError('重复 ID，拒绝发布', 409);
+      const existing = matches[0];
+      const relative =
+        existing?.path ??
+        (data.type === 'resource' && data.noteId === data.id
+          ? data.target
+          : `ATLAS/${data.type}/${data.id}.md`);
+      let source = existing ? await readText(await this.safe(relative)) : newNote(data);
+      if (existing && hash(source) !== existing.revision)
+        throw new VaultError('文件已被外部修改：' + relative, 409);
+      source =
+        existing && JSON.stringify(existing.data) !== JSON.stringify(data)
+          ? updateNote(source, data)
+          : source;
+      if (bodies.has(data.id)) {
+        const match = frontmatter.exec(source);
+        if (!match || match.index !== 0) throw new VaultError('Notes 管理字段损坏', 409);
+        source = match[0] + bodies.get(data.id);
+      }
+      if (!existing || hash(source) !== existing.revision)
+        changes.push({ path: relative, content: source, expected: existing?.revision ?? null });
+    }
+    return changes;
+  }
+  async save(input: unknown, revision?: string, options: SaveOptions = {}): Promise<Entry> {
     return this.serialized(async () => {
       let data = parseRecord(input);
+      const settings = saveOptionsSchema.parse(options);
       const snapshot = await this.scan();
       const matches = snapshot.entries.filter((e) => e.data.id === data.id);
       if (matches.length > 1) throw new VaultError('重复 ID，拒绝写入', 409);
       const existing = matches[0];
       if (existing && (revision !== existing.revision || existing.data.type !== data.type))
         throw new VaultError('文件已更改，请重新加载；未覆盖你的编辑', 409);
-      if (!existing && revision)
-        throw new VaultError('原记录已移除或无法读取，请检查 Vault 诊断', 409);
-      if (data.type === 'actual') {
-        const previous = existing?.data;
-        data = {
-          ...data,
-          history:
-            previous?.type === 'actual'
-              ? [
-                  ...previous.history,
-                  {
-                    changedAt: new Date().toISOString(),
-                    date: previous.date,
-                    startTime: previous.startTime,
-                    endTime: previous.endTime,
-                    description: previous.description,
-                  },
-                ]
-              : [],
-        };
+      if (!existing && revision) throw new VaultError('原记录已移除或无法读取', 409);
+      if (settings.newItems.length && data.type !== 'actual')
+        throw new VaultError('只有实际表单可以同时发布新条目');
+      if (
+        settings.newItems.some(
+          (r) => r.id === data.id || snapshot.entries.some((e) => e.data.id === r.id),
+        ) ||
+        new Set(settings.newItems.map((r) => r.id)).size !== settings.newItems.length
+      )
+        throw new VaultError('新条目 ID 已存在或重复', 409);
+      const now = new Date().toISOString();
+      data = { ...data, createdAt: existing?.data.createdAt ?? data.createdAt, updatedAt: now };
+      if (settings.completion !== undefined) {
+        if (!isSpaceItem(data)) throw new VaultError('此对象不支持完成');
+        if (data.type === 'milestone' && data.pool) throw new VaultError('待办池不完成');
+        data = { ...data, completedAt: settings.completion ? now : null };
       }
       if (data.type === 'resource' && data.location === 'vault' && data.noteId !== data.id) {
-        const target = await this.safe(data.target);
-        const stat = await fs.stat(target);
-        const targetPath = slash(data.target);
-        const note = snapshot.entries.find((e) => e.path === targetPath);
+        const targetPath = data.target;
+        const target = await this.safe(targetPath),
+          stat = await fs.stat(target);
+        const note = snapshot.entries.find((e) => e.path === slash(targetPath));
         data = {
           ...data,
           fingerprint: stat.isFile() ? hash(await fs.readFile(target)) : null,
@@ -311,21 +499,148 @@ export class Vault {
           data.target !== existing.data.target ||
           data.tag !== existing.data.tag)
       )
-        throw new VaultError('笔记路径和标签由创建时确定，请在 Obsidian 中整理文件');
-      validateChange(data, snapshot.entries);
-      const now = new Date().toISOString();
-      data = { ...data, createdAt: existing?.data.createdAt ?? data.createdAt, updatedAt: now };
-      const relative = existing?.path ?? `ATLAS/${data.type}/${data.id}.md`;
-      let source = newNote(data);
-      if (existing) {
-        const original = await readText(await this.safe(relative));
-        if (hash(original) !== revision) throw new VaultError('外部修改冲突', 409);
-        source = updateNote(original, data);
+        throw new VaultError('笔记路径和标签由创建时确定，请在文件管理器中整理');
+      if (
+        data.type === 'workline' &&
+        existing?.data.type === 'workline' &&
+        data.notesId !== existing.data.notesId
+      )
+        throw new VaultError('业务线使用自己的 Notes');
+      if (
+        data.type === 'milestone' &&
+        data.pool &&
+        (!existing ||
+          existing.data.type !== 'milestone' ||
+          !existing.data.pool ||
+          data.lineId !== existing.data.lineId)
+      )
+        throw new VaultError('待办池由业务线自动创建，不能复制或移动');
+      if (
+        data.type === 'milestone' &&
+        existing?.data.type === 'milestone' &&
+        existing.data.pool &&
+        !data.pool
+      )
+        throw new VaultError('不能移除待办池的系统用途');
+      const changed = new Map<string, RecordData>();
+      if (data.type === 'workline' && !existing) {
+        for (const part of this.createLineParts(data)) changed.set(part.id, part);
+        data = changed.get(data.id)!;
+      } else changed.set(data.id, data);
+      for (const item of settings.newItems) changed.set(item.id, parseRecord(item));
+      if (data.type === 'actual') {
+        const linkedIds = data.itemIds;
+        if (
+          settings.newItems.some((r) => !linkedIds.includes(r.id)) ||
+          settings.completeIds.some((id) => !linkedIds.includes(id))
+        )
+          throw new VaultError('新条目和本次完成必须关联到这段实际工作');
+        for (const id of settings.completeIds) {
+          const item = changed.get(id) ?? snapshot.entries.find((e) => e.data.id === id)?.data;
+          if (item?.type !== 'todo') throw new VaultError('完成条目不存在');
+          changed.set(id, { ...item, completedAt: item.completedAt ?? now, updatedAt: now });
+        }
+      } else if (settings.completeIds.length) throw new VaultError('本次完成只用于实际工作');
+      if (
+        data.type === 'milestone' &&
+        existing?.data.type === 'milestone' &&
+        (settings.completion !== undefined || data.completedAt !== existing.data.completedAt)
+      ) {
+        const children = snapshot.entries
+          .map((e) => e.data)
+          .filter((r): r is Todo => r.type === 'todo' && r.milestoneId === data.id);
+        for (const child of children)
+          changed.set(child.id, { ...child, completedAt: data.completedAt, updatedAt: now });
+        if (children.length) {
+          data = { ...data, completedAt: null };
+          changed.set(data.id, data);
+        }
       }
-      await this.atomic(relative, source, existing?.revision ?? null);
-      return { data, path: relative, revision: hash(source) };
+      const virtual = [
+        ...snapshot.entries.filter((e) => !changed.has(e.data.id)),
+        ...[...changed.values()].map((r) => ({ data: r, path: '', revision: '' })),
+      ];
+      for (const record of changed.values()) validateChange(record, virtual);
+      const bodies = new Map<string, string>();
+      for (const part of changed.values())
+        if (part.type === 'workline' && !snapshot.entries.some((e) => e.data.id === part.id))
+          bodies.set(part.notesId!, '\n# ' + part.title + '\n');
+      const pointFor = (item: Todo) =>
+        virtual.find((e) => e.data.id === item.milestoneId)?.data as Milestone;
+      if (
+        existing?.data.type === 'todo' &&
+        data.type === 'todo' &&
+        existing.data.milestoneId !== data.milestoneId
+      ) {
+        const oldLine = lineFor(existing.data, snapshot.entries)!;
+        const oldBody = await this.notesBody(oldLine, snapshot.entries, bodies);
+        const found = section(oldBody, 'item', data.id);
+        if (found) {
+          bodies.set(oldLine.notesId!, putSection(oldBody, 'item', data.id, null));
+          const newLine = lineFor(data, virtual)!;
+          let newBody = await this.notesBody(newLine, virtual, bodies);
+          const node = pointFor(data),
+            parent = section(newBody, 'node', node.id)?.text ?? nodeHeading(node);
+          newBody = putSection(
+            newBody,
+            'node',
+            node.id,
+            putSection(parent, 'item', data.id, found.text),
+          );
+          bodies.set(newLine.notesId!, newBody);
+        }
+      }
+      if (
+        existing?.data.type === 'milestone' &&
+        data.type === 'milestone' &&
+        existing.data.lineId !== data.lineId
+      ) {
+        const oldLine = lineFor(existing.data, snapshot.entries)!,
+          newLine = lineFor(data, virtual)!;
+        const oldBody = await this.notesBody(oldLine, snapshot.entries, bodies),
+          found = section(oldBody, 'node', data.id);
+        if (found) {
+          bodies.set(oldLine.notesId!, putSection(oldBody, 'node', data.id, null));
+          const newBody = await this.notesBody(newLine, virtual, bodies);
+          bodies.set(newLine.notesId!, putSection(newBody, 'node', data.id, found.text));
+        }
+      }
+      if (data.type === 'milestone' || data.type === 'todo') {
+        const line = lineFor(data, virtual)!;
+        const body = await this.notesBody(line, virtual, bodies);
+        bodies.set(
+          line.notesId!,
+          refreshHeadings(
+            body,
+            data.type === 'todo' ? pointFor(data) : data,
+            data.type === 'todo' ? data : undefined,
+          ),
+        );
+      }
+      for (const comment of settings.comments) {
+        const target = virtual.find((e) => e.data.id === comment.targetId)?.data;
+        if (target?.type !== 'milestone' && target?.type !== 'todo')
+          throw new VaultError('批注对象不存在');
+        const line = lineFor(target, virtual)!;
+        const body = await this.notesBody(line, virtual, bodies);
+        bodies.set(
+          line.notesId!,
+          appendComment(
+            body,
+            target.type === 'todo' ? pointFor(target) : target,
+            target.type === 'todo' ? target : undefined,
+            { ...comment, date: comment.date ?? (data.type === 'actual' ? data.date : localDay()) },
+          ),
+        );
+      }
+      const changes = await this.prepareChanges(snapshot.entries, [...changed.values()], bodies);
+      await this.commitChanges(changes);
+      const result = (await this.scan()).entries.find((e) => e.data.id === data.id);
+      if (!result) throw new VaultError('记录已发布但无法读取，请检查诊断', 409);
+      return result;
     });
   }
+
   async createMarkdown(input: unknown): Promise<Entry> {
     const fields = noteInputSchema.parse(input);
     return this.serialized(async () => {
@@ -353,122 +668,134 @@ export class Vault {
       return { data, path: relative, revision: hash(source) };
     });
   }
-  private async milestoneSource(id: string, resourceId?: string) {
+  private async contentSource(id: string) {
     const snapshot = await this.scan();
     const matches = snapshot.entries.filter((e) => e.data.id === id);
-    if (matches.length > 1) throw new VaultError('重复 ID，拒绝读写正文', 409);
-    const entry = matches[0];
-    if (entry?.data.type !== 'milestone') throw new VaultError('节点不存在或无法读取', 409);
-    let relative = entry.path;
-    let resource: Entry | undefined;
-    if (resourceId) {
-      const resources = snapshot.entries.filter((e) => e.data.id === resourceId);
-      if (!entry.data.resourceIds.includes(resourceId) || resources.length !== 1)
-        throw new VaultError('节点的文件绑定已更改，请保留草稿并重新打开详情', 409);
-      resource = resources[0];
-      const resolved = await this.resolveResource(resourceId);
-      if (resolved.location !== 'vault' || !/\.md$/i.test(resolved.target))
-        throw new VaultError('节点只能读写 Vault 中绑定的 Markdown');
-      relative = resolved.target;
-    }
-    const absolute = await this.safe(relative);
-    if ((await fs.stat(absolute)).size > 5 * 1024 * 1024)
-      throw new VaultError('笔记超过 5 MB，请在 Obsidian 中编辑');
-    const source = await readText(absolute);
-    const note = decodeNote(source);
-    if (note && snapshot.entries.filter((e) => e.data.id === note.data.id).length !== 1)
-      throw new VaultError('重复 ID，拒绝读写正文', 409);
-    if (!resourceId && hash(source) !== entry.revision)
-      throw new VaultError('文件已更改，请重新加载正文', 409);
-    const match = frontmatter.exec(source);
-    const header = match?.index === 0 ? match[0] : source.startsWith('\uFEFF') ? '\uFEFF' : '';
-    return { source, relative, note, header, resource };
+    if (matches.length !== 1 || !isSpaceItem(matches[0].data))
+      throw new VaultError('工作对象不存在或 ID 重复', 409);
+    const item = matches[0].data;
+    const line = lineFor(item, snapshot.entries);
+    if (!line?.notesId) throw new VaultError('此对象没有业务线 Notes', 409);
+    const notes = snapshot.entries.filter((e) => e.data.id === line.notesId);
+    if (notes.length !== 1) throw new VaultError('Notes 不存在或 ID 重复', 409);
+    const note = notes[0];
+    if (!note || note.data.type !== 'resource' || note.data.noteId !== note.data.id)
+      throw new VaultError('Notes 不存在', 409);
+    const source = await readText(await this.safe(note.path));
+    if (hash(source) !== note.revision) throw new VaultError('Notes 已被外部修改，请重新加载', 409);
+    const header = frontmatter.exec(source);
+    if (!header || header.index !== 0) throw new VaultError('Notes 管理字段损坏');
+    return { source, note, item, header: header[0], body: source.slice(header[0].length) };
   }
-  async readMilestoneContent(id: string, resourceId?: string): Promise<MilestoneContent> {
-    const { source, relative, header } = await this.milestoneSource(id, resourceId);
-    return { body: source.slice(header.length), revision: hash(source), path: relative };
+  async readContent(id: string): Promise<NoteContent> {
+    const { source, note, item, body } = await this.contentSource(id);
+    const text =
+      item.type === 'workline'
+        ? body
+        : (section(body, item.type === 'todo' ? 'item' : 'node', item.id)?.text ?? '');
+    return { body: text, revision: hash(source), path: note.path };
   }
-  async saveMilestoneContent(
-    id: string,
-    body: string,
-    revision: string,
-    resourceId?: string,
-  ): Promise<MilestoneContent> {
+  async saveContent(id: string, body: string, revision: string): Promise<NoteContent> {
     return this.serialized(async () => {
-      const { source, relative, note, header, resource } = await this.milestoneSource(
-        id,
-        resourceId,
-      );
-      if (hash(source) !== revision)
-        throw new VaultError('文件已被外部修改，未覆盖你的正文；请保留草稿并重新加载正文', 409);
-      const joined =
-        header + (header && header !== '\uFEFF' && !header.endsWith('\n') ? '\n' : '') + body;
-      const changed = note
-        ? updateNote(joined, {
-            ...note.data,
-            updatedAt: new Date().toISOString(),
-          })
-        : joined;
-      let resourceUpdate: { path: string; source: string; revision: string } | undefined;
-      if (resource?.data.type === 'resource' && !resource.data.noteId) {
-        const original = await readText(await this.safe(resource.path));
-        if (hash(original) !== resource.revision) throw new VaultError('文件绑定已被外部修改', 409);
-        resourceUpdate = {
-          path: resource.path,
-          revision: resource.revision,
-          source: updateNote(original, {
-            ...resource.data,
-            target: relative,
-            fingerprint: hash(changed),
-            updatedAt: new Date().toISOString(),
-          }),
-        };
-      }
-      await this.atomic(relative, changed, revision);
-      if (resourceUpdate) {
-        try {
-          await this.atomic(resourceUpdate.path, resourceUpdate.source, resourceUpdate.revision);
-        } catch {
-          throw new VaultError(
-            '正文已保存，但资源引用更新失败；请保留草稿，重新载入并检查文件绑定',
-            409,
-          );
-        }
-      }
-      return { body, revision: hash(changed), path: relative };
+      const current = await this.contentSource(id);
+      if (current.item.type !== 'workline')
+        throw new VaultError('请在业务线 Notes 中编辑全文，条目使用添加批注');
+      if (hash(current.source) !== revision)
+        throw new VaultError('文件已被外部修改，未覆盖正文；请保留草稿并重新加载', 409);
+      await this.commitChanges([
+        { path: current.note.path, expected: revision, content: current.header + body },
+      ]);
+      return { body, revision: hash(current.header + body), path: current.note.path };
     });
   }
+  async promote(id: string, revision: string): Promise<Entry> {
+    return this.serialized(async () => {
+      const snapshot = await this.scan(),
+        matches = snapshot.entries.filter((e) => e.data.id === id);
+      if (matches.length > 1) throw new VaultError('重复 ID，拒绝升线', 409);
+      const entry = matches[0];
+      if (!entry) throw new VaultError('升线对象不存在', 409);
+      if (entry.data.type === 'workline') return entry;
+      if (entry.revision !== revision) throw new VaultError('对象已更改，请重新加载后升线', 409);
+      const item = entry.data;
+      if (item.type !== 'todo' && item.type !== 'milestone')
+        throw new VaultError('只有节点、TODO、IDEA可升为业务线');
+      if (item.type === 'milestone' && item.pool) throw new VaultError('待办池不能升级');
+      const oldLine = lineFor(item, snapshot.entries)!;
+      const line = parseRecord({
+        schemaVersion: 1,
+        id: item.id,
+        createdAt: item.createdAt,
+        updatedAt: new Date().toISOString(),
+        type: 'workline',
+        title: item.title,
+        importance: item.importance,
+        projectId: oldLine.projectId,
+        resourceIds: item.resourceIds,
+      }) as BusinessLine;
+      const parts = this.createLineParts(line);
+      const newLine = parts[0] as BusinessLine,
+        pool = parts.find((r) => r.type === 'milestone') as Milestone;
+      // A scheduled commitment remains a real node, rather than losing its deadline on promotion.
+      const destination =
+        item.type === 'milestone' && (item.dueDate || item.tags.length)
+          ? { ...item, id: randomUUID(), lineId: newLine.id, resourceIds: [] }
+          : pool;
+      if (destination !== pool) parts.push(destination);
+      const bodies = new Map<string, string>();
+      const oldBody = await this.notesBody(oldLine, snapshot.entries, bodies);
+      const kind = item.type === 'todo' ? 'item' : 'node';
+      const found = section(oldBody, kind, item.id);
+      bodies.set(oldLine.notesId!, putSection(oldBody, kind, item.id, null));
+      let newBody = '\n# ' + line.title + '\n';
+      if (found) {
+        if (item.type === 'todo') newBody += '\n' + found.text.replace(/^###/, '##') + '\n';
+        else
+          newBody = putSection(
+            newBody,
+            'node',
+            destination.id,
+            destination === pool
+              ? nodeHeading(pool) +
+                  '\n\n' +
+                  nodeHeading(item).replace(/^## /, '') +
+                  '\n\n' +
+                  found.text.replace(/^##[^\r\n]*(?:\r?\n|$)/, '')
+              : found.text,
+          );
+      }
+      bodies.set(newLine.notesId!, newBody);
+      if (item.type === 'milestone')
+        for (const { data } of snapshot.entries)
+          if (data.type === 'todo' && data.milestoneId === item.id)
+            parts.push({ ...data, milestoneId: destination.id });
+      if (item.type === 'todo')
+        for (const { data } of snapshot.entries)
+          if (data.type === 'actual' && data.itemIds.includes(item.id))
+            parts.push({ ...data, itemIds: data.itemIds.filter((target) => target !== item.id) });
+      const virtual = [
+        ...snapshot.entries.filter((e) => !parts.some((r) => r.id === e.data.id)),
+        ...parts.map((data) => ({ data, path: '', revision: '' })),
+      ];
+      for (const data of parts) validateChange(data, virtual);
+      await this.commitChanges(await this.prepareChanges(snapshot.entries, parts, bodies));
+      return (await this.scan()).entries.find((e) => e.data.id === id)!;
+    });
+  }
+
   async obsidianUrl(relative: string) {
     return 'obsidian://open?path=' + encodeURIComponent(await this.safe(relative));
   }
   async deletePreview(id: string): Promise<DeletePreview> {
     const snapshot = await this.scan();
-    const entries = spaceSubtree(snapshot.entries, id).sort(
-      (a, b) =>
-        deletionLevels[a.data.type as keyof typeof deletionLevels] -
-          deletionLevels[b.data.type as keyof typeof deletionLevels] ||
-        a.data.createdAt.localeCompare(b.data.createdAt) ||
-        a.data.id.localeCompare(b.data.id),
-    );
-    if (!entries.length) throw new VaultError('工作内容不存在或无法读取，请重新加载', 409);
-    const ids = new Set(entries.map((e) => e.data.id));
-    const paths = new Set(entries.map((e) => e.path));
-    const linkedActuals = snapshot.entries.filter(
-      (e) => e.data.type === 'actual' && actualTodoIds(e.data).some((todoId) => ids.has(todoId)),
-    );
-    const linkedResources = snapshot.entries.filter(
-      (e) =>
-        e.data.type === 'resource' &&
-        ((e.data.noteId && ids.has(e.data.noteId)) ||
-          (e.data.location === 'vault' && paths.has(e.data.target.replaceAll('\\', '/')))),
-    );
+    const entries = spaceSubtree(snapshot.entries, id);
+    if (!entries.length) throw new VaultError('工作内容不存在或无法读取', 409);
+    const root = entries.find((e) => e.data.id === id)!.data;
     const blockedReason = snapshot.issues.length
-      ? 'Vault 存在诊断，请先处理后再删除：' + snapshot.issues[0].message
-      : linkedActuals.length
-        ? `这些待办已关联 ${linkedActuals.length} 条实际工作记录，请先到今日编辑对应记录，解除待办关联后再删除。`
-        : linkedResources.length
-          ? '待删除的 Markdown 本身被资源引用，请先解除对应资源引用后再删除。'
-          : null;
+      ? '工作目录存在诊断，请先处理：' + snapshot.issues[0].message
+      : root.type === 'milestone' && root.pool
+        ? '待办池随业务线保留，不能单独删除'
+        : null;
     return { entries, blockedReason };
   }
   async deleteSpace(id: string, expectations: Record<string, string>): Promise<DeleteResult> {
@@ -480,32 +807,46 @@ export class Vault {
         preview.entries.some((e) => expectations[e.data.id] !== e.revision)
       )
         throw new VaultError('删除范围或文件已更改，请重新检查后再删除', 409);
-      for (const entry of preview.entries)
-        if (hash(await readText(await this.safe(entry.path))) !== entry.revision)
-          throw new VaultError('外部修改冲突，未删除文件', 409);
-      const ordered = [...preview.entries].sort(
-        (a, b) =>
-          deletionLevels[b.data.type as keyof typeof deletionLevels] -
-          deletionLevels[a.data.type as keyof typeof deletionLevels],
+      const snapshot = await this.scan(),
+        ids = new Set(preview.entries.map((e) => e.data.id));
+      const paths = new Set(preview.entries.map((e) => e.path));
+      const brokenResources = snapshot.entries.filter(
+        (e) =>
+          e.data.type === 'resource' &&
+          ((e.data.noteId && ids.has(e.data.noteId)) ||
+            (e.data.location === 'vault' && paths.has(e.data.target.replaceAll('\\', '/')))),
       );
-      const deletedIds: string[] = [];
-      try {
-        for (const entry of ordered) {
-          const target = await this.safe(entry.path);
-          if (hash(await readText(target)) !== entry.revision)
-            throw new VaultError('外部修改冲突', 409);
-          await fs.unlink(target);
-          deletedIds.push(entry.data.id);
+      for (const e of brokenResources) ids.add(e.data.id);
+      const records: RecordData[] = [],
+        bodies = new Map<string, string>();
+      for (const { data } of snapshot.entries) {
+        if (ids.has(data.id)) continue;
+        if (data.type === 'actual' && data.itemIds.some((target) => ids.has(target)))
+          records.push({ ...data, itemIds: data.itemIds.filter((target) => !ids.has(target)) });
+        if (isSpaceItem(data) && data.resourceIds.some((target) => ids.has(target)))
+          records.push({
+            ...data,
+            resourceIds: data.resourceIds.filter((target) => !ids.has(target)),
+          });
+        if (data.type === 'workline') {
+          const body = await this.notesBody(data, snapshot.entries, bodies);
+          bodies.set(data.notesId!, unbindSections(body, ids));
         }
-      } catch (error) {
-        throw new VaultError(
-          '删除中断，已删除 ' + deletedIds.length + ' 项，其余内容保留。' + String(error),
-          409,
-        );
       }
-      return { deletedIds };
+      // The text survives even when deleting its former business line.
+      for (const { data } of preview.entries)
+        if (data.type === 'workline') {
+          const body = await this.notesBody(data, snapshot.entries, bodies);
+          bodies.set(data.notesId!, unbindSections(body, ids));
+        }
+      const changes = await this.prepareChanges(snapshot.entries, records, bodies);
+      for (const entry of [...preview.entries, ...brokenResources])
+        changes.push({ path: entry.path, expected: entry.revision, content: null });
+      await this.commitChanges(changes);
+      return { deletedIds: [...ids] };
     });
   }
+
   private async storedBackups() {
     let names: string[];
     try {

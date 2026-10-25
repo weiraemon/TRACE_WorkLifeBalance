@@ -3,16 +3,22 @@ import { todosForDay, contactsForDay } from '../../../../packages/domain/workspa
 import type { Snapshot } from '../../../../packages/domain/index';
 import { EmptyState } from '../components/ui';
 import { ImportanceDot } from '../components/Importance';
+import { QuickCapture } from '../features/QuickCapture';
+import { save } from '../api';
 export function Today({
   snapshot,
   date,
   goWorkspace,
   timeline,
+  reload,
+  run,
 }: {
   snapshot: Snapshot;
   date: string;
   goWorkspace: (id?: string) => void;
   timeline: ReactNode;
+  reload: () => Promise<void>;
+  run: (fn: () => Promise<unknown>) => void;
 }) {
   const contexts = todosForDay(snapshot.entries, date);
   const contacts = contactsForDay(snapshot.entries, date)
@@ -22,6 +28,17 @@ export function Today({
     <div className="today-layout">
       <div className="today-timeline">{timeline}</div>
       <div className="today-lists">
+        <QuickCapture
+          snapshot={snapshot}
+          onCreate={async (item, comment) => {
+            await save(item, undefined, {
+              comments: comment.trim()
+                ? [{ id: crypto.randomUUID(), targetId: item.id, text: comment }]
+                : [],
+            });
+            await reload();
+          }}
+        />
         <section className="today-work" aria-label="当天待办">
           <div className="section-heading">
             <h2>
@@ -36,10 +53,32 @@ export function Today({
           ) : (
             <ul className="today-todos">
               {contexts.map((c) => (
-                <li key={c.todo.id}>
-                  <button className="today-row" onClick={() => goWorkspace(c.todo.id)}>
+                <li key={c.todo.id} data-space-id={c.todo.id} className="today-item-row">
+                  <button
+                    className={`todo-check priority-${c.todo.importance}`}
+                    role="checkbox"
+                    aria-label={`完成 ${c.todo.title}`}
+                    aria-checked={Boolean(c.todo.completedAt)}
+                    onClick={() =>
+                      run(async () => {
+                        await save(
+                          c.todo,
+                          snapshot.entries.find((e) => e.data.id === c.todo.id),
+                          { completion: !c.todo.completedAt },
+                        );
+                        await reload();
+                      })
+                    }
+                  >
+                    {c.todo.completedAt ? '✓' : ''}
+                  </button>
+                  <button
+                    className={`today-row${c.todo.completedAt ? ' today-row-done' : ''}`}
+                    onClick={() => goWorkspace(c.todo.id)}
+                  >
                     <span className="today-task" title={c.todo.title}>
                       <ImportanceDot value={c.todo.importance} />
+                      {c.todo.kind === 'idea' ? 'IDEA · ' : ''}
                       {c.todo.title}
                     </span>
                     <span
@@ -63,7 +102,7 @@ export function Today({
           ) : (
             <ul className="contact-rows">
               {contacts.map((c) => (
-                <li key={c.todo.id}>
+                <li key={c.todo.id} data-space-id={c.todo.id}>
                   <button className="contact-row" onClick={() => goWorkspace(c.todo.id)}>
                     <strong className="contact-person">
                       {c.todo.direction === 'from' ? '等' : '找'} {c.todo.person}
