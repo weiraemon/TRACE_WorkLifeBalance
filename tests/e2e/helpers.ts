@@ -14,14 +14,14 @@ export async function connect(page: Page) {
   await fs.mkdir('.test-vault', { recursive: true });
   const root = await fs.mkdtemp(path.resolve('.test-vault/lines-'));
   await page.goto('/');
-  const settings = page.getByRole('button', { name: /^(连接 Vault|Vault 与备份)$/ });
+  const settings = page.getByRole('button', { name: '备份', exact: true });
   await expect(settings).toBeVisible();
   await settings.click();
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel('工作目录绝对路径').fill(root);
   await dialog.getByRole('button', { name: '连接工作目录', exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: '从这里，继续今天。' })).toBeVisible();
+  await expect(page.getByRole('region', { name: '做了什么', exact: true })).toBeVisible();
 }
 export const nav = (page: Page, name: string) =>
   page

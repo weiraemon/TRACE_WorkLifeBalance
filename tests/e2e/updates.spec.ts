@@ -2,10 +2,57 @@ import { test, expect } from '@playwright/test';
 import { connect, write, refresh, nav, seed, localDay } from './helpers';
 test.beforeEach(async ({ page }) => connect(page));
 
+test('全局导航合并到顶部单行，移除侧栏，窄屏搜索与备份仍可用', async ({ page }) => {
+  await seed(page);
+  await expect(page.locator('.sidebar')).toHaveCount(0);
+  const header = page.locator('.topbar');
+  await expect(page).toHaveTitle('CHAOS · 科研与生活工作台');
+  await expect(header.locator('.app-brand')).toHaveText('CHAOS');
+  const navigation = header.getByRole('navigation', { name: '主导航', exact: true });
+  await expect(navigation.getByRole('button')).toHaveText(['今日', '工作空间', '知识', '回顾']);
+  const backup = header.getByRole('button', { name: '备份', exact: true });
+  await expect(backup.locator('svg')).toHaveCount(1);
+  for (const width of [1440, 600, 375]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await nav(page, '工作空间');
+    await expect(page.getByRole('navigation', { name: '业务导航', exact: true })).toBeVisible();
+    const search = header.getByRole('textbox', { name: '搜索工作', exact: true });
+    await search.fill('论文');
+    await expect(
+      page.getByRole('region', { name: '业务线 · 论文研究', exact: true }),
+    ).toBeVisible();
+    const layout = await header.evaluate((el) => ({
+      centers: [...el.children].map((child) => {
+        const box = child.getBoundingClientRect();
+        return box.top + box.height / 2;
+      }),
+      mainLeft: document.querySelector('main')!.getBoundingClientRect().left,
+      overflow: document.documentElement.scrollWidth > innerWidth,
+    }));
+    expect(Math.max(...layout.centers) - Math.min(...layout.centers)).toBeLessThan(1);
+    expect(layout.mainLeft).toBe(0);
+    expect(layout.overflow).toBe(false);
+    await search.fill('');
+    await backup.click();
+    const dialog = page.getByRole('dialog');
+    await expect(
+      dialog.getByRole('heading', { name: 'Vault 与数据安全', exact: true }),
+    ).toBeVisible();
+    await dialog.getByRole('button', { name: '关闭对话框', exact: true }).click();
+    await nav(page, '知识');
+    await expect(navigation.getByRole('button', { name: '知识', exact: true })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    await nav(page, '工作空间');
+    await page.screenshot({ path: `.test-vault/top-navigation-${width}.png`, fullPage: true });
+  }
+});
+
 test('三份手动快照，删除不自动备份，不提供逐操作撤销', async ({ page }) => {
   await write(page, 'project', { title: '测试项目' });
   await refresh(page);
-  await page.getByRole('button', { name: 'Vault 与备份', exact: true }).click();
+  await page.getByRole('button', { name: '备份', exact: true }).click();
   const dialog = page.getByRole('dialog');
   for (let i = 0; i < 4; i++) {
     await dialog.getByRole('button', { name: '创建管理数据快照', exact: true }).click();
@@ -23,7 +70,7 @@ test('三份手动快照，删除不自动备份，不提供逐操作撤销', as
   await dialog.getByRole('button', { name: '确认删除', exact: true }).click();
   await expect(page.getByRole('region', { name: '项目面 · 测试项目', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '撤销删除', exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Vault 与备份', exact: true }).click();
+  await page.getByRole('button', { name: '备份', exact: true }).click();
   await expect(dialog.locator('.backup-row')).toHaveCount(3);
   page.once('dialog', (value) => value.accept());
   await dialog.getByRole('button', { name: '恢复', exact: true }).first().click();

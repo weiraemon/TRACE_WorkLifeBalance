@@ -9,6 +9,7 @@ test('首页先写内容再绑定业务线，可快速创建 TODO / IDEA，不�
   page,
 }) => {
   const { line } = await seed(page);
+  await page.getByRole('button', { name: 'TODO / IDEA', exact: true }).click();
   const capture = page.getByRole('region', { name: '快速创建 TODO / IDEA' });
   for (const kind of ['idea', 'todo']) {
     await capture.getByLabel('要做什么', { exact: true }).fill('临时' + kind);
@@ -35,34 +36,29 @@ test('首页先写内容再绑定业务线，可快速创建 TODO / IDEA，不�
 
 test('实际表单新建条目与批注一起保存，取消草稿不留条目，完成只记录一个事实', async ({ page }) => {
   const { line } = await seed(page);
-  await page.getByRole('button', { name: '记录实际', exact: true }).click();
-  let dialog = page.getByRole('dialog');
-  await dialog.getByText('新建 TODO / IDEA', { exact: true }).click();
+  let dialog = page.getByRole('form', { name: '实际工作录入', exact: true });
   let capture = dialog.getByRole('region', { name: '快速创建 TODO / IDEA' });
   await capture.getByLabel('要做什么', { exact: true }).fill('被取消的想法');
   await capture.getByLabel('业务线', { exact: true }).selectOption(line.data.id);
   await capture.getByRole('button', { name: '添加', exact: true }).click();
-  await dialog.getByRole('button', { name: '取消', exact: true }).click();
+  await dialog.getByRole('button', { name: '清空', exact: true }).click();
   expect(
     (await snapshot(page)).entries.some(
       (e) => e.data.type === 'todo' && e.data.title === '被取消的想法',
     ),
   ).toBe(false);
-  await page.getByRole('button', { name: '记录实际', exact: true }).click();
-  dialog = page.getByRole('dialog');
+  dialog = page.getByRole('form', { name: '实际工作录入', exact: true });
   await dialog.getByLabel('开始时间', { exact: true }).fill('10:00');
   await dialog.getByLabel('结束时间', { exact: true }).fill('11:00');
   await dialog.getByLabel('具体事件', { exact: true }).fill('比较两种解释');
-  await dialog.getByText('新建 TODO / IDEA', { exact: true }).click();
   capture = dialog.getByRole('region', { name: '快速创建 TODO / IDEA' });
   await capture.getByLabel('要做什么', { exact: true }).fill('检查样本分布');
   await capture.getByLabel('业务线', { exact: true }).selectOption(line.data.id);
-  await capture.getByText('节点 / 批注', { exact: true }).click();
   await capture.getByLabel('批注', { exact: true }).fill('原解释不能覆盖异常样本');
   await capture.getByRole('button', { name: '添加', exact: true }).click();
   await dialog.getByRole('checkbox', { name: '本次完成 检查样本分布', exact: true }).check();
   await dialog.getByRole('button', { name: '保存实际工作', exact: true }).click();
-  await expect(dialog).toHaveCount(0);
+  await expect(dialog.getByLabel('具体事件', { exact: true })).toHaveValue('');
   const s = await snapshot(page),
     item = s.entries.find((e) => e.data.type === 'todo' && e.data.title === '检查样本分布')!.data;
   expect(item).toHaveProperty('completedAt', expect.any(String));
@@ -121,7 +117,12 @@ for (const kind of ['todo', 'idea', 'node'])
     await refresh(page);
     await nav(page, '工作空间');
     await page.locator(`[data-space-id="${target.data.id}"]`).first().click({ button: 'right' });
-    await page.getByRole('menuitem', { name: '升级为业务线', exact: true }).click();
+    await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().endsWith('/api/promote') && r.request().method() === 'POST',
+      ),
+      page.getByRole('menuitem', { name: '升级为业务线', exact: true }).click(),
+    ]);
     await expect(
       page.getByRole('region', {
         name: `业务线 · ${'title' in target.data ? target.data.title : ''}`,

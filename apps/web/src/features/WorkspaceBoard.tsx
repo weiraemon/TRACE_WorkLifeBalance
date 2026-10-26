@@ -1,9 +1,16 @@
 import { useRef, useState } from 'react';
-import { ChevronDownIcon, ChevronRightIcon, PlusIcon, CheckIcon } from '@radix-ui/react-icons';
+import {
+  PlusIcon,
+  CheckIcon,
+  ChatBubbleIcon,
+  TargetIcon,
+  FileTextIcon,
+  CheckCircledIcon,
+  BookmarkIcon,
+  MixerHorizontalIcon,
+} from '@radix-ui/react-icons';
 import {
   isSpaceItem,
-  type Project,
-  type BusinessLine,
   type Milestone,
   type Entry,
   type Snapshot,
@@ -15,6 +22,19 @@ import { createRecord, save } from '../api';
 import { Button, EmptyState } from '../components/ui';
 import { ImportanceDot, importanceLabel } from '../components/Importance';
 import type { Editor } from './editor';
+import { WorkspaceNavigation, workspaceGroups } from './WorkspaceNavigation';
+const tagIcons: Record<string, typeof ChatBubbleIcon> = {
+  会议: ChatBubbleIcon,
+  报告: FileTextIcon,
+  专注: TargetIcon,
+  实验: MixerHorizontalIcon,
+  讨论: ChatBubbleIcon,
+  审阅: CheckCircledIcon,
+};
+function NodeTagIcon({ tag }: { tag: string }) {
+  const Icon = tagIcons[tag] ?? BookmarkIcon;
+  return <Icon aria-hidden="true" />;
+}
 export function TodoRows({
   todos,
   entries,
@@ -101,7 +121,6 @@ export function WorkspaceBoard({
   showArchived: boolean;
   onShowArchivedChange: (show: boolean) => void;
 }) {
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [activeId, setActiveId] = useState('');
   const content = useRef<HTMLDivElement>(null);
   const records = snapshot.entries
@@ -111,30 +130,7 @@ export function WorkspaceBoard({
       (a, b) =>
         a.order - b.order || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
     );
-  const live = (r: SpaceItem) => showArchived || !r.completedAt;
-  const projects = records.filter((r): r is Project => r.type === 'project' && live(r));
-  const groups = projects
-    .map((project) => {
-      const lines = records.filter(
-        (r): r is BusinessLine => r.type === 'workline' && r.projectId === project.id && live(r),
-      );
-      const pointIds = new Set(
-        records
-          .filter((r) => r.type === 'milestone' && lines.some((l) => l.id === r.lineId))
-          .map((r) => r.id),
-      );
-      const matches =
-        !query ||
-        [
-          project,
-          ...lines,
-          ...records.filter(
-            (r) => pointIds.has(r.id) || (r.type === 'todo' && pointIds.has(r.milestoneId)),
-          ),
-        ].some((r) => r.title.toLowerCase().includes(query));
-      return { project, lines, matches };
-    })
-    .filter((group) => group.matches);
+  const groups = workspaceGroups(snapshot.entries, showArchived, query);
   const jump = (id: string) => {
     setActiveId(id);
     content.current
@@ -163,18 +159,23 @@ export function WorkspaceBoard({
     >
       {!point.pool && (
         <>
-          <button className="point-dates" aria-label={`调整日期 · ${point.title}`}>
-            <span>
-              截止 {point.dueDate ?? '未定'} {point.dueTime}
-            </span>
-          </button>
+          <div className="point-meta">
+            <small className="node-tags" title={point.tags.join(' · ')}>
+              {point.tags.join(' · ')}
+            </small>
+            <button className="point-dates" aria-label={`调整日期 · ${point.title}`}>
+              <span>
+                截止 {point.dueDate ?? '未定'} {point.dueTime}
+              </span>
+            </button>
+          </div>
           <div className="point-marker-row">
             <button
-              className={`point-dot priority-${point.importance}`}
+              className={`point-dot priority-${point.importance}${point.tags.length ? ' node-tagged' : ''}`}
               role="checkbox"
               aria-checked={isComplete(point, snapshot.entries)}
               aria-label={`完成节点 ${point.title}`}
-              title={`${point.title} · ${importanceLabel(point.importance)}`}
+              title={`${point.title} · ${point.tags.join(' · ')} · ${importanceLabel(point.importance)}`}
               onClick={() =>
                 change(point, {
                   completedAt: isComplete(point, snapshot.entries)
@@ -183,7 +184,11 @@ export function WorkspaceBoard({
                 })
               }
             >
-              {isComplete(point, snapshot.entries) && <CheckIcon />}
+              {isComplete(point, snapshot.entries) ? (
+                <CheckIcon />
+              ) : point.tags[0] ? (
+                <NodeTagIcon tag={point.tags[0]} />
+              ) : null}
             </button>
           </div>
         </>
@@ -191,7 +196,6 @@ export function WorkspaceBoard({
       <button className="point-title" onClick={() => select(point.id)}>
         {point.title}
       </button>
-      {point.tags.length > 0 && <small className="node-tags">{point.tags.join(' · ')}</small>}
       <TodoRows
         entries={snapshot.entries}
         todos={records.filter((r): r is Todo => r.type === 'todo' && r.milestoneId === point.id)}
@@ -216,75 +220,14 @@ export function WorkspaceBoard({
   );
   return (
     <div className="space-board">
-      <nav className="workspace-nav" aria-label="业务导航">
-        <div className="workspace-nav-tree">
-          <ul>
-            {groups.map(({ project, lines }) => {
-              const folded = collapsed.has(project.id);
-              return (
-                <li key={project.id} data-space-id={project.id}>
-                  <div className="workspace-nav-project">
-                    <button
-                      className="workspace-nav-toggle"
-                      aria-expanded={!folded}
-                      aria-label={`${folded ? '展开' : '收缩'}项目 ${project.title}`}
-                      onClick={() =>
-                        setCollapsed((current) => {
-                          const next = new Set(current);
-                          if (folded) next.delete(project.id);
-                          else next.add(project.id);
-                          return next;
-                        })
-                      }
-                    >
-                      {folded ? <ChevronRightIcon /> : <ChevronDownIcon />}
-                    </button>
-                    <button
-                      aria-current={activeId === project.id ? 'location' : undefined}
-                      aria-label={`定位项目 · ${project.title}`}
-                      onClick={() => jump(project.id)}
-                      title={project.title}
-                    >
-                      <span>{project.title}</span>
-                    </button>
-                  </div>
-                  {!folded && (
-                    <ul>
-                      {lines.map((line) => (
-                        <li key={line.id} data-space-id={line.id}>
-                          <button
-                            aria-current={activeId === line.id ? 'location' : undefined}
-                            aria-label={`定位业务线 · ${line.title}`}
-                            onClick={() => jump(line.id)}
-                            title={line.title}
-                          >
-                            <ImportanceDot value={line.importance} />
-                            <span>{line.title}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-        <div className="workspace-nav-actions">
-          <label className="check-label">
-            <input
-              type="checkbox"
-              checked={showArchived}
-              onChange={(e) => onShowArchivedChange(e.target.checked)}
-            />
-            显示已完成项目 / 业务线
-          </label>
-          <Button onClick={() => edit({ type: 'project' })}>
-            <PlusIcon />
-            新增项目
-          </Button>
-        </div>
-      </nav>
+      <WorkspaceNavigation
+        groups={groups}
+        activeId={activeId}
+        onSelect={jump}
+        showArchived={showArchived}
+        onShowArchivedChange={onShowArchivedChange}
+        onCreateProject={() => edit({ type: 'project' })}
+      />
       <div className="workspace-content" ref={content}>
         {!groups.length && <EmptyState>{query ? '没有匹配的工作' : '暂无项目'}</EmptyState>}
         {groups.map(({ project, lines }) => (

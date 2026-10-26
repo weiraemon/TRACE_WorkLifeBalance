@@ -1,55 +1,45 @@
 import { useState } from 'react';
-import { noteKindLabel, type Snapshot } from '../../../../packages/domain/index';
-import type { Editor } from '../features/editor';
-import { openResource } from '../api';
-import { Button, Field, EmptyState } from '../components/ui';
+import type { Snapshot } from '../../../../packages/domain/index';
+import { EmptyState } from '../components/ui';
+import { NotesContent } from '../features/NotesContent';
+import { WorkspaceNavigation, workspaceGroups } from '../features/WorkspaceNavigation';
+
 export function Knowledge({
   snapshot,
-  edit,
-  run,
+  query,
+  showArchived,
+  onShowArchivedChange,
 }: {
   snapshot: Snapshot;
-  edit: (e: Editor) => void;
-  run: (fn: () => Promise<unknown>) => void;
+  query: string;
+  showArchived: boolean;
+  onShowArchivedChange: (show: boolean) => void;
 }) {
-  const resources = snapshot.entries.filter((e) => e.data.type === 'resource');
-  const [tag, setTag] = useState('');
-  const tags = [
-    ...new Set(
-      resources.flatMap(({ data }) => (data.type === 'resource' && data.tag ? [data.tag] : [])),
-    ),
-  ].sort();
+  const [lineId, setLineId] = useState('');
+  const groups = workspaceGroups(snapshot.entries, showArchived, query);
+  const line = groups.flatMap((group) => group.lines).find((line) => line.id === lineId);
+  const note = snapshot.entries.find((e) => e.data.id === line?.notesId);
   return (
-    <>
-      <section>
-        <Field label="标签筛选">
-          <select value={tag} onChange={(e) => setTag(e.target.value)}>
-            <option value="">全部</option>
-            {tags.map((tag) => (
-              <option key={tag} value={tag}>
-                {tag}
-              </option>
-            ))}
-          </select>
-        </Field>
-        {resources.length === 0 && <EmptyState>暂无笔记</EmptyState>}
-        {resources.map(
-          (e) =>
-            e.data.type === 'resource' &&
-            (!tag || e.data.tag === tag) && (
-              <div className="knowledge-row" key={e.data.id}>
-                <button onClick={() => run(() => openResource(e.data.id))}>
-                  <strong>{e.data.title} ↗</strong>
-                </button>
-                <span>
-                  {noteKindLabel[e.data.kind]}
-                  {e.data.tag ? ` · ${e.data.tag}` : ''}
-                </span>
-                <Button onClick={() => edit({ type: 'resource', entry: e })}>编辑</Button>
-              </div>
-            ),
+    <div className="space-board">
+      <WorkspaceNavigation
+        groups={groups}
+        activeId={line?.id ?? ''}
+        onSelect={(id) => {
+          const project = groups.find((group) => group.project.id === id);
+          setLineId(project ? (project.lines[0]?.id ?? '') : id);
+        }}
+        showArchived={showArchived}
+        onShowArchivedChange={onShowArchivedChange}
+      />
+      <div className="workspace-content knowledge-content" role="region" aria-label="业务线 Notes">
+        {line ? (
+          <NotesContent key={snapshot.vaultId + line.id} id={line.id} revision={note?.revision} />
+        ) : (
+          <EmptyState>
+            {!groups.length ? (query ? '没有匹配的工作' : '暂无项目') : '选择一条业务线查看 Notes'}
+          </EmptyState>
         )}
-      </section>
-    </>
+      </div>
+    </div>
   );
 }

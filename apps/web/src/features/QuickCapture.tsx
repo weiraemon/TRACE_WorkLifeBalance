@@ -1,12 +1,9 @@
 import { useState } from 'react';
-import {
-  type Snapshot,
-  type Todo,
-  type BusinessLine,
-  type Milestone,
-} from '../../../../packages/domain/index';
+import { type Snapshot, type Todo, type Milestone } from '../../../../packages/domain/index';
+import { activeLines } from '../../../../packages/domain/workspace';
 import { createRecord } from '../api';
 import { Button, Field, ErrorMessage } from '../components/ui';
+import { ImportancePicker } from '../components/Importance';
 export function QuickCapture({
   snapshot,
   onCreate,
@@ -16,6 +13,7 @@ export function QuickCapture({
   onCreate: (item: Todo, comment: string) => Promise<void>;
   defaultLineId?: string;
 }) {
+  const [importance, setImportance] = useState(1);
   const [title, setTitle] = useState(''),
     [kind, setKind] = useState<'todo' | 'idea'>('idea');
   const [lineId, setLineId] = useState(defaultLineId),
@@ -29,16 +27,7 @@ export function QuickCapture({
       e.data.type === 'project' ? [[e.data.id, e.data.title] as const] : [],
     ),
   );
-  const lines = snapshot.entries
-    .map((e) => e.data)
-    .filter(
-      (r): r is BusinessLine =>
-        r.type === 'workline' &&
-        !r.completedAt &&
-        !snapshot.entries.some(
-          (e) => e.data.id === r.projectId && e.data.type === 'project' && e.data.completedAt,
-        ),
-    );
+  const lines = activeLines(snapshot.entries);
   const nodes = snapshot.entries
     .map((e) => e.data)
     .filter((r): r is Milestone => r.type === 'milestone' && r.lineId === lineId);
@@ -57,10 +46,11 @@ export function QuickCapture({
     setError('');
     try {
       await onCreate(
-        createRecord('todo', { id, title, kind, milestoneId: chosen }) as Todo,
+        createRecord('todo', { id, title, kind, importance, milestoneId: chosen }) as Todo,
         comment,
       );
       setTitle('');
+      setImportance(1);
       setComment('');
       setId(crypto.randomUUID());
     } catch (e) {
@@ -74,6 +64,7 @@ export function QuickCapture({
       <Field label="要做什么">
         <input
           value={title}
+          placeholder="写下下一步或新想法…"
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
@@ -106,14 +97,9 @@ export function QuickCapture({
             ))}
           </select>
         </Field>
-        <Button type="button" className="primary" disabled={busy} onClick={() => void submit()}>
-          {busy ? '正在保存…' : '添加'}
-        </Button>
-      </div>
-      <details className="optional-settings">
-        <summary>节点 / 批注</summary>
         <Field label="具体节点">
-          <select value={chosen} onChange={(e) => setNodeId(e.target.value)}>
+          <select value={chosen} disabled={!lineId} onChange={(e) => setNodeId(e.target.value)}>
+            {!chosen && <option value="">先选择业务线</option>}
             {nodes.map((node) => (
               <option key={node.id} value={node.id}>
                 {node.title}
@@ -121,11 +107,22 @@ export function QuickCapture({
             ))}
           </select>
         </Field>
+      </div>
+      <fieldset className="primary-settings">
+        <legend>重要性</legend>
+        <ImportancePicker value={importance} onChange={setImportance} />
+      </fieldset>
+      <div className="quick-capture-extra">
         <Field label="批注">
           <textarea rows={3} value={comment} onChange={(e) => setComment(e.target.value)} />
         </Field>
-      </details>
+      </div>
       <ErrorMessage message={error} />
+      <div className="form-actions">
+        <Button type="button" className="primary" disabled={busy} onClick={() => void submit()}>
+          {busy ? '正在保存…' : '添加'}
+        </Button>
+      </div>
     </section>
   );
 }

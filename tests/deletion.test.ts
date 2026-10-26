@@ -39,6 +39,7 @@ async function setup() {
     endTime: '10:00',
     description: '实验实际时间',
     itemIds: [todo.data.id],
+    milestoneIds: [node.data.id],
   });
   await vault.save(todo.data, todo.revision, {
     comments: [{ id: randomUUID(), targetId: todo.data.id, text: '保留的用户批注' }],
@@ -59,6 +60,7 @@ it.each(['project', 'line', 'node', 'todo'] as const)(
     expect(after.issues).toEqual([]);
     expect(after.entries.some((e) => e.data.id === other.data.id)).toBe(true);
     const kept = after.entries.find((e) => e.data.id === actual.data.id)!.data;
+    expect(kept).toHaveProperty('milestoneIds', level === 'todo' ? [data.node.data.id] : []);
     expect(kept).toMatchObject({
       itemIds: [],
       startTime: '09:00',

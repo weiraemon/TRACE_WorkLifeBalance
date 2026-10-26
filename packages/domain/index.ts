@@ -1,5 +1,5 @@
 import { z } from 'zod';
-export const recordContract = 'atlas-lines-10';
+export const recordContract = 'atlas-lines-11';
 export const noteKinds = ['note', 'idea', 'meeting', 'draft'] as const;
 export const noteKindLabel = { note: '笔记', idea: '灵感', meeting: '纪要', draft: '待细化' };
 export const noteTagSchema = z
@@ -22,7 +22,7 @@ export const noteInputSchema = z
     tag: noteTagSchema.default(''),
   })
   .strict();
-export const milestoneTags = ['会议', '讨论', '专注', '实验', '审阅'];
+export const milestoneTags = ['会议', '报告', '讨论', '专注', '实验', '审阅'];
 export const directionLabel = { self: '自己做', to: '交给他人 · To', from: '等待他人 · From' };
 const id = z.string().uuid();
 export const day = z
@@ -46,7 +46,7 @@ const workFields = {
   ...base,
   title: z.string().trim().min(1).max(300),
   completedAt: z.iso.datetime().nullable().default(null),
-  importance: importanceSchema.default(3),
+  importance: importanceSchema.default(1),
   order: z.number().finite().default(0),
   resourceIds: z.array(id).default([]),
 };
@@ -93,6 +93,7 @@ const actualSchema = z
     endTime: time,
     description: text.trim().min(1),
     itemIds: z.array(id).default([]),
+    milestoneIds: z.array(id).default([]),
   })
   .strict();
 const resourceSchema = z
@@ -241,6 +242,12 @@ export function validateChange(record: RecordData, entries: Entry[]) {
       throw new Error('To / From 待办需要填写联系人');
   }
   if (record.type === 'actual') {
+    if (new Set(record.milestoneIds).size !== record.milestoneIds.length)
+      throw new Error('关联节点不能重复');
+    for (const milestoneId of record.milestoneIds) {
+      const point = all.get(milestoneId);
+      if (point?.type !== 'milestone' || point.pool) throw new Error('关联的具体节点不存在');
+    }
     if (new Set(record.itemIds).size !== record.itemIds.length) throw new Error('关联条目不能重复');
     for (const itemId of record.itemIds)
       if (all.get(itemId)?.type !== 'todo') throw new Error('关联的 TODO 或 IDEA 不存在');
@@ -283,9 +290,13 @@ export function timeTotals(entries: Entry[], from: string, to: string) {
       }
     occupied.set(r.date, used);
     const ids = new Set<string>();
+    const points = new Set(r.milestoneIds);
     for (const todoId of r.itemIds) {
       const todo = all.get(todoId);
-      const point = todo?.type === 'todo' ? all.get(todo.milestoneId) : null;
+      if (todo?.type === 'todo') points.add(todo.milestoneId);
+    }
+    for (const pointId of points) {
+      const point = all.get(pointId);
       const line = point?.type === 'milestone' ? all.get(point.lineId) : null;
       const project = line?.type === 'workline' ? all.get(line.projectId) : null;
       if (project?.type === 'project') ids.add(project.id);

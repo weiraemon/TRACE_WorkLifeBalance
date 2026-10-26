@@ -5,15 +5,15 @@ const Markdown = lazy(() => import('react-markdown'));
 export function NotesContent({
   id,
   revision,
-  editable,
+  editable = false,
   reload,
   onDirtyChange,
 }: {
   id: string;
   revision?: string;
-  editable: boolean;
-  reload: () => Promise<void>;
-  onDirtyChange: (dirty: boolean) => void;
+  editable?: boolean;
+  reload?: () => Promise<void>;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [body, setBody] = useState(''),
     [loadedRevision, setLoadedRevision] = useState('');
@@ -39,7 +39,7 @@ export function NotesContent({
       active = false;
     };
   }, [id, revision]);
-  useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
   return (
     <section className="detail-section notes-content">
       <div className="section-heading">
@@ -55,7 +55,7 @@ export function NotesContent({
               onChange={(e) => {
                 setBody(e.target.value);
                 dirty.current = true;
-                onDirtyChange(true);
+                onDirtyChange?.(true);
               }}
             />
           </Field>
@@ -65,7 +65,7 @@ export function NotesContent({
               onClick={() => {
                 if (dirty.current && !window.confirm('放弃尚未保存的正文？')) return;
                 dirty.current = false;
-                onDirtyChange(false);
+                onDirtyChange?.(false);
                 setEditing(false);
                 void readContent(id)
                   .then((value) => {
@@ -87,9 +87,9 @@ export function NotesContent({
                   .then(async (value) => {
                     setLoadedRevision(value.revision);
                     dirty.current = false;
-                    onDirtyChange(false);
+                    onDirtyChange?.(false);
                     setEditing(false);
-                    await reload();
+                    await reload?.();
                   })
                   .catch((e) => setError(String(e)))
                   .finally(() => setBusy(false));
@@ -102,7 +102,7 @@ export function NotesContent({
       ) : (
         <div className="markdown-body">
           <Suspense fallback={null}>
-            <Markdown>{body}</Markdown>
+            <Markdown skipHtml>{body}</Markdown>
           </Suspense>
         </div>
       )}

@@ -161,20 +161,21 @@ export function Timeline({
               eventContent={(arg) => {
                 const record = blocks.find((e) => e.data.id === arg.event.id)?.data;
                 if (record?.type !== 'actual') return null;
-                const titles = record.itemIds
+                const linkedIds = [...record.milestoneIds, ...record.itemIds];
+                const titles = linkedIds
                   .map((id) => snapshot.entries.find((e) => e.data.id === id)?.data)
-                  .map((r) => (r && 'title' in r ? r.title : '待办已移除'));
+                  .map((r) => (r && 'title' in r ? r.title : '关联内容已移除'));
                 return (
                   <div
                     className="actual-content"
-                    title={`${record.description}${titles.length ? '\n关联待办：' + titles.join(' / ') : ''}`}
+                    title={`${record.description}${titles.length ? '\n关联：' + titles.join(' / ') : ''}`}
                   >
                     <div className="fc-event-time">{arg.timeText}</div>
                     <div className="fc-event-title">{record.description}</div>
                     {titles.map((title, index) => (
                       <div
                         className="actual-todo-line"
-                        data-space-id={record.itemIds[index]}
+                        data-space-id={linkedIds[index]}
                         key={`${index}-${title}`}
                       >
                         {index === 0 ? '关联：' : ''}

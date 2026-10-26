@@ -30,7 +30,7 @@ export function WorkItemForm({
     item?.type === 'todo' ? item.kind : defaults.kind === 'idea' ? 'idea' : 'todo',
   );
   const [location, setLocation] = useState(() => initialLocation(snapshot.entries, item, defaults));
-  const [importance, setImportance] = useState(item?.importance ?? 3);
+  const [importance, setImportance] = useState(item?.importance ?? 1);
   const [dueDate, setDueDate] = useState(
     item?.type === 'milestone' || item?.type === 'todo' ? (item.dueDate ?? '') : '',
   );
@@ -125,9 +125,27 @@ export function WorkItemForm({
             onChange={setLocation}
           />
         )}
+        <fieldset className="primary-settings">
+          <legend>重要性</legend>
+          <ImportancePicker value={importance} onChange={setImportance} />
+        </fieldset>
+        {type === 'milestone' && !pool && (
+          <Field label="节点标签">
+            <input
+              list="node-tags"
+              value={tags}
+              onChange={(e) => setTags(e.target.value)}
+              placeholder="会议，报告，专注…"
+            />
+            <datalist id="node-tags">
+              {knownTags.map((tag) => (
+                <option key={tag} value={tag} />
+              ))}
+            </datalist>
+          </Field>
+        )}
         <details className="optional-settings">
           <summary>可选设置</summary>
-          {type !== 'project' && <ImportancePicker value={importance} onChange={setImportance} />}
           {(type === 'todo' || type === 'milestone') && !pool && (
             <Field label={type === 'milestone' ? '截止日期' : '条目日期'}>
               <DatePicker
@@ -143,19 +161,6 @@ export function WorkItemForm({
             <>
               <Field label="截止时刻">
                 <input type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} />
-              </Field>
-              <Field label="节点标签">
-                <input
-                  list="node-tags"
-                  value={tags}
-                  onChange={(e) => setTags(e.target.value)}
-                  placeholder="会议，实验"
-                />
-                <datalist id="node-tags">
-                  {knownTags.map((tag) => (
-                    <option key={tag} value={tag} />
-                  ))}
-                </datalist>
               </Field>
             </>
           )}

@@ -474,6 +474,22 @@ export class Vault {
         throw new VaultError('新条目 ID 已存在或重复', 409);
       const now = new Date().toISOString();
       data = { ...data, createdAt: existing?.data.createdAt ?? data.createdAt, updatedAt: now };
+      if (data.type === 'todo' && data.kind === 'todo' && !data.completedAt && data.dueDate) {
+        const nodeId = data.milestoneId;
+        const node = snapshot.entries.find((e) => e.data.id === nodeId)?.data;
+        if (
+          node?.type === 'milestone' &&
+          !node.pool &&
+          node.dueDate &&
+          data.dueDate > node.dueDate
+        ) {
+          const pool = snapshot.entries.find(
+            (e) => e.data.type === 'milestone' && e.data.lineId === node.lineId && e.data.pool,
+          )?.data;
+          if (!pool) throw new VaultError('业务线缺少待办池，请检查目录诊断', 409);
+          data = { ...data, milestoneId: pool.id };
+        }
+      }
       if (settings.completion !== undefined) {
         if (!isSpaceItem(data)) throw new VaultError('此对象不支持完成');
         if (data.type === 'milestone' && data.pool) throw new VaultError('待办池不完成');
@@ -769,10 +785,16 @@ export class Vault {
         for (const { data } of snapshot.entries)
           if (data.type === 'todo' && data.milestoneId === item.id)
             parts.push({ ...data, milestoneId: destination.id });
-      if (item.type === 'todo')
-        for (const { data } of snapshot.entries)
-          if (data.type === 'actual' && data.itemIds.includes(item.id))
-            parts.push({ ...data, itemIds: data.itemIds.filter((target) => target !== item.id) });
+      for (const { data } of snapshot.entries)
+        if (
+          data.type === 'actual' &&
+          (data.itemIds.includes(item.id) || data.milestoneIds.includes(item.id))
+        )
+          parts.push({
+            ...data,
+            itemIds: data.itemIds.filter((target) => target !== item.id),
+            milestoneIds: data.milestoneIds.filter((target) => target !== item.id),
+          });
       const virtual = [
         ...snapshot.entries.filter((e) => !parts.some((r) => r.id === e.data.id)),
         ...parts.map((data) => ({ data, path: '', revision: '' })),
@@ -821,8 +843,15 @@ export class Vault {
         bodies = new Map<string, string>();
       for (const { data } of snapshot.entries) {
         if (ids.has(data.id)) continue;
-        if (data.type === 'actual' && data.itemIds.some((target) => ids.has(target)))
-          records.push({ ...data, itemIds: data.itemIds.filter((target) => !ids.has(target)) });
+        if (
+          data.type === 'actual' &&
+          [...data.itemIds, ...data.milestoneIds].some((target) => ids.has(target))
+        )
+          records.push({
+            ...data,
+            itemIds: data.itemIds.filter((target) => !ids.has(target)),
+            milestoneIds: data.milestoneIds.filter((target) => !ids.has(target)),
+          });
         if (isSpaceItem(data) && data.resourceIds.some((target) => ids.has(target)))
           records.push({
             ...data,

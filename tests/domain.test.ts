@@ -103,3 +103,40 @@ describe('当前契约与时间', () => {
     ).toEqual({ '跨项目（未分摊）': 60 });
   });
 });
+
+it('新增工作默认绿色，节点可无标签；实际可直接关联节点，时间不重复累计', () => {
+  const project = make('project', { title: '项目' });
+  const line = make('workline', { title: '线', projectId: project.id });
+  const node = make('milestone', { title: '节点', lineId: line.id });
+  const todo = make('todo', { title: '行动', milestoneId: node.id });
+  expect(project).toHaveProperty('importance', 1);
+  expect(node).toHaveProperty('tags', []);
+  const entries = [project, line, node, todo].map(entry);
+  expect(() => validateChange(make('milestone', { ...node, tags: [] }), entries)).not.toThrow();
+  const actual = make('actual', {
+    date: '2026-10-25',
+    startTime: '10:00',
+    endTime: '11:00',
+    description: '推进节点',
+    milestoneIds: [node.id],
+    itemIds: [todo.id],
+  });
+  validateChange(actual, entries);
+  expect(timeTotals([...entries, entry(actual)], '2026-10-25', '2026-10-25')).toEqual({
+    total: 60,
+    projects: { 项目: 60 },
+  });
+  expect(
+    timeTotals(
+      [...entries, entry(make('actual', { ...actual, itemIds: [] }))],
+      '2026-10-25',
+      '2026-10-25',
+    ).projects,
+  ).toEqual({ 项目: 60 });
+  expect(() =>
+    validateChange(make('actual', { ...actual, milestoneIds: [node.id, node.id] }), entries),
+  ).toThrow('重复');
+  expect(() =>
+    validateChange(make('actual', { ...actual, milestoneIds: [todo.id] }), entries),
+  ).toThrow('不存在');
+});

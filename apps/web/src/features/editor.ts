@@ -1,6 +1,6 @@
-import type { Entry, RecordData } from '../../../../packages/domain/index';
+import type { Entry, SpaceItem } from '../../../../packages/domain/index';
 export type Editor = {
-  type: RecordData['type'];
+  type: SpaceItem['type'] | 'actual' | 'review';
   entry?: Entry;
   defaults?: Record<string, unknown>;
 };

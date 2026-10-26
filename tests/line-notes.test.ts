@@ -53,6 +53,35 @@ async function setup() {
   };
   return { vault, record, write, project, line, node, todo, idea, latest, comment };
 }
+it('待办日期越过节点后进入本线待办池，Notes 批注移动且冲突仍受保护', async () => {
+  const { vault, line, node, todo, idea, comment, latest } = await setup();
+  await comment(node, '节点自身纪要');
+  await comment(todo, '需要一起移动的批注');
+  await comment(idea, '留在原节点的想法');
+  let current = await latest(todo);
+  current = await vault.save({ ...current.data, dueDate: '2026-10-24' }, current.revision);
+  expect(current.data).toMatchObject({ milestoneId: node.data.id, dueDate: '2026-10-24' });
+  const moved = await vault.save({ ...current.data, dueDate: '2026-10-26' }, current.revision);
+  const state = await vault.scan();
+  const pool = state.entries.find(
+    (e) => e.data.type === 'milestone' && e.data.lineId === line.data.id && e.data.pool,
+  )!;
+  expect(moved.data).toMatchObject({
+    id: todo.data.id,
+    milestoneId: pool.data.id,
+    dueDate: '2026-10-26',
+  });
+  expect((await vault.readContent(pool.data.id)).body).toContain('需要一起移动的批注');
+  const original = (await vault.readContent(node.data.id)).body;
+  expect(original).toContain('节点自身纪要');
+  expect(original).toContain('留在原节点的想法');
+  expect(original).not.toContain('需要一起移动的批注');
+  expect(state.issues).toEqual([]);
+  await expect(
+    vault.save({ ...current.data, dueDate: '2026-10-27' }, current.revision),
+  ).rejects.toThrow('文件已更改');
+});
+
 it('每线自动建立专属 Notes 和池，批注真实保存、按节点和条目分层，纯完成不写纪要', async () => {
   const { vault, line, node, todo, idea, comment, latest } = await setup();
   const snapshot = await vault.scan();
@@ -121,6 +150,7 @@ it.each(['todo', 'idea', 'node'])('%s 升线平级独立，仅移动相应正文
     endTime: '10:00',
     description: '讨论',
     itemIds: [todo.data.id, idea.data.id],
+    milestoneIds: [node.data.id],
   });
   const selected = kind === 'node' ? node : kind === 'todo' ? todo : idea;
   const current = await latest(selected),
@@ -135,6 +165,7 @@ it.each(['todo', 'idea', 'node'])('%s 升线平级独立，仅移动相应正文
   expect(oldText).not.toContain(own);
   expect(newText).toContain(own);
   if (kind === 'node') {
+    expect((await latest(actual)).data).toHaveProperty('milestoneIds', []);
     expect(newText).toContain('2026-10-25 09:30');
     expect(newText).toContain('TODO批注');
     expect((await vault.readContent(todo.data.id)).body).toContain('TODO批注');

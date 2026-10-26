@@ -48,6 +48,14 @@ export const deleteSpace = (id: string, entries: Entry[]) =>
   });
 export const save = (data: RecordData, entry?: Entry, options?: SaveOptions) =>
   api<Entry>('records', { data, revision: entry?.revision, options });
+export async function removeSpace(entry: Entry) {
+  const id = entry.data.id;
+  const preview = await deletePreview(id);
+  if (preview.blockedReason) throw new Error(preview.blockedReason);
+  if (preview.entries.find((e) => e.data.id === id)?.revision !== entry.revision)
+    throw new Error('文件已更改，请重新加载；未删除更改后的待办');
+  return deleteSpace(id, preview.entries);
+}
 export const promote = (entry: Entry) =>
   api<Entry>('promote', { id: entry.data.id, revision: entry.revision });
 export function createRecord(type: RecordData['type'], fields: object): RecordData {
@@ -69,7 +77,3 @@ export async function openResource(id: string, native = true) {
 export const readContent = (id: string) => api<NoteContent>('content', { action: 'read', id });
 export const saveContent = (id: string, body: string, revision: string) =>
   api<NoteContent>('content', { action: 'save', id, body, revision });
-export async function openObsidian(id: string) {
-  const result = await api<{ url: string }>('obsidian', { id });
-  window.location.href = result.url;
-}

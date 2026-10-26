@@ -17,6 +17,30 @@ export type MilestoneContext = {
 };
 export type TodoContext = MilestoneContext & { todo: Todo };
 export const todoDate = (context: TodoContext) => context.todo.dueDate ?? context.milestone.dueDate;
+export function activeLines(entries: Entry[]): BusinessLine[] {
+  const closedProjects = new Set(
+    entries.flatMap(({ data }) => (data.type === 'project' && data.completedAt ? [data.id] : [])),
+  );
+  return entries.flatMap(({ data }) =>
+    data.type === 'workline' && !data.completedAt && !closedProjects.has(data.projectId)
+      ? [data]
+      : [],
+  );
+}
+export const overdueTodos = (entries: Entry[], today = localDay()) =>
+  todoContexts(entries)
+    .filter((c) => {
+      const due = todoDate(c);
+      return (
+        c.todo.kind === 'todo' &&
+        !c.todo.completedAt &&
+        !c.line.completedAt &&
+        !c.project.completedAt &&
+        due !== null &&
+        due < today
+      );
+    })
+    .sort((a, b) => todoDate(a)!.localeCompare(todoDate(b)!) || a.todo.id.localeCompare(b.todo.id));
 export function isComplete(record: RecordData, entries: Entry[]): boolean {
   if (!isSpaceItem(record)) return false;
   if (record.type === 'milestone') {

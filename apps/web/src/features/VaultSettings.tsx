@@ -2,6 +2,35 @@ import { useState, useEffect, useCallback } from 'react';
 import type { Snapshot } from '../../../../packages/domain/index';
 import { api } from '../api';
 import { Button, Field, ErrorMessage } from '../components/ui';
+import { readTheme, saveTheme } from '../theme';
+export function Appearance() {
+  const [theme, setTheme] = useState(readTheme);
+  return (
+    <section className="appearance" aria-label="主题">
+      <h2>外观</h2>
+      <div className="segmented">
+        {(
+          [
+            ['sage', '暖绿'],
+            ['blue', '静蓝'],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={theme === value}
+            onClick={() => {
+              saveTheme(value);
+              setTheme(value);
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
 export function Connect({ onConnected }: { onConnected: (snapshot: Snapshot) => void }) {
   const [value, setValue] = useState(''),
     [error, setError] = useState(''),
@@ -69,7 +98,7 @@ export function Backup({ snapshot, reload }: { snapshot: Snapshot; reload: () =>
     <section className="backup">
       <h2>备份与恢复</h2>
       <p className="hint">
-        仅手动创建快照，最多保留 3 份。编辑、删除和恢复不自动生成备份。 快照仅包含 ATLAS 管理的
+        仅手动创建快照，最多保留 3 份。编辑、删除和恢复不自动生成备份。 快照仅包含 CHAOS 管理的
         Markdown，附件与普通笔记请另行备份。
       </p>
       <Button

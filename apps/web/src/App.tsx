@@ -1,14 +1,5 @@
 import { useCallback, useDeferredValue, useEffect, useState, useRef, lazy, Suspense } from 'react';
-import {
-  SunIcon,
-  LayersIcon,
-  ReaderIcon,
-  CounterClockwiseClockIcon,
-  PlusIcon,
-  MagnifyingGlassIcon,
-  GearIcon,
-  ReloadIcon,
-} from '@radix-ui/react-icons';
+import { MagnifyingGlassIcon, GearIcon, ReloadIcon } from '@radix-ui/react-icons';
 import {
   localDay,
   weekStart,
@@ -17,11 +8,11 @@ import {
   type Snapshot,
   type DeleteResult,
 } from '../../../packages/domain/index';
-import { load, session, deletePreview, deleteSpace } from './api';
+import { load, session, removeSpace } from './api';
 import { spaceSubtree } from '../../../packages/domain/workspace';
-import { Button, Modal, EmptyState, ErrorMessage, DatePicker } from './components/ui';
-import { Connect, Backup } from './features/VaultSettings';
-import { ReferenceForm } from './features/ReferenceForm';
+import { Button, Modal, EmptyState, ErrorMessage } from './components/ui';
+import { Connect, Backup, Appearance } from './features/VaultSettings';
+import { ReviewForm } from './features/ReviewForm';
 import type { Editor } from './features/editor';
 import { WorkItemForm } from './features/WorkItemForm';
 import { ActualRecordForm } from './features/ActualRecordForm';
@@ -36,10 +27,10 @@ import { Review } from './pages/Review';
 import { Today } from './pages/Today';
 const Timeline = lazy(() => import('./features/Timeline').then((m) => ({ default: m.Timeline })));
 const pages = [
-  { id: 'today', name: '今日', icon: SunIcon },
-  { id: 'workspace', name: '工作空间', icon: LayersIcon },
-  { id: 'knowledge', name: '知识', icon: ReaderIcon },
-  { id: 'review', name: '回顾', icon: CounterClockwiseClockIcon },
+  { id: 'today', name: '今日' },
+  { id: 'workspace', name: '工作空间' },
+  { id: 'knowledge', name: '知识' },
+  { id: 'review', name: '回顾' },
 ];
 export default function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null),
@@ -151,66 +142,33 @@ export default function App() {
       return;
     }
     run(async () => {
-      const preview = await deletePreview(entry.data.id);
-      if (preview.blockedReason) throw new Error(preview.blockedReason);
-      await handleDeleted(await deleteSpace(entry.data.id, preview.entries));
+      await handleDeleted(await removeSpace(entry));
     });
   };
+  const hasBusinessNavigation =
+    (page === 'workspace' || page === 'knowledge' || page === 'today') && Boolean(snapshot);
   return (
     <div
       className={
         'shell ' +
         (selectedEntry ? 'has-detail ' : '') +
-        (page === 'workspace' && snapshot ? 'workspace-shell' : '')
+        (hasBusinessNavigation ? 'workspace-shell' : '')
       }
     >
-      <aside className="sidebar">
-        <a
-          className="brand"
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            navigate('today');
-          }}
-        >
-          <span className="brand-mark">A</span>
-          <span>
-            ATLAS<small>科研与生活工作台</small>
-          </span>
-        </a>
-        <nav aria-label="主导航">
-          {pages.map((p) => (
-            <button
-              key={p.id}
-              aria-current={page === p.id ? 'page' : undefined}
-              onClick={() => navigate(p.id)}
-            >
-              <p.icon />
-              {p.name}
-            </button>
-          ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <Button
-            onClick={() => {
-              if (!canLeaveContent()) return;
-              setSelected(null);
-              setSettings(true);
-            }}
-          >
-            <GearIcon />
-            {snapshot ? 'Vault 与备份' : '连接 Vault'}
-          </Button>
-          {snapshot && (
-            <span className="vault-name" title={snapshot.root}>
-              {snapshot.root.split(/[\\/]/).pop()} · 本地文件
-            </span>
-          )}
-        </div>
-      </aside>
-      <main className={`main${page === 'workspace' && snapshot ? ' workspace-main' : ''}`}>
+      <main className={`main${hasBusinessNavigation ? ' workspace-main' : ''}`}>
         <header className="topbar">
-          <span>{pages.find((p) => p.id === page)?.name}</span>
+          <span className="app-brand">CHAOS</span>
+          <nav className="main-nav" aria-label="主导航">
+            {pages.map((p) => (
+              <button
+                key={p.id}
+                aria-current={page === p.id ? 'page' : undefined}
+                onClick={() => navigate(p.id)}
+              >
+                {p.name}
+              </button>
+            ))}
+          </nav>
           <label className="search">
             <MagnifyingGlassIcon />
             <input
@@ -229,8 +187,19 @@ export default function App() {
           >
             <ReloadIcon />
           </Button>
+          <Button
+            className="backup-trigger"
+            onClick={() => {
+              if (!canLeaveContent()) return;
+              setSelected(null);
+              setSettings(true);
+            }}
+          >
+            <GearIcon />
+            备份
+          </Button>
         </header>
-        <div className={`content${page === 'workspace' && snapshot ? ' workspace-page' : ''}`}>
+        <div className={`content${hasBusinessNavigation ? ' workspace-page' : ''}`}>
           <ErrorMessage message={error} />
           {error && <Button onClick={() => setError('')}>收起提示</Button>}
           {loading ? (
@@ -249,71 +218,32 @@ export default function App() {
                   ))}
                 </details>
               )}
-              {page !== 'workspace' && (
+              {page === 'review' && (
                 <div className="page-heading">
                   <div>
-                    <p className="eyebrow">
-                      {page === 'today'
-                        ? new Date(date + 'T12:00:00').toLocaleDateString('zh-CN', {
-                            month: 'long',
-                            day: 'numeric',
-                            weekday: 'long',
-                          })
-                        : 'PERSONAL RESEARCH & LIFE'}
-                    </p>
-                    <h1>
-                      {page === 'today'
-                        ? '从这里，继续今天。'
-                        : pages.find((p) => p.id === page)?.name}
-                    </h1>
+                    <p className="eyebrow">PERSONAL RESEARCH & LIFE</p>
+                    <h1>{pages.find((p) => p.id === page)?.name}</h1>
                   </div>
                   <div className="actions">
-                    {page === 'today' && (
-                      <DatePicker
-                        aria-label="查看日期"
-                        value={date}
-                        onChange={(e) => e.target.value && setDate(e.target.value)}
-                      />
-                    )}{' '}
-                    {page === 'today' && (
-                      <Button
-                        className="primary"
-                        onClick={() => setEditor({ type: 'actual', defaults: { date } })}
-                      >
-                        <PlusIcon />
-                        记录实际
-                      </Button>
-                    )}
-                    {page === 'knowledge' && (
-                      <Button
-                        className="primary"
-                        onClick={() =>
-                          setEditor({ type: 'resource', defaults: { createMarkdown: true } })
-                        }
-                      >
-                        新建笔记
-                      </Button>
-                    )}
-                    {page === 'knowledge' && (
-                      <Button onClick={() => setEditor({ type: 'resource' })}>关联资源</Button>
-                    )}
-                    {page === 'review' && (
-                      <Button
-                        className="primary"
-                        onClick={() =>
-                          setEditor({ type: 'review', defaults: { week: weekStart(date) } })
-                        }
-                      >
-                        写周复盘
-                      </Button>
-                    )}
+                    <Button
+                      className="primary"
+                      onClick={() =>
+                        setEditor({ type: 'review', defaults: { week: weekStart(date) } })
+                      }
+                    >
+                      写周复盘
+                    </Button>
                   </div>
                 </div>
               )}
               {page === 'today' && (
                 <Today
+                  key={snapshot.vaultId}
                   snapshot={snapshot}
                   date={date}
+                  setDate={setDate}
+                  actualEditor={editor?.type === 'actual' && !editor.entry ? editor : undefined}
+                  dismissActualEditor={() => setEditor(null)}
                   reload={reload}
                   run={run}
                   goWorkspace={goWorkspace}
@@ -353,7 +283,14 @@ export default function App() {
                   />
                 </>
               )}
-              {page === 'knowledge' && <Knowledge snapshot={snapshot} edit={setEditor} run={run} />}
+              {page === 'knowledge' && (
+                <Knowledge
+                  snapshot={snapshot}
+                  query={query}
+                  showArchived={showArchived}
+                  onShowArchivedChange={setShowArchived}
+                />
+              )}
               {page === 'review' && (
                 <Review
                   snapshot={snapshot}
@@ -402,18 +339,19 @@ export default function App() {
             reload={reload}
           />
         ) : editor.type === 'actual' ? (
-          <ActualRecordForm
-            key={editor.entry?.revision ?? JSON.stringify(editor)}
-            editor={editor}
-            snapshot={snapshot}
-            close={() => setEditor(null)}
-            reload={reload}
-          />
+          editor.entry ? (
+            <ActualRecordForm
+              key={editor.entry?.revision ?? JSON.stringify(editor)}
+              editor={editor}
+              snapshot={snapshot}
+              close={() => setEditor(null)}
+              reload={reload}
+            />
+          ) : null
         ) : (
-          <ReferenceForm
+          <ReviewForm
             key={editor.entry?.revision ?? JSON.stringify(editor)}
             editor={editor}
-            snapshot={snapshot}
             close={() => setEditor(null)}
             reload={reload}
           />
@@ -432,6 +370,7 @@ export default function App() {
       )}
       {settings && (
         <Modal title="Vault 与数据安全" onClose={() => setSettings(false)} wide>
+          <Appearance />
           <Connect
             onConnected={(s) => {
               setSnapshot(s);

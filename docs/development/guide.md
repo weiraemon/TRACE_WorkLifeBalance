@@ -2,16 +2,16 @@
 
 ## 代码位置
 
-| 职责                                   | 位置                                                         |
-| -------------------------------------- | ------------------------------------------------------------ |
-| 新契约、日期、关联校验、计时去重       | packages/domain/index.ts                                     |
-| 层级、排序、当天清单、完成推导         | packages/domain/workspace.ts                                 |
-| 文件安全、跨文件发布与恢复、升线、删除 | apps/local-service/src/vault.ts                              |
-| Notes 分层与受管段落                   | apps/local-service/src/line-notes.ts                         |
-| HTTP 会话与本地打开                    | apps/local-service/src/server.ts                             |
-| 今日快速收集与实际表单                 | apps/web/src/features/QuickCapture.tsx、ActualRecordForm.tsx |
-| 右键、Notes、工作空间                  | apps/web/src/features                                        |
-| 固化的产品边界                         | AGENTS.md                                                    |
+| 职责                                   | 位置                                                                           |
+| -------------------------------------- | ------------------------------------------------------------------------------ |
+| 新契约、日期、关联校验、计时去重       | packages/domain/index.ts                                                       |
+| 层级、排序、当天清单、完成推导         | packages/domain/workspace.ts                                                   |
+| 文件安全、跨文件发布与恢复、升线、删除 | apps/local-service/src/vault.ts                                                |
+| Notes 分层与受管段落                   | apps/local-service/src/line-notes.ts                                           |
+| HTTP 会话与本地打开                    | apps/local-service/src/server.ts                                               |
+| 今日快速收集与实际表单                 | apps/web/src/features/TodayCapture.tsx、QuickCapture.tsx、ActualRecordForm.tsx |
+| 右键、Notes、工作空间                  | apps/web/src/features                                                          |
+| 固化的产品边界                         | AGENTS.md                                                                      |
 
 开发模式为同一个本地服务挂载 Vite。默认端口 4317；E2E 用独立端口 4318。构建后运行生产服务，源码变更不会自动重启已有生产服务。
 
