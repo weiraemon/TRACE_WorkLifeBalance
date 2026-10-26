@@ -6,7 +6,7 @@ import { connect, seed, nav, write, refresh, snapshot, notes, headers, localDay 
 
 test.beforeEach(async ({ page }) => connect(page));
 
-test('知识页复用业务导航，只读渲染业务线 Notes 的节点、TODO 与 IDEA 层级，并同步外部修改', async ({
+test('知识页复用业务导航，可编辑并预览业务线 Notes 的节点、TODO 与 IDEA 层级，并同步外部修改', async ({
   page,
 }) => {
   const { project, line, node, todo, idea } = await seed(page);
@@ -60,9 +60,18 @@ test('知识页复用业务导航，只读渲染业务线 Notes 的节点、TODO
   await expect(content).toContainText('排除测量误差后再验证替代解释。');
   await expect(content).not.toContainText('atlas:');
   await expect(content).not.toContainText('纯完成不记笔记');
-  await expect(page.getByRole('button', { name: '编辑正文', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '编辑正文', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '新增项目', exact: true })).toHaveCount(0);
   expect(await notes(page, line.data.id)).toBe(before);
+
+  await page.getByRole('button', { name: '编辑正文', exact: true }).click();
+  const editor = content.getByLabel('Notes 正文', { exact: true });
+  await editor.fill(`${before}\n\n## 随手补充\n\n今天继续补充实验记录。`);
+  await content.getByRole('button', { name: '保存正文', exact: true }).click();
+  await expect(content.getByRole('button', { name: '编辑正文', exact: true })).toBeVisible();
+  await expect(content).toContainText('今天继续补充实验记录。');
+  expect(await notes(page, line.data.id)).toContain('今天继续补充实验记录。');
+
   await page.screenshot({ path: '.test-vault/knowledge-notes-desktop.png', fullPage: true });
   const state = await snapshot(page);
   const lineData = state.entries.find((e) => e.data.id === line.data.id)!.data;

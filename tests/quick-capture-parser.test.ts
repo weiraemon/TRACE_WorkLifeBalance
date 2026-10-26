@@ -65,6 +65,18 @@ describe('快速生成文字解析', () => {
     });
   });
 
+  test('识别月日和带年份的绝对日期', () => {
+    expect(parseQuickCapture('10月29日上午9点论文研究讨论', [], '2026-10-26')).toMatchObject({
+      title: '论文研究讨论',
+      dueDate: '2026-10-29',
+      dueTime: '09:00',
+    });
+    expect(parseQuickCapture('2027年1月6日例会', [], '2026-10-26')).toMatchObject({
+      title: '例会',
+      dueDate: '2027-01-06',
+    });
+  });
+
   test('没有可靠匹配时业务线保持空白', () => {
     const { entries } = workspace();
     expect(

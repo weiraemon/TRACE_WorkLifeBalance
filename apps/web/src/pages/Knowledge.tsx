@@ -33,7 +33,12 @@ export function Knowledge({
       />
       <div className="workspace-content knowledge-content" role="region" aria-label="业务线 Notes">
         {line ? (
-          <NotesContent key={snapshot.vaultId + line.id} id={line.id} revision={note?.revision} />
+          <NotesContent
+            key={snapshot.vaultId + line.id}
+            id={line.id}
+            revision={note?.revision}
+            editable
+          />
         ) : (
           <EmptyState>
             {!groups.length ? (query ? '没有匹配的工作' : '暂无项目') : '选择一条业务线查看 Notes'}

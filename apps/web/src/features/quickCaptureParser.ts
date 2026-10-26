@@ -42,10 +42,18 @@ function addDays(value: string, days: number) {
 }
 
 function parseDate(text: string, today: string) {
-  // shortcut: relative Chinese weekdays only; add month/day parsing when users need dated messages.
   if (/后天/.test(text)) return addDays(today, 2);
   if (/明天/.test(text)) return addDays(today, 1);
   if (/今天|今日/.test(text)) return today;
+  const monthDay = text.match(/(?:(\d{4})\s*年\s*)?(\d{1,2})\s*月\s*(\d{1,2})\s*(?:日|号)/);
+  if (monthDay) {
+    const year = Number(monthDay[1] ?? today.slice(0, 4));
+    const month = Number(monthDay[2]);
+    const day = Number(monthDay[3]);
+    const lastDay = new Date(year, month, 0).getDate();
+    if (month >= 1 && month <= 12 && day >= 1 && day <= lastDay)
+      return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
   const nextWeekday = text.match(
     /下周(?:[^一二三四五六日天]{0,12})?(?:周|星期)?\s*([一二三四五六日天])/,
   );
@@ -91,6 +99,7 @@ function cleanTitle(text: string) {
       /(下周\s*[一二三四五六日天]|(?:本周|这周|周|星期)\s*[一二三四五六日天]|周末|本周末|明天|后天|今天|今日)/g,
       ' ',
     )
+    .replace(/(?:\d{4}\s*年\s*)?\d{1,2}\s*月\s*\d{1,2}\s*(?:日|号)/g, ' ')
     .replace(/下周/g, ' ')
     .replace(
       /(上午|早上|中午|下午|晚上)?\s*(\d{1,2}|[零〇一二两三四五六七八九十]{1,3})\s*(?:点|[.．:])(?:半|\s*[0-5]?\d\s*分?)?/g,

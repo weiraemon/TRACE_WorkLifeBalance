@@ -131,7 +131,7 @@ export function QuickCapture({
         </Button>
         {sourceText && (
           <p className="hint quick-capture-result">
-            会识别“明天 / 周二 / 下周二”、9点 / 九点 /
+            会识别“明天 / 10月29日 / 周二 / 下周二”、9点 / 九点 /
             9.、上午下午和半点；识别不到业务线时请手动选择。
           </p>
         )}
