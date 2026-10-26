@@ -42,10 +42,12 @@ export function ActualRecordForm({
   const [date, setDate] = useState(old?.date ?? String(editor.defaults?.date ?? localDay()));
   const [milestoneIds, setMilestoneIds] = useState<string[]>(old?.milestoneIds ?? []);
   const [nodeId, setNodeId] = useState('');
+  const [todoId, setTodoId] = useState('');
   const [linked, setLinked] = useState<string[]>(old?.itemIds ?? []);
   const [completed, setCompleted] = useState<string[]>([]);
   const [drafts, setDrafts] = useState<Todo[]>([]);
   const [comments, setComments] = useState<Record<string, { id: string; text: string }>>({});
+  const [showNewCapture, setShowNewCapture] = useState(false);
   const [lineId, setLineId] = useState('');
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
@@ -64,6 +66,14 @@ export function ActualRecordForm({
     .map((e) => e.data)
     .filter((r): r is Milestone => r.type === 'milestone' && !r.pool);
   const selectedNodes = nodes.filter((node) => milestoneIds.includes(node.id));
+  const todoChoices = contexts
+    .filter((c) => c.line.id === lineId && !linked.includes(c.todo.id))
+    .sort(
+      (a, b) =>
+        Number(b.milestone.pool) - Number(a.milestone.pool) ||
+        compareMilestones(a.milestone, b.milestone) ||
+        a.todo.title.localeCompare(b.todo.title),
+    );
   const commentField = (targetId: string, title: string) => (
     <Field label={`批注 · ${title}`}>
       <textarea
@@ -187,6 +197,26 @@ export function ActualRecordForm({
               ))}
           </select>
         </Field>
+        <Field label="绑定待办">
+          <select
+            value={todoId}
+            disabled={!lineId}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (!value) return;
+              setLinked((ids) => (ids.includes(value) ? ids : [...ids, value]));
+              setTodoId('');
+            }}
+          >
+            <option value="">{lineId ? '从待办池选择（可选）' : '先选择业务线'}</option>
+            {todoChoices.map((c) => (
+              <option key={c.todo.id} value={c.todo.id}>
+                {c.milestone.pool ? '待办池' : c.milestone.title} · {c.todo.kind.toUpperCase()} ·{' '}
+                {c.todo.title}
+              </option>
+            ))}
+          </select>
+        </Field>
       </div>
       <section className="linked-nodes" aria-label="已关联节点">
         {selectedNodes.map((node) => (
@@ -250,26 +280,6 @@ export function ActualRecordForm({
             </div>
           ))}
         </section>
-        <div className="completion-picker">
-          {contexts
-            .filter(
-              (c) =>
-                c.line.id === lineId &&
-                (!nodeId || c.milestone.id === nodeId) &&
-                !linked.includes(c.todo.id),
-            )
-            .map((c) => (
-              <label className="actual-todo-choice" key={c.todo.id}>
-                <input
-                  type="checkbox"
-                  checked={false}
-                  aria-label={`关联 ${c.todo.title}`}
-                  onChange={() => setLinked((ids) => [...ids, c.todo.id])}
-                />
-                {c.todo.kind.toUpperCase()} · {c.todo.title}
-              </label>
-            ))}
-        </div>
       </section>
       <ErrorMessage message={error} />
       <div className="form-actions">
@@ -280,22 +290,29 @@ export function ActualRecordForm({
           {busy ? '正在保存…' : '保存实际工作'}
         </Button>
       </div>
-      <section className="actual-new-items" aria-label="本次产生 TODO / IDEA">
-        <h3>本次产生 TODO / IDEA</h3>
-        <QuickCapture
-          snapshot={snapshot}
-          key={lineId}
-          defaultLineId={lineId}
-          onCreate={async (item, comment) => {
-            setDrafts((items) => [...items, item]);
-            setLinked((ids) => [...ids, item.id]);
-            if (comment.trim())
-              setComments((values) => ({
-                ...values,
-                [item.id]: { id: crypto.randomUUID(), text: comment },
-              }));
-          }}
-        />
+      <section className="actual-new-items" aria-label="新建 TODO / IDEA">
+        <Button type="button" onClick={() => setShowNewCapture((show) => !show)}>
+          {showNewCapture ? '收起新建 TODO / IDEA' : '新建 TODO / IDEA'}
+        </Button>
+        {showNewCapture && (
+          <QuickCapture
+            snapshot={snapshot}
+            key={lineId}
+            defaultLineId={lineId}
+            allowMilestone={false}
+            today={date}
+            onCreate={async (item, comment) => {
+              if (item.type !== 'todo') throw new Error('实际工作中的快速收集仅支持 TODO / IDEA');
+              setDrafts((items) => [...items, item]);
+              setLinked((ids) => [...ids, item.id]);
+              if (comment.trim())
+                setComments((values) => ({
+                  ...values,
+                  [item.id]: { id: crypto.randomUUID(), text: comment },
+                }));
+            }}
+          />
+        )}
       </section>
     </form>
   );

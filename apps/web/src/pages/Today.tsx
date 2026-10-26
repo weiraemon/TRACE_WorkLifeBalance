@@ -1,5 +1,10 @@
 import type { ReactNode } from 'react';
-import { todosForDay, contactsForDay } from '../../../../packages/domain/workspace';
+import {
+  todosForDay,
+  contactsForDay,
+  milestonesForDay,
+  isComplete,
+} from '../../../../packages/domain/workspace';
 import type { Snapshot } from '../../../../packages/domain/index';
 import { EmptyState, DatePicker } from '../components/ui';
 import { ImportanceDot } from '../components/Importance';
@@ -29,6 +34,7 @@ export function Today({
   dismissActualEditor: () => void;
 }) {
   const contexts = todosForDay(snapshot.entries, date);
+  const nodes = milestonesForDay(snapshot.entries, date);
   const contacts = contactsForDay(snapshot.entries, date)
     .flatMap((group) => group.todos)
     .sort((a, b) => b.todo.importance - a.todo.importance);
@@ -39,13 +45,60 @@ export function Today({
           <OverdueTodos snapshot={snapshot} date={date} reload={reload} />
           <details open className="today-nav-group">
             <summary>
-              今日待办 <small>{contexts.length}</small>
+              今日待办 <small>{contexts.length + nodes.length}</small>
             </summary>
             <section className="today-work" aria-label="当天待办">
-              {!contexts.length ? (
+              {!contexts.length && !nodes.length ? (
                 <EmptyState>当天没有已安排的待办。</EmptyState>
               ) : (
                 <ul className="today-todos">
+                  {nodes.map((context) => {
+                    const done = isComplete(context.milestone, snapshot.entries);
+                    return (
+                      <li
+                        key={context.milestone.id}
+                        data-space-id={context.milestone.id}
+                        className={`today-item-row${done ? ' today-row-done' : ''}`}
+                      >
+                        <button
+                          className={`todo-check priority-${context.milestone.importance}`}
+                          role="checkbox"
+                          aria-label={`完成节点 ${context.milestone.title}`}
+                          aria-checked={done}
+                          onClick={() =>
+                            run(async () => {
+                              await save(
+                                {
+                                  ...context.milestone,
+                                  completedAt: done ? null : new Date().toISOString(),
+                                },
+                                snapshot.entries.find((e) => e.data.id === context.milestone.id),
+                                { completion: !done },
+                              );
+                              await reload();
+                            })
+                          }
+                        >
+                          {done ? '✓' : ''}
+                        </button>
+                        <button
+                          className="today-row"
+                          onClick={() => goWorkspace(context.milestone.id)}
+                        >
+                          <span className="today-task" title={context.milestone.title}>
+                            <ImportanceDot value={context.milestone.importance} />
+                            节点 · {context.milestone.title}
+                          </span>
+                          <span
+                            className="row-context"
+                            title={`${context.project.title} / ${context.line.title}`}
+                          >
+                            {context.project.title} / {context.line.title}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
                   {contexts.map((c) => (
                     <li key={c.todo.id} data-space-id={c.todo.id} className="today-item-row">
                       <button

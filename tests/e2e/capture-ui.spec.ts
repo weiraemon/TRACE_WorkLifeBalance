@@ -53,6 +53,33 @@ test('新增主区域直接选择重要性，默认绿色；无标签圆点，�
   await page.screenshot({ path: '.test-vault/node-tag-icons.png', fullPage: true });
 });
 
+test('普通新增节点可以从微信消息识别时间、业务线、重要性和标签', async ({ page }) => {
+  const { line } = await seed(page);
+  await nav(page, '工作空间');
+  const track = page.getByRole('region', { name: '业务线 · 论文研究', exact: true });
+  await track.getByRole('button', { name: '关键节点', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog
+    .getByLabel('粘贴微信消息', { exact: true })
+    .fill('明天上午九点半论文研究讨论推进方案');
+  await dialog.getByRole('button', { name: '识别时间和节点', exact: true }).click();
+  await expect(dialog.getByLabel('标题', { exact: true })).toHaveValue('论文研究讨论推进方案');
+  await expect(dialog.getByLabel('所属业务线', { exact: true })).toHaveValue(line.data.id);
+  await dialog.getByText('可选设置', { exact: true }).click();
+  await expect(dialog.getByLabel('截止时刻', { exact: true })).toHaveValue('09:30');
+  await expect(dialog.getByLabel('节点标签', { exact: true })).toHaveValue('会议');
+  await dialog.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const saved = (await snapshot(page)).entries.find(
+    (entry) => entry.data.type === 'milestone' && entry.data.title === '论文研究讨论推进方案',
+  );
+  expect(saved?.data).toMatchObject({
+    lineId: line.data.id,
+    dueTime: '09:30',
+    tags: ['会议'],
+  });
+});
+
 test('今日左侧导航放待办与联系人，右侧直接录入实际并关联节点；快速想法仍不需要时间', async ({
   page,
 }) => {
@@ -91,11 +118,12 @@ test('今日左侧导航放待办与联系人，右侧直接录入实际并关�
   expect(layout.bottom).toBeGreaterThan(950);
   expect(Math.abs(layout.timelineBottom - layout.bottom)).toBeLessThan(2);
   expect(layout.height).toBeGreaterThan(750);
-  expect(layout.controls).toHaveLength(5);
+  expect(layout.controls).toHaveLength(6);
   for (const control of layout.controls)
     expect(control).toEqual({ height: 40, background: 'rgba(0, 0, 0, 0)', border: '0px' });
   await expect(form.locator('details')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '记录实际', exact: true })).toHaveCount(0);
+  await form.getByRole('button', { name: '新建 TODO / IDEA', exact: true }).click();
   await form.getByLabel('具体事件', { exact: true }).fill('直接推进会议节点');
   await form.getByLabel('开始时间', { exact: true }).fill('10:00');
   await form.getByLabel('结束时间', { exact: true }).fill('11:00');

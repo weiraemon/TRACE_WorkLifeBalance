@@ -10,6 +10,7 @@ import { createRecord, save } from '../api';
 import { ImportancePicker } from '../components/Importance';
 import type { Editor } from './editor';
 import { WorkLocationPicker, initialLocation } from './WorkLocationPicker';
+import { parseQuickCapture } from './quickCaptureParser';
 export const spaceLabel = { project: '项目', workline: '业务线', milestone: '节点', todo: '条目' };
 export function WorkItemForm({
   editor,
@@ -26,6 +27,7 @@ export function WorkItemForm({
   const item = editor.entry && isSpaceItem(editor.entry.data) ? editor.entry.data : undefined;
   const defaults = editor.defaults ?? {};
   const [title, setTitle] = useState(item?.title ?? String(defaults.title ?? ''));
+  const [sourceText, setSourceText] = useState('');
   const [kind, setKind] = useState<'todo' | 'idea'>(
     item?.type === 'todo' ? item.kind : defaults.kind === 'idea' ? 'idea' : 'todo',
   );
@@ -50,6 +52,22 @@ export function WorkItemForm({
       ...snapshot.entries.flatMap((e) => (e.data.type === 'milestone' ? e.data.tags : [])),
     ]),
   ];
+  const applyParsedText = (value: string) => {
+    const parsed = parseQuickCapture(value, snapshot.entries);
+    const line = snapshot.entries.find(
+      (entry) => entry.data.type === 'workline' && entry.data.id === parsed.lineId,
+    );
+    setTitle(parsed.title);
+    setImportance(parsed.importance);
+    setDueDate(parsed.dueDate ?? '');
+    setDueTime(parsed.dueTime ?? '');
+    setTags(parsed.tags.join('，'));
+    setLocation(
+      line?.data.type === 'workline'
+        ? { projectId: line.data.projectId, lineId: line.data.id, milestoneId: '' }
+        : { projectId: '', lineId: '', milestoneId: '' },
+    );
+  };
   return (
     <Modal
       title={`${item ? '编辑' : '新增'}${type === 'todo' ? kind.toUpperCase() : spaceLabel[type]}`}
@@ -106,6 +124,37 @@ export function WorkItemForm({
           }
         }}
       >
+        {type === 'milestone' && !pool && (
+          <div className="node-smart-capture">
+            <Field label="粘贴微信消息" wide>
+              <textarea
+                rows={3}
+                value={sourceText}
+                placeholder="例如：明天上午九点半所里一块讨论下推进方案"
+                onChange={(e) => setSourceText(e.target.value)}
+                onPaste={(e) => {
+                  const value = e.clipboardData.getData('text');
+                  if (!value.trim()) return;
+                  e.preventDefault();
+                  setSourceText(value);
+                  applyParsedText(value);
+                }}
+              />
+            </Field>
+            <Button
+              type="button"
+              onClick={() => applyParsedText(sourceText)}
+              disabled={!sourceText.trim()}
+            >
+              识别时间和节点
+            </Button>
+            {sourceText && (
+              <p className="hint">
+                会识别“明天 / 周二 / 下周二”、9点 / 九点 / 9.、上午下午和半点；识别不到业务线时请手动选择。
+              </p>
+            )}
+          </div>
+        )}
         <Field label="标题">
           <input required autoFocus value={title} onChange={(e) => setTitle(e.target.value)} />
         </Field>

@@ -37,6 +37,7 @@ test('首页先写内容再绑定业务线，可快速创建 TODO / IDEA，不�
 test('实际表单新建条目与批注一起保存，取消草稿不留条目，完成只记录一个事实', async ({ page }) => {
   const { line } = await seed(page);
   let dialog = page.getByRole('form', { name: '实际工作录入', exact: true });
+  await dialog.getByRole('button', { name: '新建 TODO / IDEA', exact: true }).click();
   let capture = dialog.getByRole('region', { name: '快速创建 TODO / IDEA' });
   await capture.getByLabel('要做什么', { exact: true }).fill('被取消的想法');
   await capture.getByLabel('业务线', { exact: true }).selectOption(line.data.id);
@@ -48,6 +49,7 @@ test('实际表单新建条目与批注一起保存，取消草稿不留条目�
     ),
   ).toBe(false);
   dialog = page.getByRole('form', { name: '实际工作录入', exact: true });
+  await dialog.getByRole('button', { name: '新建 TODO / IDEA', exact: true }).click();
   await dialog.getByLabel('开始时间', { exact: true }).fill('10:00');
   await dialog.getByLabel('结束时间', { exact: true }).fill('11:00');
   await dialog.getByLabel('具体事件', { exact: true }).fill('比较两种解释');
@@ -67,6 +69,33 @@ test('实际表单新建条目与批注一起保存，取消草稿不留条目�
   expect(actual).not.toHaveProperty('history');
   const text = await notes(page, line.data.id);
   expect(text.split('原解释不能覆盖异常样本')).toHaveLength(2);
+});
+
+test('实际工作可从已有待办绑定，节点和待办批注均可留空，并同步完成待办', async ({ page }) => {
+  const { line, node, todo } = await seed(page);
+  const form = page.getByRole('form', { name: '实际工作录入', exact: true });
+  await form.getByLabel('具体事件', { exact: true }).fill('完成方案会议后的材料确认');
+  await form.getByLabel('开始时间', { exact: true }).fill('10:00');
+  await form.getByLabel('结束时间', { exact: true }).fill('10:30');
+  await form.getByLabel('先选择业务线', { exact: true }).selectOption(line.data.id);
+  await form.getByLabel('关联节点', { exact: true }).selectOption(node.data.id);
+  await form.getByLabel('绑定待办', { exact: true }).selectOption(todo.data.id);
+  await expect(form.getByLabel('批注 · 方案会议', { exact: true })).toHaveValue('');
+  await expect(form.getByLabel('批注 · 找人要材料', { exact: true })).toHaveValue('');
+  await form.getByRole('checkbox', { name: '本次完成 找人要材料', exact: true }).check();
+  await form.getByRole('button', { name: '保存实际工作', exact: true }).click();
+  await refresh(page);
+
+  const state = await snapshot(page);
+  expect(state.entries.find((e) => e.data.type === 'actual')?.data).toMatchObject({
+    milestoneIds: [node.data.id],
+    itemIds: [todo.data.id],
+  });
+  expect(state.entries.find((e) => e.data.id === todo.data.id)?.data).toHaveProperty(
+    'completedAt',
+    expect.any(String),
+  );
+  expect(await notes(page, line.data.id)).not.toContain('完成方案会议后的材料确认');
 });
 
 test('首页已有条目右键批注写入 Notes，完成不添加纪要，节点自动完成不连带业务线', async ({

@@ -61,6 +61,7 @@ export function TodayCapture({
       <div hidden={mode !== 'quick'}>
         <QuickCapture
           snapshot={snapshot}
+          today={date}
           onCreate={async (item, comment) => {
             await save(item, undefined, {
               comments: comment.trim()
