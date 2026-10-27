@@ -71,6 +71,64 @@ test('实际表单新建条目与批注一起保存，取消草稿不留条目�
   expect(text.split('原解释不能覆盖异常样本')).toHaveLength(2);
 });
 
+test('一次实际工作可以连续新建多条 TODO / IDEA 并一起保存', async ({ page }) => {
+  const { line } = await seed(page);
+  const form = page.getByRole('form', { name: '实际工作录入', exact: true });
+  await form.getByRole('button', { name: '新建 TODO / IDEA', exact: true }).click();
+  const capture = form.getByRole('region', { name: '快速创建 TODO / IDEA' });
+  await capture.getByLabel('业务线', { exact: true }).selectOption(line.data.id);
+  for (const title of ['补充材料清单', '安排下周复盘']) {
+    await capture.getByLabel('要做什么', { exact: true }).fill(title);
+    await capture.getByRole('button', { name: '添加', exact: true }).click();
+  }
+  await expect(form).toContainText('本次已新增 2 条 TODO / IDEA，可以继续添加。');
+  await form.getByLabel('具体事件', { exact: true }).fill('整理后续安排');
+  await form.getByLabel('开始时间', { exact: true }).fill('14:00');
+  await form.getByLabel('结束时间', { exact: true }).fill('14:30');
+  await form.getByRole('button', { name: '保存实际工作', exact: true }).click();
+  await refresh(page);
+
+  const state = await snapshot(page);
+  const items = state.entries
+    .filter(
+      (entry) =>
+        entry.data.type === 'todo' &&
+        ['补充材料清单', '安排下周复盘'].includes(entry.data.title),
+    )
+    .map((entry) => entry.data.id);
+  expect(items).toHaveLength(2);
+  expect(state.entries.find((entry) => entry.data.type === 'actual')?.data).toMatchObject({
+    itemIds: items,
+  });
+});
+
+test('一次实际工作可以关联多个不同节点', async ({ page }) => {
+  const { line, node } = await seed(page);
+  const otherNode = await write(page, 'milestone', {
+    title: '复盘节点',
+    lineId: line.data.id,
+  });
+  await refresh(page);
+  const form = page.getByRole('form', { name: '实际工作录入', exact: true });
+  await form.getByLabel('具体事件', { exact: true }).fill('同步推进两个节点');
+  await form.getByLabel('开始时间', { exact: true }).fill('15:00');
+  await form.getByLabel('结束时间', { exact: true }).fill('16:00');
+  await form.getByLabel('先选择业务线', { exact: true }).selectOption(line.data.id);
+  await form.getByLabel('关联节点', { exact: true }).selectOption(node.data.id);
+  await form.getByLabel('关联节点', { exact: true }).selectOption(otherNode.data.id);
+  await expect(form.getByLabel('关联节点 方案会议', { exact: true })).toBeChecked();
+  await expect(form.getByLabel('关联节点 复盘节点', { exact: true })).toBeChecked();
+  await expect(form).toContainText('已关联 2 个节点，可继续选择不同节点。');
+  await form.getByRole('button', { name: '保存实际工作', exact: true }).click();
+  await refresh(page);
+
+  const state = await snapshot(page);
+  expect(state.entries.find((entry) => entry.data.type === 'actual')?.data).toMatchObject({
+    milestoneIds: [node.data.id, otherNode.data.id],
+    itemIds: [],
+  });
+});
+
 test('实际工作可从已有待办绑定，节点和待办批注均可留空，并同步完成待办', async ({ page }) => {
   const { line, node, todo } = await seed(page);
   const form = page.getByRole('form', { name: '实际工作录入', exact: true });

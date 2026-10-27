@@ -1833,6 +1833,49 @@ input[type='checkbox'] {
 .actual-item .field {
   margin: 8px 0 0;
 }
+.actual-pool,
+.actual-selected {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.actual-pool h3,
+.actual-selected h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+.actual-pool .hint,
+.actual-selected > .hint {
+  margin: 0 0 10px;
+}
+.actual-pool-choices {
+  max-height: 220px;
+  overflow: auto;
+}
+.actual-pool-choice,
+.actual-selected-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.actual-pool-choice span,
+.actual-selected-heading span {
+  min-width: 0;
+}
+.actual-pool-choice small,
+.actual-selected small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.actual-selected .linked-todos {
+  max-height: none;
+}
 .node-tags {
   display: block;
   margin: 4px 0 8px;

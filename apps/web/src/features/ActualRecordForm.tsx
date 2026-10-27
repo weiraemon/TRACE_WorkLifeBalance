@@ -5,6 +5,7 @@ import {
   type Snapshot,
   type Todo,
   type Milestone,
+  type Project,
 } from '../../../../packages/domain/index';
 import {
   activeLines,
@@ -41,33 +42,56 @@ export function ActualRecordForm({
   const [description, setDescription] = useState(old?.description ?? '');
   const [date, setDate] = useState(old?.date ?? String(editor.defaults?.date ?? localDay()));
   const [milestoneIds, setMilestoneIds] = useState<string[]>(old?.milestoneIds ?? []);
-  const [nodeId, setNodeId] = useState('');
-  const [todoId, setTodoId] = useState('');
   const [linked, setLinked] = useState<string[]>(old?.itemIds ?? []);
   const [completed, setCompleted] = useState<string[]>([]);
   const [drafts, setDrafts] = useState<Todo[]>([]);
   const [comments, setComments] = useState<Record<string, { id: string; text: string }>>({});
   const [showNewCapture, setShowNewCapture] = useState(false);
-  const [lineId, setLineId] = useState('');
+  const [associationFilter, setAssociationFilter] = useState({
+    projectId: '',
+    lineId: '',
+    nodeId: '',
+  });
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   const virtual = [
     ...snapshot.entries,
     ...drafts.map((data) => ({ data, path: '', revision: '' })),
   ];
-  const contexts = todoContexts(virtual).filter(
-    (c) =>
-      linked.includes(c.todo.id) ||
-      (!c.todo.completedAt && !c.line.completedAt && !c.project.completedAt),
-  );
+  const contexts = todoContexts(virtual);
   const selected = contexts.filter((c) => linked.includes(c.todo.id));
+  const availableContexts = contexts.filter(
+    (c) => !c.todo.completedAt && !c.line.completedAt && !c.project.completedAt,
+  );
   const lines = activeLines(snapshot.entries);
+  const linesById = new Map(lines.map((line) => [line.id, line]));
+  const projects = snapshot.entries
+    .map((e) => e.data)
+    .filter((r): r is Project => r.type === 'project' && !r.completedAt);
   const nodes = snapshot.entries
     .map((e) => e.data)
     .filter((r): r is Milestone => r.type === 'milestone' && !r.pool);
   const selectedNodes = nodes.filter((node) => milestoneIds.includes(node.id));
-  const todoChoices = contexts
-    .filter((c) => c.line.id === lineId && !linked.includes(c.todo.id))
+  const candidateNodes = nodes
+    .filter((node) => {
+      const line = linesById.get(node.lineId);
+      return (
+        line &&
+        (!associationFilter.projectId || line.projectId === associationFilter.projectId) &&
+        (!associationFilter.lineId || line.id === associationFilter.lineId) &&
+        (!associationFilter.nodeId || node.id === associationFilter.nodeId)
+      );
+    })
+    .sort(compareMilestones);
+  const nodeChoices = candidateNodes.filter((node) => !milestoneIds.includes(node.id));
+  const todoChoices = availableContexts
+    .filter(
+      (c) =>
+        (!associationFilter.projectId || c.project.id === associationFilter.projectId) &&
+        (!associationFilter.lineId || c.line.id === associationFilter.lineId) &&
+        (!associationFilter.nodeId || c.milestone.id === associationFilter.nodeId) &&
+        !linked.includes(c.todo.id),
+    )
     .sort(
       (a, b) =>
         Number(b.milestone.pool) - Number(a.milestone.pool) ||
@@ -159,106 +183,135 @@ export function ActualRecordForm({
           />
         </Field>
       </div>
-      <div className="form-grid">
-        <Field label="先选择业务线">
-          <select
-            value={lineId}
-            onChange={(e) => {
-              setLineId(e.target.value);
-              setNodeId('');
-            }}
-          >
-            <option value="">选择业务线（可选）</option>
-            {lines.map((line) => (
-              <option key={line.id} value={line.id}>
-                {line.title}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="关联节点">
-          <select
-            value={nodeId}
-            disabled={!lineId}
-            onChange={(e) => {
-              const value = e.target.value;
-              setNodeId(value);
-              if (value) setMilestoneIds((ids) => (ids.includes(value) ? ids : [...ids, value]));
-            }}
-          >
-            <option value="">{lineId ? '选择节点（可选）' : '先选择业务线'}</option>
-            {nodes
-              .filter((node) => node.lineId === lineId)
-              .sort(compareMilestones)
-              .map((node) => (
-                <option key={node.id} value={node.id}>
-                  {node.title}
+      <section className="actual-pool" aria-label="待选池">
+        <h3>待选池</h3>
+        <p className="hint">按项目、业务线和节点缩小范围，再把节点或待办加入本次记录。</p>
+        <div className="form-grid">
+          <Field label="项目">
+            <select
+              value={associationFilter.projectId}
+              onChange={(e) => {
+                setAssociationFilter({ projectId: e.target.value, lineId: '', nodeId: '' });
+              }}
+            >
+              <option value="">所有项目</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.title}
                 </option>
               ))}
-          </select>
-        </Field>
-        <Field label="绑定待办">
-          <select
-            value={todoId}
-            disabled={!lineId}
-            onChange={(e) => {
-              const value = e.target.value;
-              if (!value) return;
-              setLinked((ids) => (ids.includes(value) ? ids : [...ids, value]));
-              setTodoId('');
-            }}
-          >
-            <option value="">{lineId ? '从待办池选择（可选）' : '先选择业务线'}</option>
-            {todoChoices.map((c) => (
-              <option key={c.todo.id} value={c.todo.id}>
-                {c.milestone.pool ? '待办池' : c.milestone.title} · {c.todo.kind.toUpperCase()} ·{' '}
-                {c.todo.title}
-              </option>
-            ))}
-          </select>
-        </Field>
-      </div>
-      <section className="linked-nodes" aria-label="已关联节点">
+            </select>
+          </Field>
+          <Field label="业务线">
+            <select
+              value={associationFilter.lineId}
+              onChange={(e) => {
+                setAssociationFilter((filter) => ({
+                  ...filter,
+                  lineId: e.target.value,
+                  nodeId: '',
+                }));
+              }}
+            >
+              <option value="">所有业务线</option>
+              {lines
+                .filter(
+                  (line) =>
+                    !associationFilter.projectId || line.projectId === associationFilter.projectId,
+                )
+                .map((line) => (
+                  <option key={line.id} value={line.id}>
+                    {line.title}
+                  </option>
+                ))}
+            </select>
+          </Field>
+          <Field label="节点">
+            <select
+              value={associationFilter.nodeId}
+              onChange={(e) => {
+                setAssociationFilter((filter) => ({ ...filter, nodeId: e.target.value }));
+              }}
+            >
+              <option value="">所有节点</option>
+              {candidateNodes.map((node) => (
+                <option key={node.id} value={node.id}>
+                  {linesById.get(node.lineId)?.title} · {node.title}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+        <div className="actual-pool-choices">
+          {nodeChoices.map((node) => (
+            <div className="actual-pool-choice" key={node.id}>
+              <span>
+                节点 · {node.title}
+                <small>{linesById.get(node.lineId)?.title}</small>
+              </span>
+              <Button type="button" onClick={() => setMilestoneIds((ids) => [...ids, node.id])}>
+                加入
+              </Button>
+            </div>
+          ))}
+          {todoChoices.map((c) => (
+            <div className="actual-pool-choice" key={c.todo.id}>
+              <span>
+                {c.todo.kind.toUpperCase()} · {c.todo.title}
+                <small>
+                  {c.project.title} / {c.line.title} /{' '}
+                  {c.milestone.pool ? '待办池' : c.milestone.title}
+                </small>
+              </span>
+              <Button type="button" onClick={() => setLinked((ids) => [...ids, c.todo.id])}>
+                加入
+              </Button>
+            </div>
+          ))}
+          {nodeChoices.length === 0 && todoChoices.length === 0 && (
+            <p className="hint">没有可选内容</p>
+          )}
+        </div>
+      </section>
+      <section className="actual-selected" aria-label="已选择">
+        <h3>已选择</h3>
+        {selectedNodes.length === 0 && selected.length === 0 && (
+          <p className="hint">尚未关联节点或待办</p>
+        )}
         {selectedNodes.map((node) => (
           <div className="actual-item" key={node.id}>
-            <label className="check-label">
-              <input
-                type="checkbox"
-                checked
-                aria-label={`关联节点 ${node.title}`}
-                onChange={() => {
-                  setMilestoneIds((ids) => ids.filter((id) => id !== node.id));
-                  if (nodeId === node.id) setNodeId('');
-                }}
-              />
-              {node.title}
-            </label>
+            <div className="actual-selected-heading">
+              <span>节点 · {node.title}</span>
+              <Button
+                type="button"
+                onClick={() => setMilestoneIds((ids) => ids.filter((id) => id !== node.id))}
+              >
+                移除
+              </Button>
+            </div>
             {commentField(node.id, node.title)}
           </div>
         ))}
-      </section>
-      <section className="actual-associations" aria-label="关联 TODO / IDEA">
-        <section className="linked-todos" aria-label="已关联条目">
+        <div className="linked-todos" aria-label="已关联条目">
           {selected.map((c) => (
             <div className="actual-item" key={c.todo.id} data-space-id={c.todo.id}>
               <div className="actual-todo-choice">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked
-                    aria-label={`关联 ${c.todo.title}`}
-                    onChange={() => {
-                      setLinked((ids) => ids.filter((target) => target !== c.todo.id));
-                      setCompleted((ids) => ids.filter((target) => target !== c.todo.id));
-                    }}
-                  />
-                  <span>
-                    {c.todo.kind.toUpperCase()} · {c.todo.title}
-                    <small>
-                      {c.project.title} / {c.line.title}
-                    </small>
-                  </span>
-                </label>
+                <span>
+                  {c.todo.kind.toUpperCase()} · {c.todo.title}
+                  <small>
+                    {c.project.title} / {c.line.title} /{' '}
+                    {c.milestone.pool ? '待办池' : c.milestone.title}
+                  </small>
+                </span>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setLinked((ids) => ids.filter((target) => target !== c.todo.id));
+                    setCompleted((ids) => ids.filter((target) => target !== c.todo.id));
+                  }}
+                >
+                  移除
+                </Button>
                 <label>
                   <input
                     type="checkbox"
@@ -279,7 +332,7 @@ export function ActualRecordForm({
               {commentField(c.todo.id, c.todo.title)}
             </div>
           ))}
-        </section>
+        </div>
       </section>
       <ErrorMessage message={error} />
       <div className="form-actions">
@@ -295,23 +348,30 @@ export function ActualRecordForm({
           {showNewCapture ? '收起新建 TODO / IDEA' : '新建 TODO / IDEA'}
         </Button>
         {showNewCapture && (
-          <QuickCapture
-            snapshot={snapshot}
-            key={lineId}
-            defaultLineId={lineId}
-            allowMilestone={false}
-            today={date}
-            onCreate={async (item, comment) => {
-              if (item.type !== 'todo') throw new Error('实际工作中的快速收集仅支持 TODO / IDEA');
-              setDrafts((items) => [...items, item]);
-              setLinked((ids) => [...ids, item.id]);
-              if (comment.trim())
-                setComments((values) => ({
-                  ...values,
-                  [item.id]: { id: crypto.randomUUID(), text: comment },
-                }));
-            }}
-          />
+          <>
+            {drafts.length > 0 && (
+              <p className="hint actual-new-items-count">
+                本次已新增 {drafts.length} 条 TODO / IDEA，可以继续添加。
+              </p>
+            )}
+            <QuickCapture
+              snapshot={snapshot}
+              key={associationFilter.lineId}
+              defaultLineId={associationFilter.lineId}
+              allowMilestone={false}
+              today={date}
+              onCreate={async (item, comment) => {
+                if (item.type !== 'todo') throw new Error('实际工作中的快速收集仅支持 TODO / IDEA');
+                setDrafts((items) => [...items, item]);
+                setLinked((ids) => [...ids, item.id]);
+                if (comment.trim())
+                  setComments((values) => ({
+                    ...values,
+                    [item.id]: { id: crypto.randomUUID(), text: comment },
+                  }));
+              }}
+            />
+          </>
         )}
       </section>
     </form>
