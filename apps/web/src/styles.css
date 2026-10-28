@@ -1217,6 +1217,35 @@ input[type='checkbox'] {
   padding: 20px 0;
   min-width: 0;
 }
+.workspace-content [draggable='true'] {
+  cursor: grab;
+}
+.workspace-content [data-dragging] {
+  opacity: 0.45;
+}
+.workspace-content [data-drop-position='inside'] {
+  outline: 2px dashed var(--accent-strong);
+  outline-offset: 3px;
+  background: var(--ring);
+}
+.workspace-content [data-drop-position='before'] {
+  box-shadow: 0 -2px var(--accent-strong);
+}
+.workspace-content [data-drop-position='after'] {
+  box-shadow: 0 2px var(--accent-strong);
+}
+.workspace-drag-status {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0;
+  color: var(--accent-strong);
+  background: var(--surface);
+  font-size: 12px;
+}
+.workspace-drag-status:empty {
+  display: none;
+}
 .line-origin {
   position: relative;
   flex: 0 0 auto;

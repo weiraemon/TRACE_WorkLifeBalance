@@ -1,5 +1,5 @@
 import { z } from 'zod';
-export const recordContract = 'atlas-lines-11';
+export const recordContract = 'atlas-lines-12';
 export const noteKinds = ['note', 'idea', 'meeting', 'draft'] as const;
 export const noteKindLabel = { note: '笔记', idea: '灵感', meeting: '纪要', draft: '待细化' };
 export const noteTagSchema = z
@@ -137,6 +137,14 @@ export type Todo = Extract<RecordData, { type: 'todo' }>;
 export type ActualRecord = Extract<RecordData, { type: 'actual' }>;
 export const saveOptionsSchema = z
   .object({
+    move: z
+      .object({
+        targetId: id,
+        revision: z.string().min(1),
+        placement: z.enum(['before', 'after', 'inside']),
+      })
+      .strict()
+      .optional(),
     completion: z.boolean().optional(),
     newItems: z.array(todoSchema).max(50).default([]),
     completeIds: z.array(id).max(100).default([]),

@@ -53,6 +53,134 @@ async function setup() {
   };
   return { vault, record, write, project, line, node, todo, idea, latest, comment };
 }
+it('拖动排序处理相同 order，业务线可跨项目移动，重读后保留顺序', async () => {
+  const { vault, project, line, todo, idea, write, latest } = await setup();
+  const move = async (source: Entry, target: Entry, placement: 'before' | 'after' | 'inside') => {
+    const current = await latest(source),
+      destination = await latest(target);
+    return vault.save(current.data, current.revision, {
+      move: { targetId: destination.data.id, revision: destination.revision, placement },
+    });
+  };
+  const second = await write('workline', { title: '第二条线', projectId: project.data.id });
+  const third = await write('workline', { title: '第三条线', projectId: project.data.id });
+  await move(third, second, 'before');
+  const lines = (await vault.scan()).entries
+    .map((e) => e.data)
+    .filter((r) => r.type === 'workline')
+    .sort((a, b) => a.order - b.order);
+  expect(lines.map((r) => r.id)).toEqual([line.data.id, third.data.id, second.data.id]);
+  await move(idea, todo, 'before');
+  expect((await latest(idea)).data).toMatchObject({ order: 0, kind: 'idea', completedAt: null });
+  expect((await latest(todo)).data).toMatchObject({ order: 1, completedAt: null });
+  await move(idea, todo, 'after');
+  expect((await latest(idea)).data).toHaveProperty('order', 1);
+  const other = await write('project', { title: '另一个项目' });
+  await move(line, other, 'inside');
+  expect((await latest(line)).data).toMatchObject({ projectId: other.data.id, order: 0 });
+  expect((await vault.scan()).issues).toEqual([]);
+});
+
+it('拖动条目和节点跨线时迁移 Notes，保留 ID、日期、下属条目和实际关联', async () => {
+  const { vault, project, line, node, todo, idea, write, comment, latest } = await setup();
+  await comment(node, '节点正文随节点移动');
+  await comment(todo, '待办批注随条目移动');
+  await comment(idea, '想法批注随节点移动');
+  const destination = await write('workline', { title: '新业务线', projectId: project.data.id });
+  const target = await write('milestone', { title: '目标节点', lineId: destination.data.id });
+  const actual = await write('actual', {
+    date: '2026-10-25',
+    startTime: '09:00',
+    endTime: '10:00',
+    description: '真实投入',
+    itemIds: [todo.data.id, idea.data.id],
+    milestoneIds: [node.data.id],
+  });
+  const current = await latest(todo);
+  await vault.save(current.data, current.revision, {
+    move: { targetId: target.data.id, revision: target.revision, placement: 'inside' },
+  });
+  expect((await latest(todo)).data).toMatchObject({
+    id: todo.data.id,
+    milestoneId: target.data.id,
+  });
+  expect((await vault.readContent(line.data.id)).body).not.toContain('待办批注随条目移动');
+  expect((await vault.readContent(target.data.id)).body).toContain('待办批注随条目移动');
+  const currentNode = await latest(node),
+    currentLine = await latest(destination);
+  await vault.save(currentNode.data, currentNode.revision, {
+    move: { targetId: destination.data.id, revision: currentLine.revision, placement: 'inside' },
+  });
+  expect((await latest(node)).data).toMatchObject({
+    lineId: destination.data.id,
+    dueDate: '2026-10-25',
+    dueTime: '09:30',
+  });
+  expect((await latest(idea)).data).toHaveProperty('milestoneId', node.data.id);
+  const oldBody = (await vault.readContent(line.data.id)).body;
+  const newBody = (await vault.readContent(destination.data.id)).body;
+  expect(oldBody).not.toContain('节点正文随节点移动');
+  expect(oldBody).not.toContain('想法批注随节点移动');
+  for (const text of ['节点正文随节点移动', '待办批注随条目移动', '想法批注随节点移动'])
+    expect(newBody.split(text)).toHaveLength(2);
+  expect((await latest(actual)).data).toEqual(actual.data);
+  expect((await vault.scan()).issues).toEqual([]);
+});
+
+it('移动校验来源和目标 revision，拒绝跨层级和移动待办池，不部分写入', async () => {
+  const { vault, line, node, todo, idea, latest } = await setup();
+  const staleTarget = node;
+  await vault.save({ ...node.data, title: '外部调整目标' }, node.revision);
+  const before = (await vault.scan()).entries;
+  await expect(
+    vault.save(todo.data, todo.revision, {
+      move: { targetId: node.data.id, revision: staleTarget.revision, placement: 'inside' },
+    }),
+  ).rejects.toThrow('目标已更改');
+  await expect(
+    vault.save(todo.data, '过期来源', {
+      move: { targetId: idea.data.id, revision: idea.revision, placement: 'before' },
+    }),
+  ).rejects.toThrow('文件已更改');
+  await expect(
+    vault.save(todo.data, todo.revision, {
+      move: { targetId: line.data.id, revision: line.revision, placement: 'inside' },
+    }),
+  ).rejects.toThrow('跨层级');
+  const pool = before.find((e) => e.data.type === 'milestone' && e.data.pool)!;
+  await expect(
+    vault.save(pool.data, pool.revision, {
+      move: {
+        targetId: line.data.id,
+        revision: (await latest(line)).revision,
+        placement: 'inside',
+      },
+    }),
+  ).rejects.toThrow('待办池固定');
+  expect((await vault.scan()).entries).toEqual(before);
+});
+
+it('拖入更早节点时仍归入目标线待办池，保留独立日期及批注', async () => {
+  const { vault, project, todo, comment, write, latest } = await setup();
+  await comment(todo, '日期和批注保留');
+  let current = await latest(todo);
+  current = await vault.save({ ...current.data, dueDate: '2026-10-25' }, current.revision);
+  const line = await write('workline', { title: '接收业务线', projectId: project.data.id });
+  const target = await write('milestone', {
+    title: '更早截止',
+    lineId: line.data.id,
+    dueDate: '2026-10-24',
+  });
+  const moved = await vault.save(current.data, current.revision, {
+    move: { targetId: target.data.id, revision: target.revision, placement: 'inside' },
+  });
+  const pool = (await vault.scan()).entries.find(
+    (e) => e.data.type === 'milestone' && e.data.pool && e.data.lineId === line.data.id,
+  )!;
+  expect(moved.data).toMatchObject({ milestoneId: pool.data.id, dueDate: '2026-10-25' });
+  expect((await vault.readContent(pool.data.id)).body).toContain('日期和批注保留');
+  expect((await vault.scan()).issues).toEqual([]);
+});
 it('待办日期越过节点后进入本线待办池，Notes 批注移动且冲突仍受保护', async () => {
   const { vault, line, node, todo, idea, comment, latest } = await setup();
   await comment(node, '节点自身纪要');

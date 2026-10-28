@@ -97,7 +97,7 @@ test('今日左侧导航放待办与联系人，右侧直接录入实际并关�
     '等 小王',
   );
   const form = page.getByRole('form', { name: '实际工作录入', exact: true });
-  for (const name of ['具体事件', '开始时间', '结束时间', '先选择业务线', '关联节点'])
+  for (const name of ['具体事件', '开始时间', '结束时间', '项目', '业务线', '节点'])
     await expect(form.getByLabel(name, { exact: true })).toBeVisible();
   const layout = await page.locator('.today-layout').evaluate((el) => {
     const timeline = el.querySelector('.timeline-scroll')!.getBoundingClientRect();
@@ -127,11 +127,18 @@ test('今日左侧导航放待办与联系人，右侧直接录入实际并关�
   await form.getByLabel('具体事件', { exact: true }).fill('直接推进会议节点');
   await form.getByLabel('开始时间', { exact: true }).fill('10:00');
   await form.getByLabel('结束时间', { exact: true }).fill('11:00');
-  await form.getByLabel('先选择业务线', { exact: true }).selectOption(line.data.id);
-  await form.getByLabel('关联节点', { exact: true }).selectOption(node.data.id);
-  await expect(
-    form.getByRole('checkbox', { name: '关联节点 方案会议', exact: true }),
-  ).toBeChecked();
+  const pool = form.getByRole('region', { name: '待选池', exact: true });
+  await pool.getByLabel('项目', { exact: true }).selectOption(project.data.id);
+  await pool.getByLabel('业务线', { exact: true }).selectOption(line.data.id);
+  await pool.getByLabel('节点', { exact: true }).selectOption(node.data.id);
+  await pool
+    .locator('.actual-pool-choice')
+    .filter({ hasText: '节点 · 方案会议' })
+    .getByRole('button', { name: '加入', exact: true })
+    .click();
+  await expect(form.getByRole('region', { name: '已选择', exact: true })).toContainText(
+    '节点 · 方案会议',
+  );
   await form.getByLabel('批注 · 方案会议', { exact: true }).fill('会议确定了下一步方案');
   await form.getByRole('button', { name: '保存实际工作', exact: true }).click();
   await expect(form.getByLabel('具体事件', { exact: true })).toHaveValue('');

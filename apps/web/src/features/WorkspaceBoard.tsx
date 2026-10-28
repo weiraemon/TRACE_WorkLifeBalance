@@ -23,6 +23,7 @@ import { Button, EmptyState } from '../components/ui';
 import { ImportanceDot, importanceLabel } from '../components/Importance';
 import type { Editor } from './editor';
 import { WorkspaceNavigation, workspaceGroups } from './WorkspaceNavigation';
+import { useWorkspaceDrag } from './useWorkspaceDrag';
 const tagIcons: Record<string, typeof ChatBubbleIcon> = {
   会议: ChatBubbleIcon,
   报告: FileTextIcon,
@@ -40,18 +41,25 @@ export function TodoRows({
   entries,
   select,
   toggle,
+  drag,
 }: {
   todos: Todo[];
   entries: Entry[];
   select?: (id: string) => void;
   toggle?: (todo: Todo) => void;
+  drag?: ReturnType<typeof useWorkspaceDrag>;
 }) {
   return (
     <ul className="todo-rows">
       {todos.map((todo) => {
         const done = isComplete(todo, entries);
         return (
-          <li key={todo.id} data-space-id={todo.id} className={done ? 'todo-done' : ''}>
+          <li
+            key={todo.id}
+            data-space-id={todo.id}
+            className={done ? 'todo-done' : ''}
+            {...drag?.targetProps(todo.id)}
+          >
             <button
               type="button"
               role="checkbox"
@@ -65,7 +73,11 @@ export function TodoRows({
             </button>
             <div>
               {select ? (
-                <button className="todo-title" onClick={() => select(todo.id)}>
+                <button
+                  className="todo-title"
+                  onClick={() => select(todo.id)}
+                  {...drag?.sourceProps(todo)}
+                >
                   {todo.kind === 'idea' ? 'IDEA · ' : ''}
                   {todo.title}
                 </button>
@@ -123,6 +135,7 @@ export function WorkspaceBoard({
 }) {
   const [activeId, setActiveId] = useState('');
   const content = useRef<HTMLDivElement>(null);
+  const drag = useWorkspaceDrag(snapshot, reload, run);
   const records = snapshot.entries
     .map((e) => e.data)
     .filter(isSpaceItem)
@@ -155,6 +168,7 @@ export function WorkspaceBoard({
       className={`milestone-point${point.pool ? ' todo-pool' : ''}${isComplete(point, snapshot.entries) ? ' milestone-done' : ''}`}
       key={point.id}
       data-space-id={point.id}
+      {...drag.targetProps(point.id)}
       aria-label={`关键节点 · ${point.title}`}
     >
       {!point.pool && (
@@ -193,7 +207,11 @@ export function WorkspaceBoard({
           </div>
         </>
       )}
-      <button className="point-title" onClick={() => select(point.id)}>
+      <button
+        className="point-title"
+        onClick={() => select(point.id)}
+        {...(!point.pool && drag.sourceProps(point))}
+      >
         {point.title}
       </button>
       <TodoRows
@@ -201,6 +219,7 @@ export function WorkspaceBoard({
         todos={records.filter((r): r is Todo => r.type === 'todo' && r.milestoneId === point.id)}
         select={select}
         toggle={toggle}
+        drag={drag}
       />
       <Button
         className="add-todo"
@@ -228,13 +247,17 @@ export function WorkspaceBoard({
         onShowArchivedChange={onShowArchivedChange}
         onCreateProject={() => edit({ type: 'project' })}
       />
-      <div className="workspace-content" ref={content}>
+      <div className="workspace-content" ref={content} {...drag.boardProps}>
+        <p className="workspace-drag-status" role="status">
+          {drag.status}
+        </p>
         {!groups.length && <EmptyState>{query ? '没有匹配的工作' : '暂无项目'}</EmptyState>}
         {groups.map(({ project, lines }) => (
           <section
             className="project-plane"
             key={project.id}
             data-space-id={project.id}
+            {...drag.targetProps(project.id)}
             aria-label={`项目面 · ${project.title}`}
           >
             <div className="project-heading">
@@ -258,6 +281,7 @@ export function WorkspaceBoard({
                     className="business-track"
                     key={line.id}
                     data-space-id={line.id}
+                    {...drag.targetProps(line.id)}
                     aria-label={`业务线 · ${line.title}`}
                   >
                     <div className="track-scroll">
@@ -267,7 +291,7 @@ export function WorkspaceBoard({
                             <button
                               className="line-title"
                               onClick={() => select(line.id)}
-                              title={line.title}
+                              {...drag.sourceProps(line)}
                             >
                               <strong>{line.title}</strong>
                             </button>

@@ -86,20 +86,21 @@ test('一次实际工作可以连续新建多条 TODO / IDEA 并一起保存', a
   await form.getByLabel('开始时间', { exact: true }).fill('14:00');
   await form.getByLabel('结束时间', { exact: true }).fill('14:30');
   await form.getByRole('button', { name: '保存实际工作', exact: true }).click();
+  await expect(form.getByLabel('具体事件', { exact: true })).toHaveValue('');
   await refresh(page);
 
   const state = await snapshot(page);
   const items = state.entries
     .filter(
       (entry) =>
-        entry.data.type === 'todo' &&
-        ['补充材料清单', '安排下周复盘'].includes(entry.data.title),
+        entry.data.type === 'todo' && ['补充材料清单', '安排下周复盘'].includes(entry.data.title),
     )
     .map((entry) => entry.data.id);
   expect(items).toHaveLength(2);
-  expect(state.entries.find((entry) => entry.data.type === 'actual')?.data).toMatchObject({
-    itemIds: items,
-  });
+  const actual = state.entries
+    .map((entry) => entry.data)
+    .find((record) => record.type === 'actual');
+  expect(actual?.itemIds.slice().sort()).toEqual(items.sort());
 });
 
 test('一次实际工作可以关联多个不同节点', async ({ page }) => {
@@ -113,13 +114,21 @@ test('一次实际工作可以关联多个不同节点', async ({ page }) => {
   await form.getByLabel('具体事件', { exact: true }).fill('同步推进两个节点');
   await form.getByLabel('开始时间', { exact: true }).fill('15:00');
   await form.getByLabel('结束时间', { exact: true }).fill('16:00');
-  await form.getByLabel('先选择业务线', { exact: true }).selectOption(line.data.id);
-  await form.getByLabel('关联节点', { exact: true }).selectOption(node.data.id);
-  await form.getByLabel('关联节点', { exact: true }).selectOption(otherNode.data.id);
-  await expect(form.getByLabel('关联节点 方案会议', { exact: true })).toBeChecked();
-  await expect(form.getByLabel('关联节点 复盘节点', { exact: true })).toBeChecked();
-  await expect(form).toContainText('已关联 2 个节点，可继续选择不同节点。');
+  const pool = form.getByRole('region', { name: '待选池', exact: true });
+  await pool.getByLabel('业务线', { exact: true }).selectOption(line.data.id);
+  for (const title of ['方案会议', '复盘节点'])
+    await pool
+      .locator('.actual-pool-choice')
+      .filter({ hasText: `节点 · ${title}` })
+      .getByRole('button', { name: '加入', exact: true })
+      .click();
+  const selected = form.getByRole('region', { name: '已选择', exact: true });
+  await expect(selected.locator('.actual-selected-heading > span')).toHaveCount(2);
+  for (const title of ['节点 · 方案会议', '节点 · 复盘节点'])
+    await expect(selected.getByText(title, { exact: true })).toBeVisible();
+  await expect(pool.locator('.actual-pool-choice').filter({ hasText: '节点 · ' })).toHaveCount(0);
   await form.getByRole('button', { name: '保存实际工作', exact: true }).click();
+  await expect(form.getByLabel('具体事件', { exact: true })).toHaveValue('');
   await refresh(page);
 
   const state = await snapshot(page);
@@ -135,13 +144,19 @@ test('实际工作可从已有待办绑定，节点和待办批注均可留空�
   await form.getByLabel('具体事件', { exact: true }).fill('完成方案会议后的材料确认');
   await form.getByLabel('开始时间', { exact: true }).fill('10:00');
   await form.getByLabel('结束时间', { exact: true }).fill('10:30');
-  await form.getByLabel('先选择业务线', { exact: true }).selectOption(line.data.id);
-  await form.getByLabel('关联节点', { exact: true }).selectOption(node.data.id);
-  await form.getByLabel('绑定待办', { exact: true }).selectOption(todo.data.id);
+  const pool = form.getByRole('region', { name: '待选池', exact: true });
+  await pool.getByLabel('业务线', { exact: true }).selectOption(line.data.id);
+  for (const title of ['节点 · 方案会议', 'TODO · 找人要材料'])
+    await pool
+      .locator('.actual-pool-choice')
+      .filter({ hasText: title })
+      .getByRole('button', { name: '加入', exact: true })
+      .click();
   await expect(form.getByLabel('批注 · 方案会议', { exact: true })).toHaveValue('');
   await expect(form.getByLabel('批注 · 找人要材料', { exact: true })).toHaveValue('');
   await form.getByRole('checkbox', { name: '本次完成 找人要材料', exact: true }).check();
   await form.getByRole('button', { name: '保存实际工作', exact: true }).click();
+  await expect(form.getByLabel('具体事件', { exact: true })).toHaveValue('');
   await refresh(page);
 
   const state = await snapshot(page);

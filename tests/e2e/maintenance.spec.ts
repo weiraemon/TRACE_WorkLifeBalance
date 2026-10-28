@@ -44,7 +44,7 @@ test('逾期待办先提示，顺延保留原节点；越过节点日期进入�
   await write(page, 'todo', { title: '灵感不催办', kind: 'idea', milestoneId: oldNode.data.id });
   await write(page, 'todo', { title: '未来不混入', milestoneId: node.data.id, dueDate: day(1) });
   await refresh(page);
-  const prompt = page.locator('.overdue-prompt');
+  const prompt = page.getByRole('status').filter({ hasText: '项待办已过期' });
   await expect(prompt).toContainText('2 项待办已过期');
   await prompt.getByRole('button', { name: '处理', exact: true }).click();
   const dialog = page.getByRole('dialog');
@@ -155,7 +155,7 @@ test('批量顺延部分失败后刷新剩余项，可重试且不覆盖更改',
   await page.unroute('**/api/records');
   await dialog.getByRole('button', { name: '全部挪到今天', exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.locator('.overdue-prompt')).toHaveCount(0);
+  await expect(page.getByRole('status').filter({ hasText: '项待办已过期' })).toHaveCount(0);
 });
 
 test('删除前待办被其他窗口完成时停止，不删除更新后的内容', async ({ page }) => {

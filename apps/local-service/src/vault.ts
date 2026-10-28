@@ -21,7 +21,7 @@ import {
   type Milestone,
   type Todo,
 } from '../../../packages/domain/index';
-import { spaceSubtree, lineFor } from '../../../packages/domain/workspace';
+import { spaceSubtree, lineFor, spaceParentId } from '../../../packages/domain/workspace';
 import {
   appendComment,
   section,
@@ -463,6 +463,40 @@ export class Vault {
       if (existing && (revision !== existing.revision || existing.data.type !== data.type))
         throw new VaultError('文件已更改，请重新加载；未覆盖你的编辑', 409);
       if (!existing && revision) throw new VaultError('原记录已移除或无法读取', 409);
+      let moveTarget: RecordData | undefined;
+      if (settings.move) {
+        if (!existing) throw new VaultError('只能移动已有工作对象');
+        const target = snapshot.entries.find((e) => e.data.id === settings.move!.targetId);
+        if (!target || target.revision !== settings.move.revision)
+          throw new VaultError('目标已更改，请重新加载后再移动', 409);
+        moveTarget = target.data;
+        const inside = settings.move.placement === 'inside';
+        if (data.id === moveTarget.id) throw new VaultError('不能移动到自身');
+        if (
+          data.type === 'workline' &&
+          ((inside && moveTarget.type === 'project') || (!inside && moveTarget.type === 'workline'))
+        ) {
+          data = {
+            ...data,
+            projectId: moveTarget.type === 'workline' ? moveTarget.projectId : moveTarget.id,
+          };
+        } else if (
+          data.type === 'milestone' &&
+          !data.pool &&
+          inside &&
+          moveTarget.type === 'workline'
+        ) {
+          data = { ...data, lineId: moveTarget.id };
+        } else if (
+          data.type === 'todo' &&
+          ((inside && moveTarget.type === 'milestone') || (!inside && moveTarget.type === 'todo'))
+        ) {
+          data = {
+            ...data,
+            milestoneId: moveTarget.type === 'todo' ? moveTarget.milestoneId : moveTarget.id,
+          };
+        } else throw new VaultError('不能跨层级移动；待办池固定在线尾');
+      }
       if (settings.newItems.length && data.type !== 'actual')
         throw new VaultError('只有实际表单可以同时发布新条目');
       if (
@@ -543,6 +577,32 @@ export class Vault {
         for (const part of this.createLineParts(data)) changed.set(part.id, part);
         data = changed.get(data.id)!;
       } else changed.set(data.id, data);
+      if (settings.move && moveTarget && (data.type === 'workline' || data.type === 'todo')) {
+        const parentId = spaceParentId(data);
+        const siblings = snapshot.entries
+          .map((e) => e.data)
+          .filter(
+            (r): r is BusinessLine | Todo =>
+              r.type === data.type && r.id !== data.id && spaceParentId(r) === parentId,
+          )
+          .sort(
+            (a, b) =>
+              a.order - b.order ||
+              a.createdAt.localeCompare(b.createdAt) ||
+              a.id.localeCompare(b.id),
+          );
+        const index = siblings.findIndex((r) => r.id === moveTarget!.id);
+        siblings.splice(
+          index < 0 ? siblings.length : index + (settings.move.placement === 'after' ? 1 : 0),
+          0,
+          data,
+        );
+        for (const [order, item] of siblings.entries()) {
+          if (item.id === data.id) data = { ...data, order };
+          if (item.id === data.id || item.order !== order)
+            changed.set(item.id, { ...item, order, updatedAt: now });
+        }
+      }
       for (const item of settings.newItems) changed.set(item.id, parseRecord(item));
       if (data.type === 'actual') {
         const linkedIds = data.itemIds;

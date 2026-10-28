@@ -6,15 +6,20 @@ jobs:
     env:
       ATLAS_BROWSER_CHANNEL: msedge
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
-      - run: npm run check
-      - uses: actions/upload-artifact@v4
+      - name: Unit and integration tests
+        run: npm test
+      - name: Type check and build
+        run: npm run build
+      - name: Browser tests
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-failures
