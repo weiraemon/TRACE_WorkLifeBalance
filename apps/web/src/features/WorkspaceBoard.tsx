@@ -177,6 +177,7 @@ export function WorkspaceBoard({
             <small className="node-tags" title={point.tags.join(' · ')}>
               {point.tags.join(' · ')}
             </small>
+            {point.location && <small className="node-location">{point.location}</small>}
             <button className="point-dates" aria-label={`调整日期 · ${point.title}`}>
               <span>
                 截止 {point.dueDate ?? '未定'} {point.dueTime}

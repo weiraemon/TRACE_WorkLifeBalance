@@ -1,5 +1,9 @@
 import { z } from 'zod';
+<<<<<<< Updated upstream
 export const recordContract = 'atlas-lines-12';
+=======
+export const recordContract = 'atlas-lines-24';
+>>>>>>> Stashed changes
 export const noteKinds = ['note', 'idea', 'meeting', 'draft'] as const;
 export const noteKindLabel = { note: '笔记', idea: '灵感', meeting: '纪要', draft: '待细化' };
 export const noteTagSchema = z
@@ -66,6 +70,7 @@ const milestoneSchema = z
     lineId: id,
     pool: z.boolean().default(false),
     tags: z.array(z.string().trim().min(1).max(60)).max(20).default([]),
+    location: z.string().trim().max(300).nullable().default(null),
     dueDate: optionalDay,
     dueTime: time
       .refine((value) => value !== '24:00', '截止时刻请使用 00:00–23:59')

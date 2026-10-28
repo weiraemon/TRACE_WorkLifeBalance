@@ -1967,6 +1967,14 @@ input[type='checkbox'] {
   color: var(--muted);
   font-size: 11px;
 }
+.node-location {
+  color: var(--muted);
+  font-size: 11px;
+}
+.point-meta .node-location {
+  margin: 0;
+  font-size: 11px;
+}
 .milestone-done .point-title {
   text-decoration: line-through;
   color: var(--muted);
@@ -2467,4 +2475,134 @@ select:focus-visible {
   .today-agenda {
     padding-right: 8px;
   }
+}
+.message-inbox {
+  display: grid;
+  gap: 16px;
+}
+.qq-group-matches {
+  display: grid;
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border, #d9dfda);
+  border-radius: 8px;
+  padding: 4px;
+  background: var(--surface);
+}
+.qq-group-match {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  padding: 7px 9px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.qq-group-match:hover {
+  background: var(--hover);
+}
+.qq-group-match small {
+  flex: none;
+  color: var(--muted);
+}
+.qq-group-clear {
+  border: 0;
+  background: none;
+  color: var(--accent-strong);
+  padding: 0 6px;
+  font: inherit;
+  cursor: pointer;
+}
+.message-entry {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 16px 8px;
+}
+.message-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  border-radius: 9px;
+  background: var(--accent-strong);
+  color: var(--surface);
+  padding: 0 5px;
+  font-size: 0.72rem;
+  line-height: 1;
+}
+.message-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.message-bulk-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(20 30 25 / 28%);
+}
+.message-bulk-confirm {
+  display: grid;
+  gap: 10px;
+  width: min(440px, 100%);
+  border: 1px solid var(--border, #d9dfda);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 16px;
+  box-shadow: 0 16px 40px rgb(20 30 25 / 18%);
+}
+.message-bulk-confirm p {
+  margin: 0;
+}
+.message-inbox form,
+.message-rule,
+.message-candidate {
+  display: grid;
+  gap: 12px;
+}
+.message-rule,
+.message-candidate {
+  border: 0;
+  border-top: 1px solid var(--border, #d9dfda);
+  padding: 16px 0;
+  min-width: 0;
+}
+.message-conditions,
+.message-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.message-conditions label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.message-conditions input,
+.message-rule input[type='checkbox'] {
+  width: auto;
+}
+.message-notice {
+  padding: 10px 0;
+  font-size: 14px;
+}
+.message-candidate blockquote {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 12px 0;
+  padding-left: 12px;
+  border-left: 2px solid #bac9be;
 }

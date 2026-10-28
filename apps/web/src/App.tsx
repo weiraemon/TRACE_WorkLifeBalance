@@ -8,7 +8,8 @@ import {
   type Snapshot,
   type DeleteResult,
 } from '../../../packages/domain/index';
-import { load, session, removeSpace } from './api';
+import { api, load, session, removeSpace } from './api';
+import { readLastVault } from './lastVault';
 import { spaceSubtree } from '../../../packages/domain/workspace';
 import { Button, Modal, EmptyState, ErrorMessage } from './components/ui';
 import { Connect, Backup, Appearance } from './features/VaultSettings';
@@ -25,6 +26,8 @@ import { DeleteSpaceDialog } from './features/DeleteSpaceDialog';
 import { Knowledge } from './pages/Knowledge';
 import { Review } from './pages/Review';
 import { Today } from './pages/Today';
+import { MessageInbox } from './features/MessageInbox';
+import { WechatSync } from './features/WechatSync';
 const Timeline = lazy(() => import('./features/Timeline').then((m) => ({ default: m.Timeline })));
 const pages = [
   { id: 'today', name: '今日' },
@@ -46,6 +49,8 @@ export default function App() {
     [showArchived, setShowArchived] = useState(false);
   const query = useDeferredValue(search.toLowerCase());
   const [contentDirty, setContentDirty] = useState(false);
+  const [syncPanel, setSyncPanel] = useState<'qq' | 'wechat' | null>(null);
+  const [pendingMessages, setPendingMessages] = useState(0);
   const [deleting, setDeleting] = useState<Entry | null>(null);
   const [deletion, setDeletion] = useState<DeleteResult | null>(null);
   const canLeaveContent = () => !contentDirty || window.confirm('正文尚未保存，确定放弃并离开？');
@@ -65,6 +70,10 @@ export default function App() {
     void session()
       .then(async (s) => {
         if (s.connected) await reload();
+        else {
+          const root = readLastVault();
+          if (root) setSnapshot(await api<Snapshot>('connect', { path: root }));
+        }
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
@@ -83,6 +92,27 @@ export default function App() {
     }, 5000);
     return () => clearInterval(timer);
   }, [Boolean(snapshot), reload]);
+  useEffect(() => {
+    if (!snapshot) {
+      setPendingMessages(0);
+      return;
+    }
+    let cancelled = false;
+    const readCount = async () => {
+      try {
+        const view = await api<{ state: { candidates: unknown[] } }>('messages');
+        if (!cancelled) setPendingMessages(view.state.candidates.length);
+      } catch {
+        // Keep the previous count; the sync dialog reports its own errors.
+      }
+    };
+    void readCount();
+    const timer = setInterval(readCount, 10000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [snapshot?.vaultId]);
   const goWorkspace = (id?: string) => {
     if (!canLeaveContent()) return;
     setPage('workspace');
@@ -200,6 +230,30 @@ export default function App() {
           </Button>
         </header>
         <div className={`content${hasBusinessNavigation ? ' workspace-page' : ''}`}>
+          {snapshot && (
+            <div className="message-entry">
+              <Button
+                aria-label="QQ同步设置"
+                onClick={() => {
+                  if (canLeaveContent()) setSyncPanel('qq');
+                }}
+              >
+                QQ同步设置
+                {pendingMessages > 0 && (
+                  <span className="message-badge" aria-hidden="true">
+                    {pendingMessages}
+                  </span>
+                )}
+              </Button>
+              <Button
+                onClick={() => {
+                  if (canLeaveContent()) setSyncPanel('wechat');
+                }}
+              >
+                微信同步设置
+              </Button>
+            </div>
+          )}
           <ErrorMessage message={error} />
           {error && <Button onClick={() => setError('')}>收起提示</Button>}
           {loading ? (
@@ -367,6 +421,24 @@ export default function App() {
           close={() => setDeleting(null)}
           deleted={handleDeleted}
         />
+      )}
+      {syncPanel && snapshot && (
+        <Modal
+          title={syncPanel === 'qq' ? 'QQ同步设置' : '微信同步设置'}
+          wide
+          onClose={() => setSyncPanel(null)}
+        >
+          {syncPanel === 'qq' ? (
+            <MessageInbox
+              key={snapshot.vaultId}
+              snapshot={snapshot}
+              reload={reload}
+              onPendingChange={setPendingMessages}
+            />
+          ) : (
+            <WechatSync />
+          )}
+        </Modal>
       )}
       {settings && (
         <Modal title="Vault 与数据安全" onClose={() => setSettings(false)} wide>

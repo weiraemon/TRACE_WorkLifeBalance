@@ -9,6 +9,7 @@ import {
   type DeleteResult,
   type SaveOptions,
 } from '../../../packages/domain/index';
+import { rememberVault } from './lastVault';
 let token = '';
 let vaultId = '';
 export async function api<T>(route: string, body?: unknown): Promise<T> {
@@ -28,7 +29,10 @@ export async function api<T>(route: string, body?: unknown): Promise<T> {
     );
   const value = await response.json();
   if (!response.ok) throw new Error(value.error ?? '请求失败');
-  if (route === 'connect') vaultId = value.vaultId;
+  if (route === 'connect') {
+    vaultId = value.vaultId;
+    rememberVault(value.root);
+  }
   return value;
 }
 export async function session() {
@@ -37,6 +41,7 @@ export async function session() {
   );
   token = value.token;
   vaultId = value.vaultId;
+  if (value.connected) rememberVault(value.root);
   return value;
 }
 export const load = () => api<Snapshot>('snapshot');

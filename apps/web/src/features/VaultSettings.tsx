@@ -3,6 +3,7 @@ import type { Snapshot } from '../../../../packages/domain/index';
 import { api } from '../api';
 import { Button, Field, ErrorMessage } from '../components/ui';
 import { readTheme, saveTheme } from '../theme';
+import { readLastVault } from '../lastVault';
 export function Appearance() {
   const [theme, setTheme] = useState(readTheme);
   return (
@@ -32,7 +33,7 @@ export function Appearance() {
   );
 }
 export function Connect({ onConnected }: { onConnected: (snapshot: Snapshot) => void }) {
-  const [value, setValue] = useState(''),
+  const [value, setValue] = useState(readLastVault),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   return (

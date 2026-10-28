@@ -1,8 +1,18 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { hostname } from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
 import { parseDocument, stringify, isMap } from 'yaml';
 import { z } from 'zod';
+import { inboxPath, readInboxText, writeInboxText } from './message-store';
+import {
+  fallbackDestination,
+  inboxSchema,
+  suggestionSchema,
+  type Inbox,
+  type MessageDestination,
+  type Suggestion,
+} from '../../../packages/domain/messages';
 import {
   parseRecord,
   validateChange,
@@ -129,26 +139,83 @@ export class Vault {
     const vault = new Vault(root);
     await vault.safe('.atlas', true);
     await fs.mkdir(path.join(root, '.atlas'), { recursive: true });
-    try {
-      await fs.writeFile(
-        await vault.safe('.atlas/service.lock', true),
-        JSON.stringify({ pid: process.pid, token: vault.lockToken }),
-        { flag: 'wx' },
-      );
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST')
-        throw new VaultError(
-          'Vault 已由一个 ATLAS 服务打开；异常退出时请核实进程后移除 .atlas/service.lock',
-          409,
-        );
-      throw error;
-    }
+    await vault.acquireLock();
     try {
       await vault.resumeChanges();
       return vault;
     } catch (error) {
       await vault.close();
       throw error;
+    }
+  }
+  private async acquireLock() {
+    const busy = () =>
+      new VaultError(
+        '工作目录已由一个 CHAOS 服务打开，或无法确认旧锁是否失效。请先关闭其他启动窗口后重试；不要删除仍在使用的锁文件。',
+        409,
+      );
+    const writeLock = async () =>
+      fs.writeFile(
+        await this.safe('.atlas/service.lock', true),
+        JSON.stringify({ pid: process.pid, token: this.lockToken, hostname: hostname() }),
+        { flag: 'wx' },
+      );
+    try {
+      await writeLock();
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    }
+    // Serialize stale-lock recovery so two starters cannot remove each other's new lock.
+    const guardPath = await this.safe('.atlas/service-lock-recovery', true);
+    let guard;
+    try {
+      guard = await fs.open(guardPath, 'wx');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw busy();
+      throw error;
+    }
+    try {
+      const lockPath = await this.safe('.atlas/service.lock', true);
+      let contents: string | undefined;
+      try {
+        contents = await fs.readFile(lockPath, 'utf8');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+      if (contents !== undefined) {
+        let lock;
+        try {
+          lock = JSON.parse(contents);
+        } catch {
+          throw busy();
+        }
+        if (
+          !lock ||
+          !Number.isSafeInteger(lock.pid) ||
+          lock.pid <= 0 ||
+          (lock.hostname && lock.hostname !== hostname())
+        )
+          throw busy();
+        try {
+          process.kill(lock.pid, 0);
+          throw busy();
+        } catch (error) {
+          // Only ESRCH proves the owner is gone; permission errors are not proof.
+          if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw busy();
+        }
+        if ((await fs.readFile(lockPath, 'utf8')) !== contents) throw busy();
+        await fs.unlink(lockPath);
+      }
+      try {
+        await writeLock();
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw busy();
+        throw error;
+      }
+    } finally {
+      await guard.close();
+      await fs.unlink(guardPath);
     }
   }
   async close() {
@@ -714,6 +781,310 @@ export class Vault {
       const result = (await this.scan()).entries.find((e) => e.data.id === data.id);
       if (!result) throw new VaultError('记录已发布但无法读取，请检查诊断', 409);
       return result;
+    });
+  }
+
+  async messageInbox() {
+    const target = await this.safe(inboxPath, true);
+    let source = '';
+    try {
+      source = await readText(target);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    return { state: readInboxText(source), revision: source ? hash(source) : null, source };
+  }
+
+  async saveMessageInbox(input: Inbox, revision: string | null) {
+    return this.serialized(async () => {
+      const current = await this.messageInbox();
+      if (current.revision !== revision) throw new VaultError('消息收集已更改，请刷新后重试', 409);
+      await this.commitChanges([
+        {
+          path: inboxPath,
+          content: writeInboxText(current.source, inboxSchema.parse(input)),
+          expected: revision,
+        },
+      ]);
+    });
+  }
+
+  async acceptMessage(
+    id: string,
+    revision: string | null,
+    lineId: string,
+    input: Suggestion,
+    projectId: string | null = null,
+  ) {
+    return this.serialized(async () => {
+      const inbox = await this.messageInbox();
+      if (revision !== inbox.revision) throw new VaultError('消息收集已更改，请刷新后重试', 409);
+      const candidate = inbox.state.candidates.find((c) => c.id === id);
+      if (!candidate) throw new VaultError('事项已处理或不存在', 409);
+      const suggestion = suggestionSchema.parse(input);
+      if (suggestion.kind === 'change' || suggestion.kind === 'cancel') {
+        const targetId = suggestion.targetId ?? candidate.suggestion.targetId;
+        if (!targetId) throw new VaultError('未找到要修改的现有事项，请到工作空间核对');
+        const target = (await this.scan()).entries.find((e) => e.data.id === targetId)?.data;
+        if (!target || (target.type !== 'milestone' && target.type !== 'todo'))
+          throw new VaultError('要修改的事项已不存在或类型不支持');
+        if (target.completedAt) throw new VaultError('要修改的事项已完成，请刷新');
+        const now = new Date().toISOString();
+        const records: RecordData[] = [];
+        if (suggestion.kind === 'change') {
+          if (suggestion.completed) {
+            records.push({ ...target, completedAt: now, updatedAt: now });
+            if (target.type === 'milestone') {
+              const snapshot = await this.scan();
+              for (const { data } of snapshot.entries)
+                if (data.type === 'todo' && data.milestoneId === target.id && !data.completedAt)
+                  records.push({ ...data, completedAt: now, updatedAt: now });
+            }
+          } else if (target.type === 'milestone') {
+            records.push({
+              ...target,
+              dueDate: suggestion.dueDate,
+              dueTime: suggestion.dueTime,
+              location: suggestion.location ?? target.location,
+              updatedAt: now,
+            });
+          } else {
+            if (suggestion.dueTime)
+              throw new VaultError('待办没有独立时刻，请修改所属节点或先升为节点');
+            records.push({ ...target, dueDate: suggestion.dueDate, updatedAt: now });
+          }
+        } else {
+          records.push({ ...target, completedAt: now, updatedAt: now });
+          if (target.type === 'milestone') {
+            const snapshot = await this.scan();
+            for (const { data } of snapshot.entries)
+              if (data.type === 'todo' && data.milestoneId === target.id && !data.completedAt)
+                records.push({ ...data, completedAt: now, updatedAt: now });
+          }
+        }
+        const snapshot = await this.scan();
+        inbox.state.candidates = inbox.state.candidates.filter((c) => c.id !== id);
+        const changes = await this.prepareChanges(snapshot.entries, records);
+        changes.push({
+          path: inboxPath,
+          content: writeInboxText(inbox.source, inbox.state),
+          expected: inbox.revision,
+        });
+        await this.commitChanges(changes);
+        return { ids: records.map((record) => record.id) };
+      }
+      if (!['task', 'event'].includes(candidate.suggestion.kind))
+        throw new VaultError('事项类型已变化，请刷新后重试');
+      const snapshot = await this.scan();
+      const now = new Date().toISOString();
+      const make = (type: string, fields: object) =>
+        parseRecord({
+          schemaVersion: 1,
+          id: randomUUID(),
+          createdAt: now,
+          updatedAt: now,
+          type,
+          ...fields,
+        });
+      const records: RecordData[] = [];
+      const bodies = new Map<string, string>();
+      const catalog = snapshot.entries.flatMap(({ data: p }) =>
+        p.type === 'project' && !p.completedAt
+          ? [
+              {
+                id: p.id,
+                title: p.title,
+                lines: snapshot.entries.flatMap(({ data: l }) =>
+                  l.type === 'workline' && l.projectId === p.id && !l.completedAt
+                    ? [{ id: l.id, title: l.title }]
+                    : [],
+                ),
+              },
+            ]
+          : [],
+      );
+      let target: MessageDestination | null = suggestion.destination ?? null;
+      const scopedId = projectId ?? candidate.projectId;
+      const scopedProject = scopedId ? catalog.find((p) => p.id === scopedId) : undefined;
+      if (scopedId && !scopedProject)
+        throw new VaultError('会话限定项目已删除或结束，无法创建业务线');
+      const scopeCatalog = scopedProject ? [scopedProject] : catalog;
+      if (scopedProject && target?.kind === 'newProject')
+        target = {
+          kind: 'newLine',
+          projectId: scopedProject.id,
+          lineTitle: target.lineTitle,
+          reason: target.reason,
+        };
+      const lineAvailable = (id: string) => {
+        const entry = snapshot.entries.find((e) => e.data.id === id && e.data.type === 'workline');
+        if (!entry) return false;
+        const data = entry.data;
+        if (data.type !== 'workline' || data.completedAt) return false;
+        const parent = snapshot.entries.find((e) => e.data.id === data.projectId);
+        return Boolean(parent && parent.data.type === 'project' && !parent.data.completedAt);
+      };
+      if (lineId && !lineAvailable(lineId)) lineId = '';
+      if (
+        lineId &&
+        scopedProject &&
+        !scopeCatalog.some((p) => p.lines.some((l) => l.id === lineId))
+      )
+        lineId = '';
+      if (!lineId) {
+        const current = target;
+        const stale =
+          current == null ||
+          (current.kind === 'existing' &&
+            !scopeCatalog.some((p) => p.lines.some((l) => l.id === current.lineId))) ||
+          (current.kind === 'newLine' && !scopeCatalog.some((p) => p.id === current.projectId));
+        if (stale)
+          target = fallbackDestination(
+            suggestion.title,
+            candidate.source.text,
+            scopeCatalog,
+            scopedProject?.id ?? null,
+          );
+      }
+      if (!lineId && target?.kind === 'existing') lineId = target.lineId;
+      if (!lineId && target && target.kind !== 'existing') {
+        const normalize = (s: string) => s.normalize('NFKC').trim().toLowerCase();
+        const cleanTitle = (s: string) => s.replace(/[\r\n]+/g, ' ').trim();
+        const projectTitle = target.kind === 'newProject' ? cleanTitle(target.projectTitle) : '';
+        const lineTitle = cleanTitle(target.lineTitle);
+        if (!lineTitle) throw new VaultError('推荐业务线名称无效，请手动填写');
+        if (target.kind === 'newProject' && !projectTitle)
+          throw new VaultError('推荐项目名称无效，请手动填写');
+        let projectId = target.kind === 'newLine' ? target.projectId : '';
+        if (target.kind === 'newProject') {
+          const matches = snapshot.entries.filter(
+            (e) =>
+              e.data.type === 'project' &&
+              !e.data.completedAt &&
+              normalize(e.data.title) === normalize(projectTitle),
+          );
+          if (matches.length > 1) throw new VaultError('同名项目不唯一，请手动选择业务线');
+          if (matches.length) projectId = matches[0].data.id;
+          else {
+            const project = make('project', { title: projectTitle });
+            records.push(project);
+            projectId = project.id;
+          }
+        }
+        const parent = [...snapshot.entries.map((e) => e.data), ...records].find(
+          (r) => r.id === projectId,
+        );
+        if (parent?.type !== 'project' || parent.completedAt)
+          throw new VaultError('推荐项目已删除或结束，请重新选择归属');
+        const matches = snapshot.entries.filter(
+          (e) =>
+            e.data.type === 'workline' &&
+            !e.data.completedAt &&
+            e.data.projectId === projectId &&
+            normalize(e.data.title) === normalize(lineTitle),
+        );
+        if (matches.length > 1) throw new VaultError('同名业务线不唯一，请手动选择');
+        if (matches.length) lineId = matches[0].data.id;
+        else {
+          const parts = this.createLineParts(
+            make('workline', { title: lineTitle, projectId }) as BusinessLine,
+          );
+          records.push(...parts);
+          const newLine = parts[0] as BusinessLine;
+          lineId = newLine.id;
+          bodies.set(newLine.notesId!, '\n# ' + newLine.title + '\n');
+        }
+      }
+      const working = [
+        ...snapshot.entries,
+        ...records.map((data) => ({ data, path: '', revision: '' })),
+      ];
+      const lines = working.filter((e) => e.data.id === lineId);
+      const line = lines.length === 1 ? lines[0].data : undefined;
+      const project =
+        line?.type === 'workline'
+          ? working.find((e) => e.data.id === line.projectId)?.data
+          : undefined;
+      if (
+        line?.type !== 'workline' ||
+        line.completedAt ||
+        project?.type !== 'project' ||
+        project.completedAt
+      )
+        throw new VaultError('请选择未结束项目中的业务线');
+      const pools = working.filter(
+        (e) => e.data.type === 'milestone' && e.data.lineId === lineId && e.data.pool,
+      );
+      if (pools.length !== 1) throw new VaultError('业务线待办池缺失或重复');
+      let node = pools[0].data as Milestone;
+      if (suggestion.kind === 'event' || suggestion.dueDate) {
+        node = make('milestone', {
+          title: suggestion.title,
+          lineId,
+          dueDate: suggestion.dueDate,
+          dueTime: suggestion.dueTime,
+          tags: suggestion.tags,
+          location: suggestion.location,
+        }) as Milestone;
+        records.push(node);
+      }
+      const titles = suggestion.actions.length
+        ? suggestion.actions
+        : suggestion.kind === 'task'
+          ? [suggestion.title]
+          : [];
+      for (const title of titles)
+        records.push(
+          make('todo', {
+            title,
+            milestoneId: node.id,
+            dueDate: node.pool ? suggestion.dueDate : null,
+          }),
+        );
+      const virtual = [
+        ...snapshot.entries,
+        ...records.map((data) => ({ data, path: '', revision: '' })),
+      ];
+      for (const record of records) validateChange(record, virtual);
+      const original = await this.notesBody(line, snapshot.entries, bodies);
+      // Keep source text once, attached to the node (or the first pool TODO).
+      const quote = (value: string) =>
+        value
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .split(/\r?\n/)
+          .map((s) => '> ' + s)
+          .join('\n');
+      const source = candidate.source;
+      const label = (value: string) =>
+        value
+          .replace(/[\r\n]+/g, ' ')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;');
+      const location = suggestion.location ? `地点：${label(suggestion.location)}\n\n` : '';
+      const text = `QQ · ${label(candidate.conversation)} · ${label(source.sender)} · ${source.sentAt}\n\n${location}${quote(source.text)}${source.context ? '\n\n相关上下文：\n' + quote(source.context) : ''}`;
+      bodies.set(
+        line.notesId!,
+        appendComment(
+          original,
+          node,
+          node.pool ? (records.find((r) => r.type === 'todo') as Todo) : undefined,
+          {
+            id: candidate.id,
+            text,
+            date: localDay(),
+          },
+        ),
+      );
+      inbox.state.candidates = inbox.state.candidates.filter((c) => c.id !== id);
+      const changes = await this.prepareChanges(snapshot.entries, records, bodies);
+      changes.push({
+        path: inboxPath,
+        content: writeInboxText(inbox.source, inbox.state),
+        expected: inbox.revision,
+      });
+      await this.commitChanges(changes);
+      return { ids: records.map((r) => r.id) };
     });
   }
 

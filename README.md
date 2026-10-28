@@ -46,6 +46,10 @@ CHAOS 是一个本地运行的个人工作台。把外部要求与自己的探�
 
 需要 **Windows · Node.js ≥ 22.12 · 本地 NTFS 目录 · Chrome / Edge**。
 
+日常使用可直接双击项目根目录中的 `start-chaos.cmd`。脚本会在缺少依赖时自动安装，每次启动前构建当前代码，待服务就绪后打开浏览器；若服务已经运行，则直接打开页面。首次安装需要联网。使用期间保留启动窗口，按 `Ctrl+C` 停止服务。也可以为此文件创建桌面快捷方式。
+
+如果希望手动启动：
+
 ```powershell
 npm ci
 npm run build
@@ -62,6 +66,7 @@ npx tsx scripts/sample-vault.ts E:\CHAOS-Demo
 
 也可使用仓库中的 `examples/workspace-vault`，其中日期为固定示例日期。
 
+<<<<<<< Updated upstream
 ## 跟着做一次
 
 以「论文研究 → 新方法验证 → 实验方案初稿」为例，跟着真实界面动图，从安排下一步走到记录专注成果。动图循环播放，可点击放大查看。
@@ -93,6 +98,89 @@ npx tsx scripts/sample-vault.ts E:\CHAOS-Demo
 ![成果截图：实验方案初稿的批注已进入新方法验证业务线的 Notes，保留假设、流程图成果及后续方向](docs/media/workflow-notes.png)
 
 ## 各页面怎么配合
+=======
+## 接入 QQ 与 AI
+
+### 一键接入 QQ（推荐）
+
+需要 **Windows、Node.js ≥ 22.12、Python 3.10+、已安装的 QQNT**。QQ 不需要提前登录，脚本会负责关闭并以调试模式重新启动它。
+
+1. 关闭正在运行的 CHAOS 和 QQ；
+2. 双击项目根目录的 `setup-qq.cmd`；
+3. 脚本会检查 Node/Python，缺少 `sqlcipher3` 时自动安装；
+4. 脚本会定位 QQ 数据目录、下载并校验密钥提取脚本，然后启动 QQ；
+5. 在弹出的 QQ 窗口登录目标账号，脚本会自动捕获密钥；
+6. 脚本验证 `nt_msg.db` 可读后，把 QQ 配置写入本机 `%APPDATA%\CHAOS\settings.json`。
+
+脚本不会把密钥打印到控制台。它优先复用本机已保存且验证有效的密钥；已配置过 QQ 的机器再次运行时通常不需要重新提取。自动同步默认保持关闭，确认测试通过后再启用。如果自动定位账号目录失败，可以指定：
+
+```powershell
+.\setup-qq.cmd -DataDir "D:\...\123456789\nt_qq" -SelfQQ "123456789"
+```
+
+密钥提取依赖第三方调试脚本，可能触发安全软件或 QQ 安全提示；仅建议在自己的账号和电脑上使用，QQ 升级后可能需要重新提取。
+
+如果自动下载不方便，也可以手动下载 [QQBackup/qq-win-db-key](https://github.com/QQBackup/qq-win-db-key) 的 `windows_ntqq_get_key.ps1`，然后运行：
+
+```powershell
+.\scripts\setup-qq.ps1 -QqKeyExtractorPath "路径\windows_ntqq_get_key.ps1"
+```
+
+### 设置 QQ 同步
+
+打开顶部「QQ同步设置」→「会话与识别设置」→「QQ 自动同步」：
+
+1. 确认 QQ 数据目录、本人 QQ 号、Python 命令和数据库密钥；
+2. 点「测试读取」，能看到群消息/私聊数量即表示数据库可读；
+3. 点「读取 QQ 群列表」；
+4. 勾选「启用后台自动同步」并保存；
+5. 在「选择会话」中添加规则：
+   - 会话类型选「群聊」；
+   - 在「QQ 群」输入群名片段或群号，选匹配的群；
+   - 设置检查范围、项目/业务线、本人消息和自动加入选项；
+   - 保存规则。
+
+只有已启用并绑定群号的规则才会自动读取。首次同步按设置回填最近 7 天；QQ 重新登录后补下来的离线消息会保留原发送时间。
+
+需要补取某段时间的历史消息时，使用「QQ手动同步」：选择会话和时间段，可决定是否包含本人消息、是否重新分析已同步消息、是否自动加入计划。私聊目前支持手动同步，自动同步暂只支持群聊。
+
+### 接入 AI
+
+打开「QQ同步设置」→「AI 模型」：
+
+- **DeepSeek**：默认 `https://api.deepseek.com` / `deepseek-flash`；
+- **OpenAI / ChatGPT**：填写你的接口地址和可用模型；
+- **自定义**：任意 OpenAI 兼容的 `/chat/completions` 地址。
+
+填写 API Key 后保存。配置可切换提供商，各提供商的密钥分别保存，保存一次后重启程序无需重输。
+
+没有可用 API Key 时：
+
+- 「使用 AI 辅助日程添加」会自动取消并置灰；
+- 消息按规则过滤后原样进入待确认；
+- 可以用「快速处理」的本地解析提取日期、时刻和标签；
+- 「用 AI 识别」按钮也会禁用。
+
+配置 API 后，手动重新勾选规则/手动同步里的 AI 开关即可。
+
+### 配置与隐私
+
+- 本机配置：`%APPDATA%\CHAOS\settings.json`（AI Key、QQ 号、QQ 数据库密钥、数据目录）；
+- QQ 同步缓存：`%LOCALAPPDATA%\CHAOS\qq-cache`（剥头后的 SQLCipher 副本）；
+- Vault 内的规则与待确认：`<Vault>\.atlas\qq-inbox.md`（不含 API Key 或 QQ 数据库密钥）。
+
+API Key 和 QQ 数据库密钥在本机 JSON 中以明文保存，依靠 Windows 用户目录权限保护；不会写入 Markdown 工作目录，也不会进入 Git。不要把配置目录、`.test-vault` 或真实 Vault 提交到仓库。
+
+手动准备依赖时：
+
+```powershell
+py -3.12 -m pip install sqlcipher3
+```
+
+Python 3.10+ 均可；确保安装 `sqlcipher3` 的解释器与「Python 命令」一致。
+
+## 从这里开始使用
+>>>>>>> Stashed changes
 
 | 页面         | 用它做什么                                                 |
 | :----------- | :--------------------------------------------------------- |
@@ -111,7 +199,9 @@ npx tsx scripts/sample-vault.ts E:\CHAOS-Demo
 
 ## 开发与文档
 
-开发运行 `npm run dev`；验证使用 `npm test`、`npm run build`、`npm run test:e2e`。文件测试需要 NTFS 硬链接与 Junction 权限。
+消息转计划的试用入口为顶部“QQ同步设置”，支持 QQ 会话规则、粘贴消息交给 AI 识别、按会话默认或 AI 自动命名归属、确认后加入业务线。已支持本机 QQNT 数据库的群聊自动同步：绑定 QQ 群后定时读取新消息，登录后补下来的离线消息也会按原始时间进入识别；需要一次性提取数据库密钥并安装 Python `sqlcipher3`。每条规则可选择是否“自动加入计划”和“同步本人发送的消息”，默认仍需人工确认且排除本人消息；另提供“QQ手动同步”，按会话和时间段补取群聊或私聊，并可选择重新分析已同步过的消息。AI 会为节点选择会议／报告等标签，有地点信息时写入节点内容。“微信同步设置”中已放置“微信手动同步”和“会话与识别设置”占位，尚未接入微信数据源。会话可以只限定项目，让 AI 只在该项目下匹配或新建业务线；识别模型可选 DeepSeek、OpenAI / ChatGPT 或自定义 OpenAI 兼容接口，设置与各提供商密钥保存在本机配置目录，重启后无需重输。详见[功能边界与使用说明](docs/product/qq-message-intake.md)。
+
+开发运行 `npm run dev`；验证使用 `npm test`、`npm run build`、`npm run test:e2e`。Windows 首次接入 QQ 的完整步骤见上文[接入 QQ 与 AI](#接入-qq-与-ai)。文件测试需要 NTFS 硬链接与 Junction 权限。
 
 - [开发与故障处理](docs/development/guide.md)
 - [演示录制指南](docs/development/recording.md)
