@@ -2,7 +2,16 @@
 
 [返回 README](../../README.md)
 
-README 中的 GIF 通常是先录屏，再裁剪、删帧、导出得到的。当前 README 使用真实界面的静态截图；点击、拖动或保存反馈适合用短 GIF 展示。
+README 的「跟着做一次」已使用三段真实操作的步骤动图和一张 Notes 成果截图。它们使用独立示例目录，串起同一条业务线的创建、计划安排、实际工作和成果沉淀。
+
+| 素材                                              | 内容                                                               |
+| ------------------------------------------------- | ------------------------------------------------------------------ |
+| [workflow-line.gif](../media/workflow-line.gif)   | 在「论文研究」下新建「新方法验证」业务线                           |
+| [workflow-plan.gif](../media/workflow-plan.gif)   | 新建「实验方案初稿」截止节点，添加两条 TODO                        |
+| [workflow-focus.gif](../media/workflow-focus.gif) | 记录 90 分钟工作，加入节点和待办、填写批注并标记完成，展示保存结果 |
+| [workflow-notes.png](../media/workflow-notes.png) | 在「知识」中查看业务线 Notes 中的成果与下一步                      |
+
+更新素材时保持同一组示例名称，加入步骤说明和操作位置高亮，避开真实目录及私人数据。以下是重新录制连续操作视频并导出 GIF 的方法。
 
 ## Windows：用 ScreenToGif
 
