@@ -817,6 +817,52 @@ input[type='checkbox'] {
 .overdue-list small {
   color: var(--muted);
 }
+.overdue-event-list {
+  list-style: none;
+  margin: 14px 0;
+  padding: 0;
+  max-height: 60dvh;
+  overflow-y: auto;
+}
+.overdue-event-list li {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.overdue-event-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.overdue-event-name small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+}
+.overdue-event-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.overdue-event-actions .button {
+  padding: 5px 8px;
+  font-size: 11px;
+}
+.overdue-event-actions input[type='date'] {
+  width: 38px;
+  min-width: 38px;
+  padding: 4px;
+}
+@media (max-width: 620px) {
+  .overdue-event-list li {
+    grid-template-columns: 1fr;
+  }
+  .overdue-event-actions {
+    flex-wrap: wrap;
+  }
+}
 .backup h2 {
   margin-bottom: 10px;
 }
@@ -1843,6 +1889,16 @@ input[type='checkbox'] {
 .actual-selected h3 {
   margin: 0 0 6px;
   font-size: 14px;
+}
+.actual-pool-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.actual-pool-header input {
+  width: min(100%, 280px);
+  min-width: 0;
 }
 .actual-pool .hint,
 .actual-selected > .hint {

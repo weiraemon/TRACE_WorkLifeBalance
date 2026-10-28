@@ -10,6 +10,7 @@ import { EmptyState, DatePicker } from '../components/ui';
 import { ImportanceDot } from '../components/Importance';
 import { TodayCapture } from '../features/TodayCapture';
 import { OverdueTodos } from '../features/OverdueTodos';
+import { OverdueEvents } from '../features/OverdueEvents';
 import type { Editor } from '../features/editor';
 import { save } from '../api';
 export function Today({
@@ -42,6 +43,7 @@ export function Today({
     <div className="space-board today-board">
       <nav className="today-agenda" aria-label="今日导航">
         <div className="today-agenda-scroll">
+          <OverdueEvents snapshot={snapshot} date={date} reload={reload} />
           <OverdueTodos snapshot={snapshot} date={date} reload={reload} />
           <details open className="today-nav-group">
             <summary>

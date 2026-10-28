@@ -41,6 +41,34 @@ export const overdueTodos = (entries: Entry[], today = localDay()) =>
       );
     })
     .sort((a, b) => todoDate(a)!.localeCompare(todoDate(b)!) || a.todo.id.localeCompare(b.todo.id));
+export function overdueMilestones(entries: Entry[], today = localDay()): MilestoneContext[] {
+  const records = new Map(entries.map((entry) => [entry.data.id, entry.data]));
+  return entries
+    .flatMap(({ data: milestone }) => {
+      if (
+        milestone.type !== 'milestone' ||
+        milestone.pool ||
+        !milestone.dueDate ||
+        milestone.dueDate >= today ||
+        isComplete(milestone, entries)
+      )
+        return [];
+      const line = records.get(milestone.lineId);
+      const project = line?.type === 'workline' ? records.get(line.projectId) : null;
+      return line?.type === 'workline' &&
+        project?.type === 'project' &&
+        !line.completedAt &&
+        !project.completedAt
+        ? [{ milestone, line, project }]
+        : [];
+    })
+    .sort(
+      (a, b) =>
+        a.milestone.dueDate!.localeCompare(b.milestone.dueDate!) ||
+        (a.milestone.dueTime ?? '23:59').localeCompare(b.milestone.dueTime ?? '23:59') ||
+        a.milestone.id.localeCompare(b.milestone.id),
+    );
+}
 export function isComplete(record: RecordData, entries: Entry[]): boolean {
   if (!isSpaceItem(record)) return false;
   if (record.type === 'milestone') {

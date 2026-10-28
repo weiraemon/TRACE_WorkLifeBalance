@@ -47,6 +47,7 @@ export function ActualRecordForm({
   const [drafts, setDrafts] = useState<Todo[]>([]);
   const [comments, setComments] = useState<Record<string, { id: string; text: string }>>({});
   const [showNewCapture, setShowNewCapture] = useState(false);
+  const [poolSearch, setPoolSearch] = useState('');
   const [associationFilter, setAssociationFilter] = useState({
     projectId: '',
     lineId: '',
@@ -98,6 +99,24 @@ export function ActualRecordForm({
         compareMilestones(a.milestone, b.milestone) ||
         a.todo.title.localeCompare(b.todo.title),
     );
+  const query = poolSearch.trim().toLocaleLowerCase();
+  const visibleNodes = nodeChoices.filter((node) => {
+    const line = linesById.get(node.lineId);
+    const project = projects.find((item) => item.id === line?.projectId);
+    return (
+      !query ||
+      `${project?.title ?? ''} ${line?.title ?? ''} ${node.title}`
+        .toLocaleLowerCase()
+        .includes(query)
+    );
+  });
+  const visibleTodos = todoChoices.filter(
+    (c) =>
+      !query ||
+      `${c.todo.title} ${c.project.title} ${c.line.title} ${c.milestone.title}`
+        .toLocaleLowerCase()
+        .includes(query),
+  );
   const commentField = (targetId: string, title: string) => (
     <Field label={`批注 · ${title}`}>
       <textarea
@@ -184,7 +203,16 @@ export function ActualRecordForm({
         </Field>
       </div>
       <section className="actual-pool" aria-label="待选池">
-        <h3>待选池</h3>
+        <div className="actual-pool-header">
+          <h3>待选池</h3>
+          <input
+            type="search"
+            aria-label="搜索待选池"
+            placeholder="搜索项目、业务线、节点或待办"
+            value={poolSearch}
+            onChange={(event) => setPoolSearch(event.target.value)}
+          />
+        </div>
         <p className="hint">按项目、业务线和节点缩小范围，再把节点或待办加入本次记录。</p>
         <div className="form-grid">
           <Field label="项目">
@@ -243,7 +271,7 @@ export function ActualRecordForm({
           </Field>
         </div>
         <div className="actual-pool-choices">
-          {nodeChoices.map((node) => (
+          {visibleNodes.map((node) => (
             <div className="actual-pool-choice" key={node.id}>
               <span>
                 节点 · {node.title}
@@ -254,7 +282,7 @@ export function ActualRecordForm({
               </Button>
             </div>
           ))}
-          {todoChoices.map((c) => (
+          {visibleTodos.map((c) => (
             <div className="actual-pool-choice" key={c.todo.id}>
               <span>
                 {c.todo.kind.toUpperCase()} · {c.todo.title}
@@ -268,7 +296,7 @@ export function ActualRecordForm({
               </Button>
             </div>
           ))}
-          {nodeChoices.length === 0 && todoChoices.length === 0 && (
+          {visibleNodes.length === 0 && visibleTodos.length === 0 && (
             <p className="hint">没有可选内容</p>
           )}
         </div>

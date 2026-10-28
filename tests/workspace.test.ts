@@ -13,6 +13,7 @@ import {
   todoContexts,
   todosForDay,
   milestonesForDay,
+  overdueMilestones,
   spaceSubtree,
 } from '../packages/domain/workspace';
 const make = (type: string, fields: object = {}) =>
@@ -110,6 +111,34 @@ it('今日只含当天条目，完成权重为零；节点计划不包含池、�
   const all = [...entries, ...[done, open, future, pool, unscheduled].map(entry)];
   expect(todosForDay(all, '2026-10-25').map((c) => c.todo.id)).toEqual([open.id, done.id]);
   expect(milestonesForDay(all, '2026-10-25').map((c) => c.milestone.id)).toEqual([node.id]);
+});
+it('过期事件只列出未完成、非待办池且归属仍有效业务线的过期节点', () => {
+  const { project, line, node, entries } = setup();
+  const completed = make('milestone', {
+    title: '已结束事件',
+    lineId: line.id,
+    dueDate: '2026-10-24',
+    completedAt: '2026-10-25T01:00:00Z',
+  });
+  const pool = make('milestone', {
+    title: '待办池',
+    lineId: line.id,
+    pool: true,
+  });
+  const closedLine = make('workline', {
+    title: '已结束业务线',
+    projectId: project.id,
+    completedAt: '2026-10-25T00:00:00Z',
+  });
+  const closedNode = make('milestone', {
+    title: '已结束线上的事件',
+    lineId: closedLine.id,
+    dueDate: '2026-10-24',
+  });
+  const all = [...entries, ...[completed, pool, closedLine, closedNode].map(entry)];
+  expect(overdueMilestones(all, '2026-10-27').map(({ milestone }) => milestone.id)).toEqual([
+    node.id,
+  ]);
 });
 it('严格拒绝旧状态、预计时长、旧实际历史与旧关联字段，不保留兼容分支', () => {
   const { node } = setup();
