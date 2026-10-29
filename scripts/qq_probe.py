@@ -12,7 +12,16 @@ import shutil
 import tempfile
 from pathlib import Path
 
-import sqlcipher3
+try:
+    import sqlcipher3
+except Exception as import_error:  # pragma: no cover - surfaced to setup
+    print(
+        json.dumps(
+            {"ok": False, "error": f"sqlcipher3 import failed: {import_error}"},
+            ensure_ascii=False,
+        )
+    )
+    raise SystemExit(1)
 
 HEADERS = (1024, 0, 512, 2048, 4096)
 HEADER_HMAC_MARKERS = (
@@ -100,7 +109,12 @@ def main() -> int:
         return 1
 
     keys = []
-    for line in Path(args.keys_file).read_text("utf-8").splitlines():
+    try:
+        key_lines = Path(args.keys_file).read_text("utf-8").splitlines()
+    except Exception as error:
+        print(json.dumps({"ok": False, "error": f"keys file: {error}"}, ensure_ascii=False))
+        return 1
+    for line in key_lines:
         value = line.strip()
         if 8 <= len(value) <= 64 and all(32 <= ord(char) <= 126 for char in value):
             keys.append(value)
@@ -117,10 +131,28 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="chaos-qq-probe-") as temp:
         temp_path = Path(temp)
         raw = temp_path / "nt_msg.raw"
-        shutil.copy2(path, raw)
+        try:
+            shutil.copy2(path, raw)
+        except Exception as error:
+            print(
+                json.dumps(
+                    {"ok": False, "error": f"database copy failed: {error}"},
+                    ensure_ascii=False,
+                )
+            )
+            return 1
         for header in HEADERS:
             stripped = temp_path / f"nt_msg.{header}.db"
-            strip(raw, stripped, header)
+            try:
+                strip(raw, stripped, header)
+            except Exception as error:
+                print(
+                    json.dumps(
+                        {"ok": False, "error": f"header strip failed: {error}"},
+                        ensure_ascii=False,
+                    )
+                )
+                return 1
             for key_index, key in enumerate(keys):
                 for page_size, kdf_iter, hmac, kdf in profiles:
                     try:
@@ -153,4 +185,15 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except SystemExit:
+        raise
+    except Exception as error:  # pragma: no cover - surfaced to setup
+        print(
+            json.dumps(
+                {"ok": False, "error": f"{type(error).__name__}: {error}"},
+                ensure_ascii=False,
+            )
+        )
+        raise SystemExit(1)

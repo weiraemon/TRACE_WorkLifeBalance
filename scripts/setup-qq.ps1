@@ -884,7 +884,8 @@ try {
         try { $probeResult = $Matches[1] | ConvertFrom-Json } catch { $probeResult = $null }
       }
       if (-not $probeResult -or -not ($probeResult.PSObject.Properties.Name -contains 'ok')) {
-        throw "加密参数探测程序未返回有效结果（退出码 $probeExitCode）。请检查 qq_probe.py 是否完整，以及它与 setup-qq.ps1 是否来自同一版本；这不是密钥验证失败的证据。"
+        $probeTail = (@($probeText -split "`r?`n" | Where-Object { $_.Trim() }) | Select-Object -Last 12) -join "`n"
+        throw "加密参数探测程序未返回有效结果（退出码 $probeExitCode）。请检查 qq_probe.py 是否完整，以及它与 setup-qq.ps1 是否来自同一版本；这不是密钥验证失败的证据。`n探测输出：`n$probeTail"
       }
       if ($probeResult.ok -and $probeExitCode -ne 0) {
         throw "加密参数探测程序异常退出（退出码 $probeExitCode），未采用结果。"
@@ -905,7 +906,12 @@ try {
         }
       } else {
         if (-not ($probeResult.PSObject.Properties.Name -contains 'keys')) {
-          throw "加密参数探测未完成（退出码 $probeExitCode），请检查数据库路径、文件访问权限及候选密钥文件；尚不能判定密钥错误。"
+          $detail = if ($probeResult.PSObject.Properties.Name -contains 'error') {
+            "：$($probeResult.error)"
+          } else {
+            ''
+          }
+          throw "加密参数探测未完成（退出码 $probeExitCode）$detail。请检查数据库路径、文件访问权限及候选密钥文件；尚不能判定密钥错误。"
         }
         Write-Warn '常见 SQLCipher 参数组合也无法解密，可能是密钥归属或数据库结构问题。'
       }
