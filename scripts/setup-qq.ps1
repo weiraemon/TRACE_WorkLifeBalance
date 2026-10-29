@@ -15,6 +15,7 @@ param(
   [string]$DataDir,
   [string]$SelfQQ,
   [string]$QqKeyExtractorPath,
+  [string]$QqKey,
   [switch]$SkipDependencies,
   [switch]$SkipKey,
   [switch]$NoConfigWrite,
@@ -28,7 +29,12 @@ $ProgressPreference = 'SilentlyContinue'
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $Helper = Join-Path $RepoRoot 'scripts\qq_sync.py'
-$ExtractorUrl = 'https://raw.githubusercontent.com/QQBackup/qq-win-db-key/b402e50133550efdff704e5a9921efbea5152bc1/scripts/windows/ntqq/windows_ntqq_get_key.ps1'
+$Probe = Join-Path $RepoRoot 'scripts\qq_probe.py'
+$ProfilePath = if ($env:CHAOS_CACHE_DIR) {
+  Join-Path $env:CHAOS_CACHE_DIR 'qq-profile.json'
+} else {
+  Join-Path $env:LOCALAPPDATA 'CHAOS\qq-cache\qq-profile.json'
+}
 $ExtractorSha256 = '99306030F51A2264C0EFFDA6D395A969EC1B00CFE1BF262286769FEC0A78474A'
 $WorkDir = Join-Path $env:TEMP ('chaos-qq-setup-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $WorkDir -Force | Out-Null
@@ -74,11 +80,23 @@ function Split-PythonCommand([string]$Command) {
   return @{ Exe = $parts[0]; Prefix = @($parts | Select-Object -Skip 1) }
 }
 
+function Invoke-Native([string]$FilePath, [string[]]$Arguments) {
+  $previous = $ErrorActionPreference
+  try {
+    # Windows PowerShell 5 turns native stderr into a terminating error when
+    # ErrorActionPreference is Stop. Expected non-zero exits are checked below.
+    $ErrorActionPreference = 'Continue'
+    & $FilePath @Arguments
+  } finally {
+    $ErrorActionPreference = $previous
+  }
+}
+
 function Invoke-Python([hashtable]$Python, [string[]]$Arguments) {
   $all = @()
   $all += @($Python.Prefix)
   $all += @($Arguments)
-  & $Python.Exe @all
+  Invoke-Native $Python.Exe $all
 }
 
 function Test-Python([hashtable]$Python) {
@@ -136,7 +154,10 @@ function Install-Python {
   if (-not (Ask-Yes '未找到 Python 3.10+，是否用 winget 安装 Python 3.12？')) {
     return $null
   }
-  & $winget install --id Python.Python.3.12 -e --source winget --accept-package-agreements --accept-source-agreements
+  Invoke-Native $winget @(
+    'install', '--id', 'Python.Python.3.12', '-e', '--source', 'winget',
+    '--accept-package-agreements', '--accept-source-agreements'
+  )
   if ($LASTEXITCODE -ne 0) {
     Write-Warn 'Python 安装失败，请手动安装后重试。'
     return $null
@@ -185,13 +206,28 @@ function Find-QqDataDir([string]$Path) {
   return $null
 }
 
-function Find-QqDataCandidates {
+function Find-QqDataCandidates([string]$Seed) {
   $roots = @(
     (Join-Path $env:USERPROFILE 'Documents\Tencent Files'),
     (Join-Path $env:USERPROFILE 'Documents\Tencent Files\Tencent Files'),
     'D:\qq_files\Tencent_Files\Tencent Files',
     'D:\qq_files\Tencent Files'
   )
+  if ($Seed) {
+    $current = $Seed
+    for ($i = 0; $i -lt 3; $i++) {
+      $current = Split-Path -Parent $current
+      if (-not $current) { break }
+      if ((Split-Path -Leaf $current) -eq 'Tencent Files') {
+        $roots += $current
+        break
+      }
+    }
+  }
+  foreach ($drive in @(Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue)) {
+    $candidate = Join-Path $drive.Root 'SoftwareData\QQ\Tencent Files'
+    if (Test-Path -LiteralPath $candidate) { $roots += $candidate }
+  }
   $found = @()
   foreach ($root in ($roots | Select-Object -Unique)) {
     if (-not (Test-Path -LiteralPath $root)) { continue }
@@ -255,20 +291,146 @@ function Get-KeyExtractor {
     return (Resolve-Path -LiteralPath $QqKeyExtractorPath).Path
   }
   $target = Join-Path $WorkDir 'windows_ntqq_get_key.ps1'
+  $cacheDir = Join-Path $env:LOCALAPPDATA 'CHAOS\setup'
+  $cached = Join-Path $cacheDir 'windows_ntqq_get_key.ps1'
+  if (Test-Path -LiteralPath $cached) {
+    if ((Get-FileHash -LiteralPath $cached -Algorithm SHA256).Hash -eq $ExtractorSha256) {
+      Write-Ok '使用已缓存的密钥提取脚本'
+      return $cached
+    }
+    Remove-Item -LiteralPath $cached -Force -ErrorAction SilentlyContinue
+  }
   Write-Step '下载 QQ 密钥提取脚本'
   Write-Host '来源：https://github.com/QQBackup/qq-win-db-key'
   Write-Host '该步骤会启动 QQ 调试器，可能会触发安全软件提示。'
-  Invoke-WebRequest -Uri $ExtractorUrl -OutFile $target -UseBasicParsing
-  $hash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
-  if ($hash -ne $ExtractorSha256) {
-    throw '密钥提取脚本校验失败（上游可能已更新）。请从官方仓库手动下载后使用 -QqKeyExtractorPath 指定。'
+  try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+  } catch {
   }
-  return $target
+  $relative = 'scripts/windows/ntqq/windows_ntqq_get_key.ps1'
+  $commit = 'b402e50133550efdff704e5a9921efbea5152bc1'
+  $sources = @(
+    "https://raw.githubusercontent.com/QQBackup/qq-win-db-key/$commit/$relative",
+    "https://cdn.jsdelivr.net/gh/QQBackup/qq-win-db-key@$commit/$relative",
+    "https://fastly.jsdelivr.net/gh/QQBackup/qq-win-db-key@$commit/$relative",
+    "https://ghproxy.net/https://raw.githubusercontent.com/QQBackup/qq-win-db-key/$commit/$relative",
+    "https://raw.gitmirror.com/QQBackup/qq-win-db-key/$commit/$relative"
+  )
+  foreach ($source in $sources) {
+    try {
+      if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Force }
+      Invoke-WebRequest -Uri $source -OutFile $target -UseBasicParsing -TimeoutSec 30 `
+        -Headers @{ 'User-Agent' = 'CHAOS-QQ-Setup' }
+      $hash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
+      if ($hash -eq $ExtractorSha256) {
+        Write-Ok '密钥提取脚本下载成功并通过校验'
+        try {
+          New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
+          Copy-Item -LiteralPath $target -Destination $cached -Force
+          return $cached
+        } catch {
+          return $target
+        }
+      }
+      Write-Warn "下载内容校验失败，尝试下一个镜像：$source"
+    } catch {
+      Write-Warn "下载失败，尝试下一个镜像：$($_.Exception.Message)"
+    }
+  }
+  throw '无法下载密钥提取脚本（网络或镜像不可用）。请从 https://github.com/QQBackup/qq-win-db-key 手动下载 windows_ntqq_get_key.ps1，然后运行：.\scripts\setup-qq.ps1 -QqKeyExtractorPath "路径\windows_ntqq_get_key.ps1"'
+}
+
+function New-KeyCollector([string]$Extractor, [string]$KeyFile) {
+  $text = [IO.File]::ReadAllText($Extractor, [Text.Encoding]::UTF8)
+  $pattern = '(?s)if \(isValidKey\)\s*\{\s*_log\(""\);\s*_log\("=+"\);\s*_log\("找到密钥: " \+ keyString\);\s*_log\("=+"\);\s*return keyString;\s*\}'
+  if (([regex]::Matches($text, $pattern)).Count -ne 1) { return $null }
+  $lengthPattern = 'bool isValidKey = keyString.Length == 16;'
+  if (([regex]::Matches($text, $lengthPattern)).Count -ne 1) { return $null }
+  $escapedKeyFile = $KeyFile.Replace('"', '""')
+  $replacement = @"
+if (isValidKey)
+                {
+                    _log("CHAOS_KEY_FOUND");
+                    try { System.IO.File.AppendAllText(@"$escapedKeyFile", keyString + "\n"); } catch { }
+                    SetSingleStep(hThread, ref ctx, threadId);
+                    return null;
+                }
+"@
+  $patched = [regex]::Replace($text, $pattern, $replacement)
+  $patched = [regex]::Replace(
+    $patched,
+    $lengthPattern,
+    'bool isValidKey = keyString.Length >= 8 && keyString.Length <= 64;'
+  )
+  $path = Join-Path $WorkDir 'windows_ntqq_get_key_all.ps1'
+  [IO.File]::WriteAllText($path, $patched, (New-Object Text.UTF8Encoding($true)))
+  return $path
+}
+
+function Extract-QQKeys([string]$Extractor) {
+  $keyFile = Join-Path $WorkDir 'keys.txt'
+  $collector = New-KeyCollector $Extractor $keyFile
+  if (-not $collector) {
+    Write-Warn '提取脚本结构不符合预期，回退为单密钥模式。'
+    return @(Extract-QQKey $Extractor)
+  }
+  Write-Step '提取 QQ 数据库密钥'
+  Write-Host 'QQ 将以调试模式启动，请在弹出的 QQ 登录窗口登录目标账号。' -ForegroundColor Yellow
+  if ($SelfQQ) { Write-Host "请确认登录的 QQ 号是 $SelfQQ，而不是其他账号。" -ForegroundColor Yellow }
+  Write-Host '脚本会收集登录过程中出现的所有候选密钥，再逐个验证。'
+  Close-QQ
+
+  $stdout = Join-Path $WorkDir 'key-extractor.out'
+  $stderr = Join-Path $WorkDir 'key-extractor.err'
+  $escaped = $collector.Replace("'", "''")
+  $command = "& '$escaped'"
+  $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+  $process = Start-Process -FilePath 'powershell.exe' `
+    -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded) `
+    -RedirectStandardOutput $stdout -RedirectStandardError $stderr -NoNewWindow -PassThru
+
+  $deadline = (Get-Date).AddSeconds(180)
+  $firstKeyAt = $null
+  $lastCount = 0
+  try {
+    while ((Get-Date) -lt $deadline) {
+      if (Test-Path -LiteralPath $keyFile) {
+        $keys = @(Get-Content -LiteralPath $keyFile -ErrorAction SilentlyContinue |
+          ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^[\x20-\x7E]{8,64}$' } |
+          Select-Object -Unique)
+        if ($keys.Count -gt 0) {
+          if (-not $firstKeyAt) { $firstKeyAt = Get-Date }
+          if ($keys.Count -ne $lastCount) {
+            $lastCount = $keys.Count
+            Write-Host "已收集 $lastCount 个候选密钥，继续等待其他数据库打开..."
+          }
+          if (((Get-Date) - $firstKeyAt).TotalSeconds -ge 30) { break }
+        }
+      }
+      if ($process.HasExited) { break }
+      Start-Sleep -Milliseconds 500
+    }
+  } finally {
+    if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
+    Get-Process -Name 'QQ' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+  }
+
+  if (-not (Test-Path -LiteralPath $keyFile)) {
+    throw '未捕获到任何候选密钥。请确认 QQ 已登录，且调试器没有被安全软件拦截。'
+  }
+  $keys = @(Get-Content -LiteralPath $keyFile -ErrorAction SilentlyContinue |
+    ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^[\x20-\x7E]{8,64}$' } |
+    Select-Object -Unique)
+  if ($keys.Count -eq 0) { throw '未捕获到有效的候选密钥。' }
+  Write-Ok "已捕获 $($keys.Count) 个候选密钥，开始逐个验证"
+  return $keys
 }
 
 function Extract-QQKey([string]$Extractor) {
   Write-Step '提取 QQ 数据库密钥'
   Write-Host 'QQ 将以调试模式启动，请在弹出的 QQ 登录窗口登录目标账号。' -ForegroundColor Yellow
+  if ($SelfQQ) { Write-Host "请确认登录的 QQ 号是 $SelfQQ，而不是其他账号。" -ForegroundColor Yellow }
   Write-Host '本脚本不会显示密钥；登录后会自动继续。'
   Close-QQ
 
@@ -317,12 +479,14 @@ function Extract-QQKey([string]$Extractor) {
   return $key
 }
 
-function Test-QQDatabase([hashtable]$Python, [string]$Key, [string]$DbDir, [switch]$Quiet) {
+function Test-QQDatabase([hashtable]$Python, [string]$Key, [string]$DbDir, [switch]$Quiet, [string]$ProfilePath) {
   if (-not $Quiet) { Write-Step '验证 QQ 数据库' }
   if (-not (Test-Path -LiteralPath $DbDir)) { throw "QQ 数据目录不存在：$DbDir" }
   $oldKey = $env:QQ_DB_KEY
+  $oldProfile = $env:QQ_DB_PROFILE
   try {
     $env:QQ_DB_KEY = $Key
+    if ($ProfilePath) { $env:QQ_DB_PROFILE = $ProfilePath }
     $output = Invoke-Python $Python @($Helper, 'test', '--db-dir', $DbDir) 2>&1
     if ($LASTEXITCODE -ne 0) { throw ($output -join "`n") }
     $text = ($output -join "`n").Trim()
@@ -335,6 +499,8 @@ function Test-QQDatabase([hashtable]$Python, [string]$Key, [string]$DbDir, [swit
   } finally {
     if ($null -eq $oldKey) { Remove-Item Env:QQ_DB_KEY -ErrorAction SilentlyContinue }
     else { $env:QQ_DB_KEY = $oldKey }
+    if ($null -eq $oldProfile) { Remove-Item Env:QQ_DB_PROFILE -ErrorAction SilentlyContinue }
+    else { $env:QQ_DB_PROFILE = $oldProfile }
   }
 }
 
@@ -398,7 +564,10 @@ try {
     } else {
       $winget = Find-CommandPath 'winget'
       if ($winget -and (Ask-Yes '未找到 Node.js，是否用 winget 安装 LTS 版本？')) {
-        & $winget install --id OpenJS.NodeJS.LTS -e --source winget --accept-package-agreements --accept-source-agreements
+        Invoke-Native $winget @(
+          'install', '--id', 'OpenJS.NodeJS.LTS', '-e', '--source', 'winget',
+          '--accept-package-agreements', '--accept-source-agreements'
+        )
       }
       $node = Find-CommandPath 'node'
       $npm = Find-CommandPath 'npm.cmd'
@@ -422,7 +591,7 @@ try {
   if (-not $SkipDependencies -and -not (Test-Path -LiteralPath (Join-Path $RepoRoot 'node_modules\.bin\tsx.cmd'))) {
     Write-Step '安装 CHAOS 项目依赖'
     Push-Location $RepoRoot
-    try { & $npm ci } finally { Pop-Location }
+    try { Invoke-Native $npm @('ci') } finally { Pop-Location }
     if ($LASTEXITCODE -ne 0) { throw 'npm ci 失败。' }
   }
 
@@ -432,7 +601,7 @@ try {
     $resolved = Find-QqDataDir $DataDir
     if ($resolved) { $candidateDirs += $resolved }
   }
-  $discovered = @(Find-QqDataCandidates)
+  $discovered = @(Find-QqDataCandidates $DataDir)
   $candidateDirs += @($discovered | ForEach-Object { $_.DataDir })
   $candidateDirs = @($candidateDirs | Select-Object -Unique)
 
@@ -450,7 +619,20 @@ try {
   $existingConfig = Get-ExistingQqConfig
   $key = $null
   $didExtract = $false
-  if (-not $SkipKey -and -not $ForceKey -and $existingConfig -and $existingConfig.key) {
+  if ($QqKey) {
+    Write-Step '验证手动提供的 QQ 密钥'
+    if ($QqKey -notmatch '^[\x20-\x7E]{8,64}$') {
+      throw '手动提供的密钥必须是 8–64 位可打印 ASCII 字符。'
+    }
+    $key = $QqKey.Trim()
+    $usable = Find-UsableDataDir $pythonInfo.Python $key $candidateDirs
+    if (-not $usable) {
+      throw "手动提供的密钥无法读取已尝试的账号目录。请确认账号和 -DataDir 是否正确。"
+    }
+    $data = $usable
+    Write-Ok '手动提供的密钥验证通过'
+    Test-QQDatabase $pythonInfo.Python $key $data | Out-Null
+  } elseif (-not $SkipKey -and -not $ForceKey -and $existingConfig -and $existingConfig.key) {
     Write-Step '检查已保存的 QQ 密钥'
     $existingDirs = @($existingConfig.dataDir) + $candidateDirs
     $usable = Find-UsableDataDir $pythonInfo.Python ([string]$existingConfig.key) $existingDirs
@@ -465,18 +647,81 @@ try {
 
   if (-not $key -and -not $SkipKey) {
     $extractor = Get-KeyExtractor
-    $key = Extract-QQKey $extractor
+    $candidateKeys = @(Extract-QQKeys $extractor)
     $didExtract = $true
-    $usable = Find-UsableDataDir $pythonInfo.Python $key $candidateDirs
-    if (-not $usable -and $existingConfig -and $existingConfig.key) {
-      Write-Warn '新提取的密钥验证失败，尝试已保存的密钥。'
+    foreach ($candidateKey in $candidateKeys) {
+      $usable = Find-UsableDataDir $pythonInfo.Python $candidateKey $candidateDirs
+      if ($usable) {
+        $key = $candidateKey
+        $data = $usable
+        Write-Ok '已找到能解密 nt_msg.db 的密钥'
+        break
+      }
+    }
+    if (-not $key -and $existingConfig -and $existingConfig.key) {
+      Write-Warn '候选密钥都验证失败，尝试已保存的密钥。'
       $usable = Find-UsableDataDir $pythonInfo.Python ([string]$existingConfig.key) $candidateDirs
-      if ($usable) { $key = [string]$existingConfig.key }
+      if ($usable) {
+        $key = [string]$existingConfig.key
+        $data = $usable
+      }
     }
-    if (-not $usable) {
-      throw '数据库验证失败：密钥与所选账号目录不匹配。请确认登录的是目标 QQ 账号，并用 -DataDir 指定该账号的 nt_qq/nt_db。'
+    if (-not $key) {
+      Write-Step '探测数据库加密参数'
+      if (-not (Test-Path -LiteralPath $Probe -PathType Leaf)) {
+        throw '缺少 scripts\qq_probe.py。请同步完整项目脚本后重试；尚未进行加密参数探测。'
+      }
+      $keysPath = Join-Path $WorkDir 'candidate-keys.txt'
+      [IO.File]::WriteAllLines($keysPath, [string[]]$candidateKeys, (New-Object Text.UTF8Encoding($false)))
+      New-Item -ItemType Directory -Path (Split-Path -Parent $ProfilePath) -Force | Out-Null
+      $probeOutput = Invoke-Python $pythonInfo.Python @(
+        $Probe, '--db-dir', $data, '--keys-file', $keysPath, '--profile-out', $ProfilePath
+      ) 2>&1
+      $probeExitCode = $LASTEXITCODE
+      $probeText = ($probeOutput -join "`n").Trim()
+      $probeResult = $null
+      if ($probeText -match '(?s)(\{.*\})') {
+        try { $probeResult = $Matches[1] | ConvertFrom-Json } catch { $probeResult = $null }
+      }
+      if (-not $probeResult -or -not ($probeResult.PSObject.Properties.Name -contains 'ok')) {
+        throw "加密参数探测程序未返回有效结果（退出码 $probeExitCode）。请检查 qq_probe.py 是否完整，以及它与 setup-qq.ps1 是否来自同一版本；这不是密钥验证失败的证据。"
+      }
+      if ($probeResult.ok -and $probeExitCode -ne 0) {
+        throw "加密参数探测程序异常退出（退出码 $probeExitCode），未采用结果。"
+      }
+      if ($probeResult.ok) {
+        $index = [int]$probeResult.keyIndex
+        if ($index -ge 0 -and $index -lt $candidateKeys.Count) {
+          $candidateKey = $candidateKeys[$index]
+          try {
+            Test-QQDatabase $pythonInfo.Python $candidateKey $data -ProfilePath $ProfilePath | Out-Null
+            $key = $candidateKey
+            Write-Ok ("已识别数据库参数：头 {0} 字节，页 {1}，KDF {2}，{3}" -f `
+              $probeResult.headerSize, $probeResult.pageSize, $probeResult.kdfIter, $probeResult.hmac)
+          } catch {
+            Remove-Item -LiteralPath $ProfilePath -Force -ErrorAction SilentlyContinue
+            Write-Warn "参数探测结果验证失败：$($_.Exception.Message)"
+          }
+        }
+      } else {
+        if (-not ($probeResult.PSObject.Properties.Name -contains 'keys')) {
+          throw "加密参数探测未完成（退出码 $probeExitCode），请检查数据库路径、文件访问权限及候选密钥文件；尚不能判定密钥错误。"
+        }
+        Write-Warn '常见 SQLCipher 参数组合也无法解密，可能是密钥归属或数据库结构问题。'
+      }
     }
-    $data = $usable
+    if (-not $key) {
+      $tried = ($candidateDirs | ForEach-Object {
+        $db = Join-Path $_ 'nt_msg.db'
+        if (Test-Path -LiteralPath $db) {
+          $item = Get-Item -LiteralPath $db
+          "  - $_（$($item.Length) 字节，修改于 $($item.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss'))）"
+        } else {
+          "  - $_（没有 nt_msg.db）"
+        }
+      }) -join "`n"
+      throw "数据库验证失败：已尝试 $($candidateKeys.Count) 个候选密钥和以下账号目录，都无法解密。`n已尝试：`n$tried`n请确认 QQ 当前登录的是 $SelfQQ，并用 -DataDir 指向该账号的 nt_qq 或 nt_db。"
+    }
     Test-QQDatabase $pythonInfo.Python $key $data | Out-Null
   } elseif (-not $key) {
     Write-Warn '已跳过密钥提取和数据库验证。'

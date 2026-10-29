@@ -12,6 +12,7 @@ import {
 import {
   analyzeMessage,
   chatEndpoint,
+  mergeSameTitle,
   messageFingerprint,
   parseSuggestions,
 } from '../apps/local-service/src/message-analysis';
@@ -122,6 +123,91 @@ describe('QQ 筛选与模型边界', () => {
     expect(messageFingerprint(message)).not.toBe(
       messageFingerprint({ ...message, remoteId: '123' }),
     );
+  });
+  it('同一消息中的同名建议合并为一项，保留行动和其他时间提示', () => {
+    const merged = mergeSameTitle([
+      {
+        ...suggestion,
+        kind: 'task',
+        targetId: null,
+        completed: false,
+        title: '选民投票志愿者',
+        dueDate: '2026-10-30',
+        dueTime: '18:00',
+        actions: ['参加培训'],
+        tags: ['会议'],
+        location: 'A02 公寓',
+      },
+      {
+        ...suggestion,
+        kind: 'task',
+        targetId: null,
+        completed: false,
+        title: '选民投票志愿者 ',
+        dueDate: '2026-10-31',
+        dueTime: '06:50',
+        actions: ['上午值班'],
+        tags: ['会议'],
+        location: null,
+      },
+    ]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].actions).toEqual(['参加培训', '上午值班']);
+    expect(merged[0].tags).toEqual(['会议']);
+    expect(merged[0].uncertainty).toContain('其他时间');
+    expect(merged[0].uncertainty).toContain('2026-10-31 06:50');
+  });
+  it('同一消息中节点与子待办的同名变更合并为节点变更', () => {
+    const existing = [
+      {
+        id: randomUUID(),
+        type: 'milestone' as const,
+        title: '紫丁香三号出厂评审',
+        dueDate: '2026-10-30',
+        dueTime: '10:00',
+        lineTitle: '评审',
+      },
+      {
+        id: randomUUID(),
+        type: 'todo' as const,
+        title: '完成紫丁香三号出厂评审',
+        dueDate: null,
+        dueTime: null,
+        lineTitle: '评审',
+      },
+    ];
+    const merged = mergeSameTitle(
+      [
+        {
+          ...suggestion,
+          kind: 'change',
+          targetId: existing[0].id,
+          completed: false,
+          dueDate: '2026-11-02',
+          dueTime: '15:00',
+          title: '紫丁香三号出厂评审',
+          actions: [],
+          tags: ['审阅'],
+          location: null,
+        },
+        {
+          ...suggestion,
+          kind: 'change',
+          targetId: existing[1].id,
+          completed: false,
+          dueDate: '2026-11-02',
+          dueTime: '15:00',
+          title: '完成紫丁香三号出厂评审',
+          actions: [],
+          tags: [],
+          location: null,
+        },
+      ],
+      existing,
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0].targetId).toBe(existing[0].id);
+    expect(merged[0].uncertainty).toContain('同名变更已合并');
   });
   it('拒绝非法日期以及没有日期的时刻', () => {
     expect(() => suggestionSchema.parse({ ...suggestion, dueDate: '2026-02-30' })).toThrow();

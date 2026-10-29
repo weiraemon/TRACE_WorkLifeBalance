@@ -17,7 +17,12 @@ import {
   matchMessage,
   type AiSettings,
 } from '../../../packages/domain/messages';
-import { analyzeMessage, messageFingerprint, type ExistingMessageItem } from './message-analysis';
+import {
+  analyzeMessage,
+  mergeSameTitle,
+  messageFingerprint,
+  type ExistingMessageItem,
+} from './message-analysis';
 import { activeAi, aiView, normalizeAiSettings, saveAiConfig, saveQqConfig } from './app-config';
 import { QqSync } from './qq-sync';
 
@@ -477,7 +482,10 @@ const server = http.createServer(async (req, res) => {
               ai,
             },
           );
-          const actionable = suggestions.filter((s) => s.kind !== 'ignore');
+          const actionable = mergeSameTitle(
+            suggestions.filter((s) => s.kind !== 'ignore'),
+            existing,
+          );
           if (current.state.candidates.length + actionable.length > 100)
             throw new VaultError(
               '本条通知包含多个事项，待确认列表空间不足；请先处理已有事项后重试，本次未保存',

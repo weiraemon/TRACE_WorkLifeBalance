@@ -27,6 +27,49 @@ if hasattr(sys.stdout, "reconfigure"):
 HEADER_SIZE = 1024
 PAGE_SIZE = 4096
 KDF_ITER = 4000
+DEFAULT_PROFILE = {
+    "headerSize": HEADER_SIZE,
+    "pageSize": PAGE_SIZE,
+    "kdfIter": KDF_ITER,
+    "hmac": "HMAC_SHA512",
+    "kdf": "PBKDF2_HMAC_SHA512",
+}
+
+
+def load_profile(cache_dir: Path | None) -> dict:
+    path = None
+    if os.environ.get("QQ_DB_PROFILE"):
+        path = Path(os.environ["QQ_DB_PROFILE"]).expanduser()
+    elif cache_dir is not None:
+        path = cache_dir / "qq-profile.json"
+    if path is None or not path.is_file():
+        return DEFAULT_PROFILE
+    try:
+        data = json.loads(path.read_text("utf-8"))
+        header = int(data.get("headerSize", HEADER_SIZE))
+        page = int(data.get("pageSize", PAGE_SIZE))
+        kdf_iter = int(data.get("kdfIter", KDF_ITER))
+        hmac = str(data.get("hmac", "HMAC_SHA512"))
+        kdf = str(data.get("kdf", "PBKDF2_HMAC_SHA512"))
+        if header not in (0, 512, 1024, 2048, 4096):
+            header = HEADER_SIZE
+        if page not in (1024, 2048, 4096, 8192):
+            page = PAGE_SIZE
+        if kdf_iter < 1 or kdf_iter > 1000000:
+            kdf_iter = KDF_ITER
+        if hmac not in ("HMAC_SHA512", "HMAC_SHA256"):
+            hmac = "HMAC_SHA512"
+        if kdf not in ("PBKDF2_HMAC_SHA512", "PBKDF2_HMAC_SHA256"):
+            kdf = "PBKDF2_HMAC_SHA512"
+        return {
+            "headerSize": header,
+            "pageSize": page,
+            "kdfIter": kdf_iter,
+            "hmac": hmac,
+            "kdf": kdf,
+        }
+    except Exception:
+        return DEFAULT_PROFILE
 
 
 def fail(message: str) -> None:
@@ -42,14 +85,15 @@ def resolve_db_dir(value: str) -> Path:
     fail(f"未找到 nt_msg.db：{root}")
 
 
-def copy_without_header(source: Path, target: Path) -> None:
+def copy_without_header(source: Path, target: Path, header: int = HEADER_SIZE) -> None:
     with source.open("rb") as reader:
-        reader.seek(HEADER_SIZE)
+        reader.seek(header)
         with target.open("wb") as writer:
             shutil.copyfileobj(reader, writer, 64 << 20)
 
 
 def open_database(path: Path, key: str, cache_dir: Path | None = None):
+    profile = load_profile(cache_dir)
     if cache_dir is None:
         cleanup = Path(tempfile.mkdtemp(prefix="chaos-qq-"))
         database = cleanup / path.name
@@ -58,7 +102,7 @@ def open_database(path: Path, key: str, cache_dir: Path | None = None):
             if source.is_file():
                 shutil.copy2(source, str(database) + suffix)
         stripped = cleanup / (path.name + ".stripped")
-        copy_without_header(database, stripped)
+        copy_without_header(database, stripped, profile["headerSize"])
         os.replace(stripped, database)
     else:
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -75,6 +119,7 @@ def open_database(path: Path, key: str, cache_dir: Path | None = None):
             database.is_file()
             and meta.get("size") == source_stat.st_size
             and meta.get("mtime") == source_stat.st_mtime_ns
+            and meta.get("header") == profile["headerSize"]
         )
         if not reuse:
             for target in cache_dir.glob(path.name + "*"):
@@ -84,10 +129,16 @@ def open_database(path: Path, key: str, cache_dir: Path | None = None):
                     pass
             shutil.copy2(path, database)
             stripped = cache_dir / (path.name + ".stripped")
-            copy_without_header(database, stripped)
+            copy_without_header(database, stripped, profile["headerSize"])
             os.replace(stripped, database)
             meta_path.write_text(
-                json.dumps({"size": source_stat.st_size, "mtime": source_stat.st_mtime_ns}),
+                json.dumps(
+                    {
+                        "size": source_stat.st_size,
+                        "mtime": source_stat.st_mtime_ns,
+                        "header": profile["headerSize"],
+                    }
+                ),
                 "utf-8",
             )
         for suffix in ("-wal", "-shm"):
@@ -107,11 +158,11 @@ def open_database(path: Path, key: str, cache_dir: Path | None = None):
     connection = sqlcipher3.connect(database)
     cursor = connection.cursor()
     cursor.execute("PRAGMA cipher_log_level = NONE")
-    cursor.execute(f"PRAGMA cipher_page_size = {PAGE_SIZE}")
+    cursor.execute(f"PRAGMA cipher_page_size = {profile['pageSize']}")
     cursor.execute("PRAGMA key = '" + key.replace("'", "''") + "'")
-    cursor.execute(f"PRAGMA kdf_iter = {KDF_ITER}")
-    cursor.execute("PRAGMA cipher_hmac_algorithm = HMAC_SHA512")
-    cursor.execute("PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA512")
+    cursor.execute(f"PRAGMA kdf_iter = {profile['kdfIter']}")
+    cursor.execute(f"PRAGMA cipher_hmac_algorithm = {profile['hmac']}")
+    cursor.execute(f"PRAGMA cipher_kdf_algorithm = {profile['kdf']}")
     cursor.execute("SELECT count(*) FROM sqlite_master").fetchone()
     return connection, cleanup
 

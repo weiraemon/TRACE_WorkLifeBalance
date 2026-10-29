@@ -9,6 +9,7 @@ import {
   type MessageCatalog,
   type MessageSettings,
   type SourceMessage,
+  type Suggestion,
 } from '../../../packages/domain/messages';
 
 const fallbackAi: AiSettings = {
@@ -115,6 +116,112 @@ export function parseSuggestions(content: string) {
   });
 }
 
+export function mergeSameTitle(
+  suggestions: Suggestion[],
+  existing: ExistingMessageItem[] = [],
+): Suggestion[] {
+  const keyOf = (title: string) => {
+    const clean = title
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/[\s，。！？、:：]/g, '');
+    const stripped = clean.replace(/^(完成|做完|写完|提交|交|做|参加|开|去|进行|组织|准备)/, '');
+    return stripped.length >= 4 ? stripped : clean;
+  };
+  const unique = (values: string[]) => [
+    ...new Set(values.map((value) => value.trim()).filter(Boolean)),
+  ];
+  const taskGroups = new Map<string, Suggestion[]>();
+  const changeGroups = new Map<string, Suggestion[]>();
+  const merged: Suggestion[] = [];
+  for (const suggestion of suggestions) {
+    if (suggestion.kind === 'task' || suggestion.kind === 'event') {
+      const key = keyOf(suggestion.title);
+      const group = taskGroups.get(key);
+      if (group) group.push(suggestion);
+      else taskGroups.set(key, [suggestion]);
+    } else if (suggestion.kind === 'change') {
+      const key = keyOf(suggestion.title);
+      const group = changeGroups.get(key);
+      if (group) group.push(suggestion);
+      else changeGroups.set(key, [suggestion]);
+    } else {
+      merged.push(suggestion);
+    }
+  }
+  for (const group of taskGroups.values()) {
+    if (group.length === 1) {
+      merged.push(group[0]);
+      continue;
+    }
+    const base = { ...group[0] };
+    const dated = group.find((item) => item.dueDate) ?? base;
+    const dates = [
+      ...new Set(
+        group.map((item) => [item.dueDate, item.dueTime].filter(Boolean).join(' ')).filter(Boolean),
+      ),
+    ];
+    base.kind = group.some((item) => item.kind === 'event') ? 'event' : base.kind;
+    base.dueDate = dated.dueDate;
+    base.dueTime = dated.dueTime;
+    base.actions = unique(group.flatMap((item) => item.actions)).slice(0, 10);
+    base.tags = unique(group.flatMap((item) => item.tags)).slice(0, 20);
+    base.reason = unique(group.map((item) => item.reason))
+      .join('；')
+      .slice(0, 1500);
+    base.location = group.find((item) => item.location)?.location ?? null;
+    base.targetId = group.find((item) => item.targetId)?.targetId ?? null;
+    base.completed = group.some((item) => item.completed);
+    base.destination = group.find((item) => item.destination)?.destination ?? null;
+    const otherDates = dates.filter(
+      (value) => value !== [dated.dueDate, dated.dueTime].filter(Boolean).join(' '),
+    );
+    base.uncertainty = unique([
+      ...group.map((item) => item.uncertainty),
+      dates.length > 1
+        ? `同一消息的 ${group.length} 个同名建议已合并；其他时间：${otherDates.join('、')}`
+        : `同一消息的 ${group.length} 个同名建议已合并`,
+    ])
+      .join('；')
+      .slice(0, 1500);
+    merged.push(base);
+  }
+  for (const group of changeGroups.values()) {
+    if (group.length === 1) {
+      merged.push(group[0]);
+      continue;
+    }
+    const targetOf = (item: Suggestion) => existing.find((entry) => entry.id === item.targetId);
+    const chosen =
+      group.find((item) => targetOf(item)?.type === 'milestone') ??
+      group.find((item) => targetOf(item)?.dueDate) ??
+      group[0];
+    const base = { ...chosen };
+    base.targetId = chosen.targetId;
+    base.dueDate = chosen.dueDate;
+    base.dueTime = chosen.dueTime;
+    base.completed = group.some((item) => item.completed);
+    base.tags = unique(group.flatMap((item) => item.tags)).slice(0, 20);
+    base.location = group.find((item) => item.location)?.location ?? null;
+    base.reason = unique(group.map((item) => item.reason))
+      .join('；')
+      .slice(0, 1500);
+    const targetNames = unique(
+      group.map((item) => targetOf(item)?.title).filter((value): value is string => Boolean(value)),
+    );
+    base.uncertainty = unique([
+      ...group.map((item) => item.uncertainty),
+      `同一消息的 ${group.length} 个同名变更已合并${
+        targetNames.length > 1 ? `；涉及：${targetNames.join('、')}` : ''
+      }`,
+    ])
+      .join('；')
+      .slice(0, 1500);
+    merged.push(base);
+  }
+  return merged;
+}
+
 export function messageFingerprint(message: SourceMessage) {
   return createHash('sha256')
     .update(
@@ -182,7 +289,7 @@ export async function analyzeMessage(
 同一通知包含不同事件或截止点时分别提取，最多10项。例如宣介会10月29日18:30和报名截止11月2日18:00必须是两个事项，各自保留日期、地点或链接等依据。避免把同一事件的行动清单重复拆成事项。
 有明确地点（教室、会议室、楼栋、线上会议名等）时填入 location，没有则 null，不要编造。event 或带时刻的 task 会成为节点，按内容从这些标签中选择 0–2 个：${milestoneTags.join('、')}；普通待办可为空数组。
 如果消息明确表示 existingItems 中某项已经完成、做完或交了，返回 change，targetId 指向该项，completed=true；不要清空日期，也不要新建。明确取消或不用做才返回 cancel。其他改期返回 change，completed=false。
-改期或取消分别返回 change/cancel，不转换成新任务。existingItems 是当前未完成节点与待办；如果消息是在改期或取消其中一项，返回 change/cancel，title 与现有标题一致，reason 说明从什么改成什么；不要新建重复事项。若只是内容与时间都相同的重复，返回 ignore。上下文只用于理解当前消息，不独立提取旧任务。
+改期或取消分别返回 change/cancel，不转换成新任务。existingItems 是当前未完成节点与待办；如果消息是在改期或取消其中一项，返回 change/cancel，title 与现有标题一致，reason 说明从什么改成什么；不要新建重复事项。existingItems 同时包含节点和节点下的待办：改期或取消只返回节点变更，除非消息明确只针对某个待办，避免同一事项生成两个确认。若只是内容与时间都相同的重复，返回 ignore。上下文只用于理解当前消息，不独立提取旧任务。
 返回 JSON 对象 {"suggestions":[事项,...]}。每项且仅有这些字段：kind(task/event/change/cancel/ignore), targetId(change/cancel 时必须填 existingItems 中对应记录的 id，其他为null), title(短标题), dueDate(YYYY-MM-DD或null), dueTime(HH:mm或null), reason(原文依据), uncertainty(不确定事项，无则空串), actions(行动标题数组，无则[]), completed(仅 change 表示已完成时为true，其他false), tags(节点标签数组，无则[]), location(地点或null), destination(按 routingInstructions 给出的归属推荐；task/event 必须提供，其他可为null)。时间必须有日期。完全无关时返回一个ignore事项及原因。未提供日期或时刻必须用null，不用空字符串，所有字段都要返回。`,
           },
           {

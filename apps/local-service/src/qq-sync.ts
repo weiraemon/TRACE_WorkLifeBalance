@@ -12,7 +12,12 @@ import {
   type SourceMessage,
 } from '../../../packages/domain/messages';
 import { Vault } from './vault';
-import { analyzeMessage, messageFingerprint, type ExistingMessageItem } from './message-analysis';
+import {
+  analyzeMessage,
+  mergeSameTitle,
+  messageFingerprint,
+  type ExistingMessageItem,
+} from './message-analysis';
 import { activeAi, activeQq, normalizeAiSettings, qqCacheDir, qqView } from './app-config';
 import { randomUUID } from 'node:crypto';
 
@@ -324,7 +329,10 @@ export class QqSync {
       existing,
       ai,
     });
-    const actionable = suggestions.filter((suggestion) => suggestion.kind !== 'ignore');
+    const actionable = mergeSameTitle(
+      suggestions.filter((suggestion) => suggestion.kind !== 'ignore'),
+      existing,
+    );
     if (!actionable.length) return [];
     const at = new Date().toISOString();
     inbox.seen = [...inbox.seen, { fingerprint, at }].slice(-500);
