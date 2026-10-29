@@ -1,7 +1,9 @@
 """Read-only bridge from QQ NT's local SQLCipher database to CHAOS.
 
 Only sqlcipher3 is required. QQ stores nt_msg.db with a 1024-byte custom header
-followed by SQLCipher 4 data. QQ 9.9.x uses HMAC-SHA512 for page authentication.
+followed by SQLCipher data. QQ 9.9.36 keeps the page HMAC algorithm in that
+header ("HMAC_SHA1" in the DB format 1.1.0.1), while the key derivation still
+uses PBKDF2-HMAC-SHA512 with 4000 iterations.
 """
 
 from __future__ import annotations
@@ -34,6 +36,24 @@ DEFAULT_PROFILE = {
     "hmac": "HMAC_SHA512",
     "kdf": "PBKDF2_HMAC_SHA512",
 }
+HEADER_HMAC_MARKERS = (
+    (b"HMAC_SHA512", "HMAC_SHA512"),
+    (b"HMAC_SHA256", "HMAC_SHA256"),
+    (b"HMAC_SHA1", "HMAC_SHA1"),
+)
+
+
+def hmac_from_header(path: Path) -> str | None:
+    """QQ writes the page HMAC algorithm into its custom 1024-byte header."""
+    try:
+        with path.open("rb") as reader:
+            header = reader.read(HEADER_SIZE)
+    except OSError:
+        return None
+    for marker, name in HEADER_HMAC_MARKERS:
+        if marker in header:
+            return name
+    return None
 
 
 def load_profile(cache_dir: Path | None) -> dict:
@@ -94,6 +114,12 @@ def copy_without_header(source: Path, target: Path, header: int = HEADER_SIZE) -
 
 def open_database(path: Path, key: str, cache_dir: Path | None = None):
     profile = load_profile(cache_dir)
+    header_hmac = hmac_from_header(path)
+    if header_hmac and header_hmac != profile["hmac"]:
+        # QQ 9.9.36 的头部写着 HMAC_SHA1；页面 HMAC 必须以头部为准，
+        # 否则密钥正确也会被判为 "file is not a database"。
+        profile = dict(profile)
+        profile["hmac"] = header_hmac
     if cache_dir is None:
         cleanup = Path(tempfile.mkdtemp(prefix="chaos-qq-"))
         database = cleanup / path.name

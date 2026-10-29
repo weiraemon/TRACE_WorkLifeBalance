@@ -38,6 +38,7 @@ $ProfilePath = if ($env:CHAOS_CACHE_DIR) {
 $ExtractorSha256 = '99306030F51A2264C0EFFDA6D395A969EC1B00CFE1BF262286769FEC0A78474A'
 $WorkDir = Join-Path $env:TEMP ('chaos-qq-setup-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $WorkDir -Force | Out-Null
+$KeepWorkDir = $false
 
 function Write-Step([string]$Message) {
   Write-Host ''
@@ -256,6 +257,144 @@ function Get-SelfQQFromPath([string]$Path) {
   return ''
 }
 
+# QQ 9.9.3x 的安装目录里可能同时保留旧版本目录，而 HKCU 记录的版本号用点号、
+# 目录名用连字符（9.9.36.53644 对应 versions\9.9.36-53644）。上游提取脚本按
+# 点号拼接目录名，找不到就走“单版本目录”兜底，遇到两个目录会直接抛错。
+# 这里先自己定位 wrapper.node，再显式传给提取脚本，绕开这段不兼容的检测。
+function Resolve-QqWrapperNode {
+  $installDirs = @()
+  $regPaths = @(
+    'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\QQ',
+    'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\QQ',
+    'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\NTQQ',
+    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\QQ'
+  )
+  foreach ($regPath in $regPaths) {
+    try {
+      if (-not (Test-Path -LiteralPath $regPath)) { continue }
+      $uninstall = [string](Get-ItemProperty -LiteralPath $regPath -ErrorAction SilentlyContinue).UninstallString
+      if (-not $uninstall) { continue }
+      if ($uninstall.StartsWith('"')) {
+        $endQuote = $uninstall.IndexOf('"', 1)
+        if ($endQuote -gt 0) { $installDirs += (Split-Path -Parent $uninstall.Substring(1, $endQuote - 1)) }
+      } else {
+        $match = [regex]::Match($uninstall, '^(.+?\.exe)')
+        if ($match.Success) { $installDirs += (Split-Path -Parent $match.Groups[1].Value) }
+      }
+    } catch {
+    }
+  }
+  $installDirs += @(
+    (Join-Path $env:ProgramFiles 'Tencent\QQNT'),
+    (Join-Path ${env:ProgramFiles(x86)} 'Tencent\QQNT')
+  )
+
+  foreach ($installDir in ($installDirs | Where-Object { $_ } | Select-Object -Unique)) {
+    $versionsDir = Join-Path $installDir 'versions'
+    if (-not (Test-Path -LiteralPath $versionsDir)) { continue }
+    $ordered = @()
+    $configJson = Join-Path $versionsDir 'config.json'
+    if (Test-Path -LiteralPath $configJson) {
+      try {
+        $configText = Get-Content -LiteralPath $configJson -Raw -ErrorAction SilentlyContinue
+        if ($configText -match '"curVersion"\s*:\s*"([^"]+)"') { $ordered += $Matches[1] }
+      } catch {
+      }
+    }
+    try {
+      $qqnt = Get-ItemProperty -LiteralPath 'HKCU:\Software\Tencent\QQNT' -ErrorAction SilentlyContinue
+      if ($qqnt -and $qqnt.version) {
+        $recorded = [string]$qqnt.version
+        $ordered += $recorded
+        $ordered += ($recorded -replace '\.(\d+)$', '-$1')
+      }
+    } catch {
+    }
+    $ordered += @(Get-ChildItem -LiteralPath $versionsDir -Directory -ErrorAction SilentlyContinue |
+      Sort-Object LastWriteTime -Descending | ForEach-Object { $_.Name })
+
+    foreach ($versionName in ($ordered | Where-Object { $_ } | Select-Object -Unique)) {
+      $wrapper = Join-Path $versionsDir (Join-Path $versionName 'resources\app\wrapper.node')
+      if (Test-Path -LiteralPath $wrapper) { return (Resolve-Path -LiteralPath $wrapper).Path }
+    }
+  }
+  return $null
+}
+
+function Get-LogTail([string[]]$Paths, [int]$Lines = 12) {
+  $chunks = @()
+  foreach ($path in $Paths) {
+    if (-not (Test-Path -LiteralPath $path)) { continue }
+    $raw = Get-Content -LiteralPath $path -Raw -ErrorAction SilentlyContinue
+    if (-not $raw) { continue }
+    if ($raw -match '^#<\s*CLIXML') {
+      # 重定向后的 Write-Host / 错误流是 CLIXML，直接展示会是一堆 XML。
+      $raw = (($raw -replace '_x000D__x000A_', "`n") -replace '_x000D_', '') -replace '<[^>]+>', "`n"
+    }
+    $tail = @()
+    $previous = $null
+    foreach ($line in ($raw -split "`r?`n")) {
+      $trimmed = $line.Trim()
+      if (-not $trimmed -or $trimmed -eq $previous) { continue }
+      $previous = $trimmed
+      $tail += $trimmed
+    }
+    if ($tail.Count -gt $Lines) { $tail = @($tail | Select-Object -Last $Lines) }
+    if ($tail.Count -gt 0) {
+      $chunks += ('—— {0} ——' -f (Split-Path -Leaf $path))
+      $chunks += $tail
+    }
+  }
+  return ($chunks -join "`n")
+}
+
+function Save-SetupDiagnostics {
+  $keyFiles = @(
+    (Join-Path $WorkDir 'keys.txt'),
+    (Join-Path $WorkDir 'candidate-keys.txt')
+  )
+  $secrets = @()
+  foreach ($keyFile in $keyFiles) {
+    if (-not (Test-Path -LiteralPath $keyFile)) { continue }
+    $secrets += @(Get-Content -LiteralPath $keyFile -ErrorAction SilentlyContinue |
+      ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^[\x20-\x7E]{8,64}$' })
+    Remove-Item -LiteralPath $keyFile -Force -ErrorAction SilentlyContinue
+  }
+  $secrets = @($secrets | Select-Object -Unique)
+
+  $chunks = @()
+  $logs = @(Get-ChildItem -LiteralPath $WorkDir -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Extension -in @('.out', '.err') })
+  foreach ($log in $logs) {
+    $raw = Get-Content -LiteralPath $log.FullName -Raw -ErrorAction SilentlyContinue
+    if (-not $raw) { continue }
+    if ($raw -match '^#<\s*CLIXML') {
+      $raw = (($raw -replace '_x000D__x000A_', "`n") -replace '_x000D_', '') -replace '<[^>]+>', "`n"
+    }
+    foreach ($secret in $secrets) {
+      $raw = $raw.Replace($secret, '[REDACTED]')
+    }
+    # 上游脚本和旧版单密钥分支可能把密钥写在“密钥/Key”行里。
+    $raw = [regex]::Replace(
+      $raw,
+      '(?im)^.*(?:找到密钥|加密密钥|CHAOS_KEY|"Key"\s*:|(?:^|[^A-Za-z])Key\s*[:：=]).*$',
+      '[REDACTED KEY LINE]'
+    )
+    $chunks += ('—— {0} ——' -f $log.Name)
+    $chunks += @($raw -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -Last 40)
+    Remove-Item -LiteralPath $log.FullName -Force -ErrorAction SilentlyContinue
+  }
+  # 清理可能由提取脚本产生的 JSON 中间文件，避免残留密钥。
+  Get-ChildItem -LiteralPath $WorkDir -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Extension -in @('.json', '.txt') -and $_.Name -notmatch '^diagnostics\.txt$' } |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+
+  $diagnostics = Join-Path $WorkDir 'diagnostics.txt'
+  $content = if ($chunks.Count) { $chunks -join "`n" } else { '没有可用的提取日志。' }
+  [IO.File]::WriteAllText($diagnostics, $content, (New-Object Text.UTF8Encoding($false)))
+  return $diagnostics
+}
+
 function Get-ExistingQqConfig {
   $configDir = if ($env:CHAOS_CONFIG_DIR) { $env:CHAOS_CONFIG_DIR } else { Join-Path $env:APPDATA 'CHAOS' }
   $configPath = Join-Path $configDir 'settings.json'
@@ -340,8 +479,42 @@ function Get-KeyExtractor {
   throw '无法下载密钥提取脚本（网络或镜像不可用）。请从 https://github.com/QQBackup/qq-win-db-key 手动下载 windows_ntqq_get_key.ps1，然后运行：.\scripts\setup-qq.ps1 -QqKeyExtractorPath "路径\windows_ntqq_get_key.ps1"'
 }
 
+function New-DebugInfoPatch([string]$Text) {
+  # 上游脚本在动态调试阶段还会调用一次 Get-InstalledQQInfo 取 QQ.exe 路径；
+  # QQ 9.9.3x 同时保留新旧两个版本目录时，这次检测同样会抛
+  # "Multiple version directories found"。这里改成直接从 wrapper.node 路径推导。
+  $pattern = '(?s)if \(-not \$qqInfo\)\s*\{\s*\$qqInfo = Get-InstalledQQInfo\s*\}'
+  if (([regex]::Matches($Text, $pattern)).Count -ne 1) { return $null }
+  $replacement = @"
+if (-not `$qqInfo)
+{
+    `$wrapperPath = `$resolvedPath.Path
+    `$versionDir = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent `$wrapperPath))
+    `$installDir = Split-Path -Parent (Split-Path -Parent `$versionDir)
+    `$qqInfo = @{
+        InstallDir      = `$installDir
+        Version         = (Split-Path -Leaf `$versionDir)
+        QQExePath       = (Join-Path `$installDir 'QQ.exe')
+        WrapperNodePath = `$wrapperPath
+    }
+}
+"@
+  return [regex]::Replace($Text, $pattern, $replacement)
+}
+
+function New-InfoPatchedExtractor([string]$Extractor) {
+  $text = [IO.File]::ReadAllText($Extractor, [Text.Encoding]::UTF8)
+  $patched = New-DebugInfoPatch $text
+  if (-not $patched) { return $Extractor }
+  $path = Join-Path $WorkDir 'windows_ntqq_get_key_info.ps1'
+  [IO.File]::WriteAllText($path, $patched, (New-Object Text.UTF8Encoding($true)))
+  return $path
+}
+
 function New-KeyCollector([string]$Extractor, [string]$KeyFile) {
   $text = [IO.File]::ReadAllText($Extractor, [Text.Encoding]::UTF8)
+  $infoPatched = New-DebugInfoPatch $text
+  if ($infoPatched) { $text = $infoPatched }
   $pattern = '(?s)if \(isValidKey\)\s*\{\s*_log\(""\);\s*_log\("=+"\);\s*_log\("找到密钥: " \+ keyString\);\s*_log\("=+"\);\s*return keyString;\s*\}'
   if (([regex]::Matches($text, $pattern)).Count -ne 1) { return $null }
   $lengthPattern = 'bool isValidKey = keyString.Length == 16;'
@@ -382,8 +555,12 @@ function Extract-QQKeys([string]$Extractor) {
 
   $stdout = Join-Path $WorkDir 'key-extractor.out'
   $stderr = Join-Path $WorkDir 'key-extractor.err'
+  $wrapperNode = Resolve-QqWrapperNode
+  if ($wrapperNode) { Write-Ok "QQ 组件：$wrapperNode" }
+  else { Write-Warn '未能定位 QQ 的 wrapper.node，提取脚本将自行检测安装目录；若 QQ 保留多个版本目录，检测可能失败。' }
   $escaped = $collector.Replace("'", "''")
   $command = "& '$escaped'"
+  if ($wrapperNode) { $command += " -WrapperNodePath '$($wrapperNode.Replace("'", "''"))'" }
   $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
   $process = Start-Process -FilePath 'powershell.exe' `
     -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded) `
@@ -392,6 +569,8 @@ function Extract-QQKeys([string]$Extractor) {
   $deadline = (Get-Date).AddSeconds(180)
   $firstKeyAt = $null
   $lastCount = 0
+  $exitedEarly = $false
+  $exitCode = $null
   try {
     while ((Get-Date) -lt $deadline) {
       if (Test-Path -LiteralPath $keyFile) {
@@ -407,7 +586,11 @@ function Extract-QQKeys([string]$Extractor) {
           if (((Get-Date) - $firstKeyAt).TotalSeconds -ge 30) { break }
         }
       }
-      if ($process.HasExited) { break }
+      if ($process.HasExited) {
+        $exitedEarly = $true
+        try { $exitCode = $process.ExitCode } catch { $exitCode = $null }
+        break
+      }
       Start-Sleep -Milliseconds 500
     }
   } finally {
@@ -417,12 +600,23 @@ function Extract-QQKeys([string]$Extractor) {
   }
 
   if (-not (Test-Path -LiteralPath $keyFile)) {
-    throw '未捕获到任何候选密钥。请确认 QQ 已登录，且调试器没有被安全软件拦截。'
+    $diagnostics = Save-SetupDiagnostics
+    $hint = if ($exitedEarly) {
+      "密钥提取脚本在启动 QQ 前就已退出（退出码 $exitCode），所以没有出现登录窗口。"
+    } else {
+      '等待超时，未捕获到任何候选密钥。请确认 QQ 已登录。'
+    }
+    $script:KeepWorkDir = $true
+    throw "未捕获到任何候选密钥。$hint`n诊断已脱敏保存：$diagnostics"
   }
   $keys = @(Get-Content -LiteralPath $keyFile -ErrorAction SilentlyContinue |
     ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^[\x20-\x7E]{8,64}$' } |
     Select-Object -Unique)
-  if ($keys.Count -eq 0) { throw '未捕获到有效的候选密钥。' }
+  if ($keys.Count -eq 0) {
+    $diagnostics = Save-SetupDiagnostics
+    $script:KeepWorkDir = $true
+    throw "未捕获到有效的候选密钥。`n诊断已脱敏保存：$diagnostics"
+  }
   Write-Ok "已捕获 $($keys.Count) 个候选密钥，开始逐个验证"
   return $keys
 }
@@ -433,11 +627,15 @@ function Extract-QQKey([string]$Extractor) {
   if ($SelfQQ) { Write-Host "请确认登录的 QQ 号是 $SelfQQ，而不是其他账号。" -ForegroundColor Yellow }
   Write-Host '本脚本不会显示密钥；登录后会自动继续。'
   Close-QQ
+  $Extractor = New-InfoPatchedExtractor $Extractor
 
   $stdout = Join-Path $WorkDir 'key-extractor.out'
   $stderr = Join-Path $WorkDir 'key-extractor.err'
+  $wrapperNode = Resolve-QqWrapperNode
   $escaped = $Extractor.Replace("'", "''")
-  $command = "& '$escaped' | ConvertTo-Json -Depth 4"
+  $command = "& '$escaped'"
+  if ($wrapperNode) { $command += " -WrapperNodePath '$($wrapperNode.Replace("'", "''"))'" }
+  $command += ' | ConvertTo-Json -Depth 4'
   $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
   $process = Start-Process -FilePath 'powershell.exe' `
     -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded) `
@@ -471,7 +669,9 @@ function Extract-QQKey([string]$Extractor) {
   if (-not $key) {
     Write-Warn "密钥提取失败，QQ 进程退出码：$($process.ExitCode)"
     Write-Host '常见原因：QQ 未登录、QQ 版本不兼容、调试器被拦截、脚本被安全软件终止。'
-    throw '未获取到 16 位 QQ 数据库密钥。'
+    $diagnostics = Save-SetupDiagnostics
+    $script:KeepWorkDir = $true
+    throw "未获取到 16 位 QQ 数据库密钥。诊断已脱敏保存：$diagnostics"
   }
   $key = $key.Trim()
   if ($key -notmatch '^[\x20-\x7E]{16}$') { throw '提取到的密钥格式无效。' }
@@ -747,5 +947,9 @@ try {
   Write-Host ("初始化失败：" + $_.Exception.Message) -ForegroundColor Red
   exit 1
 } finally {
-  Remove-Item -LiteralPath $WorkDir -Recurse -Force -ErrorAction SilentlyContinue
+  if ($KeepWorkDir) {
+    Write-Host "脱敏诊断已保留：$WorkDir" -ForegroundColor DarkGray
+  } else {
+    Remove-Item -LiteralPath $WorkDir -Recurse -Force -ErrorAction SilentlyContinue
+  }
 }

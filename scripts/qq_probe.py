@@ -1,7 +1,7 @@
 """Probe how a QQ nt_msg.db copy is encrypted.
 
-Tries a small matrix of header sizes and SQLCipher 4 parameters. It never
-prints keys; the caller supplies a keys file and gets only the matching index.
+Tries a small matrix of header sizes and SQLCipher parameters. It never prints
+keys; the caller supplies a keys file and gets only the matching index.
 """
 
 from __future__ import annotations
@@ -15,15 +15,36 @@ from pathlib import Path
 import sqlcipher3
 
 HEADERS = (1024, 0, 512, 2048, 4096)
+HEADER_HMAC_MARKERS = (
+    (b"HMAC_SHA512", "HMAC_SHA512"),
+    (b"HMAC_SHA256", "HMAC_SHA256"),
+    (b"HMAC_SHA1", "HMAC_SHA1"),
+)
 PROFILES = (
+    (4096, 4000, "HMAC_SHA1", "PBKDF2_HMAC_SHA512"),
     (4096, 4000, "HMAC_SHA512", "PBKDF2_HMAC_SHA512"),
     (4096, 256000, "HMAC_SHA512", "PBKDF2_HMAC_SHA512"),
     (4096, 64000, "HMAC_SHA512", "PBKDF2_HMAC_SHA512"),
     (4096, 4000, "HMAC_SHA256", "PBKDF2_HMAC_SHA256"),
     (4096, 256000, "HMAC_SHA256", "PBKDF2_HMAC_SHA256"),
+    (4096, 4000, "HMAC_SHA1", "PBKDF2_HMAC_SHA1"),
     (1024, 4000, "HMAC_SHA512", "PBKDF2_HMAC_SHA512"),
+    (1024, 4000, "HMAC_SHA1", "PBKDF2_HMAC_SHA512"),
     (8192, 4000, "HMAC_SHA512", "PBKDF2_HMAC_SHA512"),
 )
+
+
+def hmac_from_header(path: Path) -> str | None:
+    """QQ 9.9.36 records the page HMAC algorithm in its 1024-byte header."""
+    try:
+        with path.open("rb") as reader:
+            header = reader.read(1024)
+    except OSError:
+        return None
+    for marker, name in HEADER_HMAC_MARKERS:
+        if marker in header:
+            return name
+    return None
 
 
 def resolve_db_dir(root: Path) -> Path:
@@ -88,6 +109,11 @@ def main() -> int:
         print(json.dumps({"ok": False, "error": "no candidate keys"}, ensure_ascii=False))
         return 1
 
+    header_hmac = hmac_from_header(path)
+    profiles = sorted(
+        PROFILES, key=lambda profile: 0 if header_hmac and profile[2] == header_hmac else 1
+    )
+
     with tempfile.TemporaryDirectory(prefix="chaos-qq-probe-") as temp:
         temp_path = Path(temp)
         raw = temp_path / "nt_msg.raw"
@@ -96,7 +122,7 @@ def main() -> int:
             stripped = temp_path / f"nt_msg.{header}.db"
             strip(raw, stripped, header)
             for key_index, key in enumerate(keys):
-                for page_size, kdf_iter, hmac, kdf in PROFILES:
+                for page_size, kdf_iter, hmac, kdf in profiles:
                     try:
                         connection = open_profile(
                             stripped, key, (page_size, kdf_iter, hmac, kdf)
