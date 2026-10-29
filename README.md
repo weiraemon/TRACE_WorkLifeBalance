@@ -134,6 +134,16 @@ npx tsx scripts/sample-vault.ts E:\CHAOS-Demo
 .\setup-qq.cmd -DataDir "D:\...\123456789\nt_qq" -SelfQQ "123456789"
 ```
 
+这里-DataDir是QQ保存文件的路径，可以在QQ的设置中查看。具体操作如下：
+
+点击QQ左下角的三横线，点击设置
+
+![进入QQ设置](docs/media/QQ_Step1.png)
+
+进入设置，点击“储存管理”，“将聊天消息默认保存到”下方的路径即为QQ文件的保存目录，其中就包括需要用的数据库，在这个路径后面加上“\123456789\nt_qq”，即为-DataDir需要指定的路径，其中“123456789”为你的QQ号，需要进行替换
+
+![查看文件保存目录](docs/media/QQ_Step2.png)
+
 密钥提取依赖第三方调试脚本，可能触发安全软件或 QQ 安全提示；仅建议在自己的账号和电脑上使用，QQ 升级后可能需要重新提取。
 
 如果自动下载不方便，也可以手动下载 [QQBackup/qq-win-db-key](https://github.com/QQBackup/qq-win-db-key) 的 `windows_ntqq_get_key.ps1`，然后运行：
