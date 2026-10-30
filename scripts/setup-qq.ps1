@@ -156,6 +156,13 @@ function Find-Python {
     }
     $version = Test-Python $python
     if ($version) {
+      if ($version.Major -eq 3 -and $version.Minor -gt 12) {
+        # sqlcipher3 目前只为部分 Python 版本提供 Windows wheel。3.13+
+        # 没有现成包时不要走源码编译（会要求 Visual C++ Build Tools），
+        # 直接回退到下面安装 Python 3.12。
+        $null = Invoke-Python $python @('-c', 'import sqlcipher3') 2>$null
+        if ($LASTEXITCODE -ne 0) { continue }
+      }
       return @{ Python = $python; Version = $version; Display = $candidate.Trim() }
     }
   }
@@ -192,7 +199,7 @@ function Install-Python {
   if ($SkipDependencies) { return $null }
   $winget = Find-CommandPath 'winget'
   if ($winget -and (Ask-Yes '未找到 Python 3.10+，是否先用 winget 安装 Python 3.12？')) {
-    Invoke-Native $winget @(
+    $null = Invoke-Native $winget @(
       'install', '--id', 'Python.Python.3.12', '-e', '--source', 'winget',
       '--accept-package-agreements', '--accept-source-agreements'
     )
@@ -217,17 +224,21 @@ function Ensure-Sqlcipher([hashtable]$Python) {
     return $false
   }
   Write-Step '安装 sqlcipher3'
-  Invoke-Python $Python @('-m', 'pip', 'install', 'sqlcipher3')
+  $null = Invoke-Python $Python @(
+    '-m', 'pip', 'install', '--only-binary=:all:', 'sqlcipher3'
+  )
   if ($LASTEXITCODE -ne 0) {
     Write-Warn '默认 pip 安装失败，尝试 --user 安装...'
-    Invoke-Python $Python @('-m', 'pip', 'install', '--user', 'sqlcipher3')
+    $null = Invoke-Python $Python @(
+      '-m', 'pip', 'install', '--only-binary=:all:', '--user', 'sqlcipher3'
+    )
   }
   $null = Invoke-Python $Python @('-c', 'import sqlcipher3') 2>$null
   if ($LASTEXITCODE -eq 0) {
     Write-Ok 'sqlcipher3 安装成功'
     return $true
   }
-  Write-Warn 'sqlcipher3 安装失败。请确认使用 64 位 Python 3.10+，并检查网络。'
+  Write-Warn 'sqlcipher3 安装失败。请使用 64 位 Python 3.12；3.13+ 没有预编译包时需要 Visual C++ Build Tools。'
   return $false
 }
 
@@ -826,7 +837,19 @@ try {
   if (-not $pythonInfo) { $pythonInfo = Install-Python }
   if (-not $pythonInfo) { throw '未找到可用的 Python 3.10+。' }
   Write-Ok ("Python {0}（{1}）" -f $pythonInfo.Version, $pythonInfo.Display)
-  if (-not (Ensure-Sqlcipher $pythonInfo.Python)) { throw 'sqlcipher3 未就绪，无法读取 QQ 数据库。' }
+  $sqlReady = Ensure-Sqlcipher $pythonInfo.Python
+  if (-not $sqlReady) {
+    Write-Warn '当前 Python 没有可用的 sqlcipher3，尝试安装/切换到 Python 3.12。'
+    $fallback = Install-Python
+    if ($fallback) {
+      $pythonInfo = $fallback
+      Write-Ok ("Python {0}（{1}）" -f $pythonInfo.Version, $pythonInfo.Display)
+      $sqlReady = Ensure-Sqlcipher $pythonInfo.Python
+    }
+  }
+  if (-not $sqlReady) {
+    throw 'sqlcipher3 未就绪。请安装 64 位 Python 3.12 后重试；3.13+ 没有预编译包时需要 Visual C++ Build Tools。'
+  }
 
   if (-not $SkipDependencies -and -not (Test-Path -LiteralPath (Join-Path $RepoRoot 'node_modules\.bin\tsx.cmd'))) {
     Write-Step '安装 CHAOS 项目依赖'

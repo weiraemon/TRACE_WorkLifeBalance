@@ -119,7 +119,7 @@ npx tsx scripts/sample-vault.ts E:\CHAOS-Demo
 
 ### 一键接入 QQ（推荐）
 
-需要 **Windows、Node.js ≥ 22.12、Python 3.10+、已安装的 QQNT**。没有 Python 时，脚本会先尝试 winget，失败后再下载官方 Python 3.12 安装程序并安装到当前用户。QQ 不需要提前登录，脚本会负责关闭并以调试模式重新启动它。
+需要 **Windows、Node.js ≥ 22.12、Python 3.10–3.12（推荐 3.12）、已安装的 QQNT**。没有可用 Python 时，脚本会先尝试 winget，失败后再下载官方 Python 3.12 安装程序并安装到当前用户；3.13+ 没有 `sqlcipher3` 预编译包时会自动回退安装 3.12。QQ 不需要提前登录，脚本会负责关闭并以调试模式重新启动它。
 
 1. 关闭正在运行的 CHAOS 和 QQ；
 2. 双击项目根目录的 `setup-qq.cmd`；
@@ -203,7 +203,7 @@ API Key 和 QQ 数据库密钥在本机 JSON 中以明文保存，依靠 Windows
 py -3.12 -m pip install sqlcipher3
 ```
 
-Python 3.10+ 均可；确保安装 `sqlcipher3` 的解释器与「Python 命令」一致。
+Python 3.10–3.12 最稳妥，推荐 3.12；3.13+ 如果没有 `sqlcipher3` 预编译包，pip 会尝试源码编译并要求 Visual C++ Build Tools。确保安装 `sqlcipher3` 的解释器与「Python 命令」一致；初始化脚本会优先使用 3.12。
 
 ## 开发与文档
 
