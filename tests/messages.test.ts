@@ -12,6 +12,7 @@ import {
 import {
   analyzeMessage,
   chatEndpoint,
+  dropNoopChanges,
   mergeSameTitle,
   messageFingerprint,
   parseSuggestions,
@@ -115,6 +116,16 @@ describe('QQ 筛选与模型边界', () => {
     expect(matchMessage(settings, message)).toBe(true);
     expect(matchMessage(settings, { ...message, sender: '同学' })).toBe(false);
   });
+  it('私聊收到的消息按 atMe 命中，自己发出的消息不冒充对方', () => {
+    const settings = structuredClone(state.settings);
+    Object.assign(settings.rules[0], {
+      kind: 'private',
+      mode: 'conditions',
+      conditions: ['atMe'],
+    });
+    expect(matchMessage(settings, { ...message, atMe: true, fromSelf: false })).toBe(true);
+    expect(matchMessage(settings, { ...message, atMe: false, fromSelf: true })).toBe(false);
+  });
   it('去重标识包括会话、发送人、发送时间和 QQ 消息 ID', () => {
     expect(messageFingerprint(message)).toBe(messageFingerprint({ ...message }));
     expect(messageFingerprint(message)).not.toBe(
@@ -208,6 +219,29 @@ describe('QQ 筛选与模型边界', () => {
     expect(merged).toHaveLength(1);
     expect(merged[0].targetId).toBe(existing[0].id);
     expect(merged[0].uncertainty).toContain('同名变更已合并');
+  });
+  it('日期、时刻和地点都相同的重复 change 被丢弃', () => {
+    const target = {
+      id: randomUUID(),
+      type: 'milestone' as const,
+      title: '去卫星所测试紫丁香三号上注程序',
+      dueDate: '2026-10-31',
+      dueTime: '09:00',
+      location: '卫星所',
+      lineTitle: '测试',
+    };
+    const same = {
+      ...suggestion,
+      kind: 'change' as const,
+      targetId: target.id,
+      completed: false,
+      dueDate: '2026-10-31',
+      dueTime: '09:00',
+      location: '卫星所',
+      tags: [],
+    };
+    const changed = { ...same, dueDate: '2026-11-01' };
+    expect(dropNoopChanges([same, changed], [target])).toEqual([changed]);
   });
   it('拒绝非法日期以及没有日期的时刻', () => {
     expect(() => suggestionSchema.parse({ ...suggestion, dueDate: '2026-02-30' })).toThrow();

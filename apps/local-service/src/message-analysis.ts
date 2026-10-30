@@ -25,6 +25,7 @@ export type ExistingMessageItem = {
   title: string;
   dueDate: string | null;
   dueTime: string | null;
+  location?: string | null;
   lineTitle: string;
 };
 
@@ -113,6 +114,22 @@ export function parseSuggestions(content: string) {
       throw new Error(`AI 第 ${index + 1} 项字段格式错误：${fields}；未生成事项，请重试`);
     }
     return parsed.data;
+  });
+}
+
+export function dropNoopChanges(
+  suggestions: Suggestion[],
+  existing: ExistingMessageItem[],
+): Suggestion[] {
+  return suggestions.filter((suggestion) => {
+    if (suggestion.kind !== 'change' || !suggestion.targetId || suggestion.completed) return true;
+    const target = existing.find((item) => item.id === suggestion.targetId);
+    if (!target) return true;
+    const sameDate = (suggestion.dueDate ?? null) === (target.dueDate ?? null);
+    const sameTime = (suggestion.dueTime ?? null) === (target.dueTime ?? null);
+    const sameLocation =
+      (suggestion.location?.trim() || null) === (target.location?.trim() || null);
+    return !(sameDate && sameTime && sameLocation);
   });
 }
 
@@ -289,7 +306,7 @@ export async function analyzeMessage(
 同一通知包含不同事件或截止点时分别提取，最多10项。例如宣介会10月29日18:30和报名截止11月2日18:00必须是两个事项，各自保留日期、地点或链接等依据。避免把同一事件的行动清单重复拆成事项。
 有明确地点（教室、会议室、楼栋、线上会议名等）时填入 location，没有则 null，不要编造。event 或带时刻的 task 会成为节点，按内容从这些标签中选择 0–2 个：${milestoneTags.join('、')}；普通待办可为空数组。
 如果消息明确表示 existingItems 中某项已经完成、做完或交了，返回 change，targetId 指向该项，completed=true；不要清空日期，也不要新建。明确取消或不用做才返回 cancel。其他改期返回 change，completed=false。
-改期或取消分别返回 change/cancel，不转换成新任务。existingItems 是当前未完成节点与待办；如果消息是在改期或取消其中一项，返回 change/cancel，title 与现有标题一致，reason 说明从什么改成什么；不要新建重复事项。existingItems 同时包含节点和节点下的待办：改期或取消只返回节点变更，除非消息明确只针对某个待办，避免同一事项生成两个确认。若只是内容与时间都相同的重复，返回 ignore。上下文只用于理解当前消息，不独立提取旧任务。
+改期或取消分别返回 change/cancel，不转换成新任务。existingItems 是当前未完成节点与待办；如果消息是在改期或取消其中一项，返回 change/cancel，title 与现有标题一致，reason 说明从什么改成什么；不要新建重复事项。existingItems 同时包含节点和节点下的待办：改期或取消只返回节点变更，除非消息明确只针对某个待办，避免同一事项生成两个确认。若只是内容与时间都相同的重复，返回 ignore。context 只用于理解当前 message.text 中的指代，不得为 context 中出现、但 message.text 没有再次提出的旧事项生成 task/change。若 message.text 与 existingItems 的日期、时刻和地点完全相同，只是重复描述，返回 ignore，不要返回 change。上下文只用于理解当前消息，不独立提取旧任务。
 返回 JSON 对象 {"suggestions":[事项,...]}。每项且仅有这些字段：kind(task/event/change/cancel/ignore), targetId(change/cancel 时必须填 existingItems 中对应记录的 id，其他为null), title(短标题), dueDate(YYYY-MM-DD或null), dueTime(HH:mm或null), reason(原文依据), uncertainty(不确定事项，无则空串), actions(行动标题数组，无则[]), completed(仅 change 表示已完成时为true，其他false), tags(节点标签数组，无则[]), location(地点或null), destination(按 routingInstructions 给出的归属推荐；task/event 必须提供，其他可为null)。时间必须有日期。完全无关时返回一个ignore事项及原因。未提供日期或时刻必须用null，不用空字符串，所有字段都要返回。`,
           },
           {

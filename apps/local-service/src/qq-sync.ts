@@ -14,6 +14,7 @@ import {
 import { Vault } from './vault';
 import {
   analyzeMessage,
+  dropNoopChanges,
   mergeSameTitle,
   messageFingerprint,
   type ExistingMessageItem,
@@ -149,6 +150,15 @@ export class QqSync {
     return result.groups as { id: string; name: string }[];
   }
 
+  async contacts() {
+    const config = await activeQq();
+    if (!config.dataDir) throw new Error('请先填写 QQ 数据目录');
+    if (!config.key) throw new Error('请先保存 QQ 数据库密钥');
+    const result = await this.call(['contacts', '--db-dir', config.dataDir], config.key);
+    const contacts = (result.contacts ?? []) as { id: string; name: string; remark: string }[];
+    return contacts.filter((contact) => contact.id !== config.selfQQ);
+  }
+
   async test() {
     const config = await activeQq();
     if (!config.dataDir) throw new Error('请先填写 QQ 数据目录');
@@ -220,6 +230,7 @@ export class QqSync {
               title: data.title,
               dueDate: data.dueDate,
               dueTime: data.dueTime,
+              location: data.location ?? null,
               lineTitle: lineTitle(data.lineId),
             },
           ];
@@ -232,6 +243,7 @@ export class QqSync {
               title: data.title,
               dueDate: data.dueDate,
               dueTime: null,
+              location: null,
               lineTitle: milestone ? lineTitle(milestone.lineId) : '',
             },
           ];
@@ -322,13 +334,16 @@ export class QqSync {
     const projectScope =
       !rule.lineId && projectData ? { id: projectData.id, title: projectData.title } : null;
     const existing = await this.existingItems(vault);
-    const suggestions = await analyzeMessage(source, settings, aiConfig.key, fetch, {
-      catalog: rule.lineId ? [] : projectScope ? [projectData!] : catalog,
-      defaultLine: defaultLine ? { title: defaultLine.title } : null,
-      projectScope,
+    const suggestions = dropNoopChanges(
+      await analyzeMessage(source, settings, aiConfig.key, fetch, {
+        catalog: rule.lineId ? [] : projectScope ? [projectData!] : catalog,
+        defaultLine: defaultLine ? { title: defaultLine.title } : null,
+        projectScope,
+        existing,
+        ai,
+      }),
       existing,
-      ai,
-    });
+    );
     const actionable = mergeSameTitle(
       suggestions.filter((suggestion) => suggestion.kind !== 'ignore'),
       existing,
@@ -429,20 +444,20 @@ export class QqSync {
     ];
     const result = await this.call(args, config.key);
     const messages = (result.messages ?? []) as QqMessage[];
+    const sources: SourceMessage[] = messages.map((message) => ({
+      ruleId: rule.id,
+      sender: message.sender || message.senderId || 'QQ',
+      sentAt: new Date(message.time * 1000).toISOString(),
+      text: message.text,
+      context: '',
+      atAll: Boolean(message.atAll),
+      atMe: Boolean(message.atMe),
+      remoteId: message.id,
+      fromSelf: Boolean(message.fromSelf),
+    }));
     const added: Candidate[] = [];
     let skippedExpired = 0;
-    for (const message of messages) {
-      const source: SourceMessage = {
-        ruleId: rule.id,
-        sender: message.sender || message.senderId || 'QQ',
-        sentAt: new Date(message.time * 1000).toISOString(),
-        text: message.text,
-        context: '',
-        atAll: Boolean(message.atAll),
-        atMe: Boolean(message.atMe),
-        remoteId: message.id,
-        fromSelf: Boolean(message.fromSelf),
-      };
+    for (const source of sources) {
       if (!effectiveUseAi) {
         const raw = await this.queueRaw(inbox.state, rule, source, settings, resyncSeen);
         if (raw) added.push(raw);
@@ -588,10 +603,15 @@ export class QqSync {
       let inbox = await vault.messageInbox();
       let revision = inbox.revision;
       const rules = inbox.state.settings.rules.filter(
-        (rule) => rule.enabled && rule.kind === 'group' && rule.chatId,
+        (rule) => rule.enabled && rule.chatId && (rule.kind === 'group' || rule.kind === 'private'),
       );
       for (const rule of rules) {
-        const cursor = inbox.state.sync.find((item) => item.chatId === rule.chatId);
+        if (rule.kind === 'private' && !config.selfQQ) {
+          this.lastError = `${rule.name}：私聊自动同步需要先填写本人 QQ 号`;
+          continue;
+        }
+        const cursorKey = rule.kind === 'private' ? `private:${rule.chatId}` : rule.chatId!;
+        const cursor = inbox.state.sync.find((item) => item.chatId === cursorKey);
         let result;
         try {
           result = await this.call(
@@ -599,8 +619,9 @@ export class QqSync {
               'messages',
               '--db-dir',
               config.dataDir,
-              '--group',
-              rule.chatId!,
+              ...(rule.kind === 'private'
+                ? ['--private', rule.chatId!]
+                : ['--group', rule.chatId!]),
               '--after-rowid',
               cursor?.afterRowid || '0',
               '--after-time',
@@ -622,19 +643,19 @@ export class QqSync {
           continue;
         }
         const messages = (result.messages ?? []) as QqMessage[];
+        let sources: SourceMessage[] = messages.map((message) => ({
+          ruleId: rule.id,
+          sender: message.sender || message.senderId || 'QQ',
+          sentAt: new Date(message.time * 1000).toISOString(),
+          text: message.text,
+          context: '',
+          atAll: Boolean(message.atAll),
+          atMe: Boolean(message.atMe),
+          remoteId: message.id,
+          fromSelf: Boolean(message.fromSelf),
+        }));
         let failed = false;
-        for (const message of messages) {
-          const source: SourceMessage = {
-            ruleId: rule.id,
-            sender: message.sender || message.senderId || 'QQ',
-            sentAt: new Date(message.time * 1000).toISOString(),
-            text: message.text,
-            context: '',
-            atAll: Boolean(message.atAll),
-            atMe: Boolean(message.atMe),
-            remoteId: message.id,
-            fromSelf: Boolean(message.fromSelf),
-          };
+        for (const source of sources) {
           try {
             if (!rule.useAi || !aiReady) {
               await this.queueRaw(inbox.state, rule, source);
@@ -676,12 +697,12 @@ export class QqSync {
         if (!failed && result.next) {
           const next = result.next as { afterRowid?: string; afterTime?: number; afterId?: string };
           const sync = {
-            chatId: rule.chatId!,
+            chatId: cursorKey,
             afterRowid: next.afterRowid ?? cursor?.afterRowid ?? '0',
             afterTime: next.afterTime ?? cursor?.afterTime ?? 0,
             afterId: next.afterId ?? cursor?.afterId ?? '0',
           };
-          const index = inbox.state.sync.findIndex((item) => item.chatId === rule.chatId);
+          const index = inbox.state.sync.findIndex((item) => item.chatId === cursorKey);
           if (index >= 0) inbox.state.sync[index] = sync;
           else inbox.state.sync.push(sync);
         }

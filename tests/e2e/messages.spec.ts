@@ -28,16 +28,13 @@ test('消息规则、AI 提供商、QQ 项目范围与计划入库', async ({ pa
   await wechat.getByRole('button', { name: '关闭对话框', exact: true }).click();
 
   await page.getByRole('button', { name: 'QQ同步设置', exact: true }).click();
-  await dialog.getByRole('button', { name: '会话与识别设置', exact: true }).click();
+  await dialog.getByRole('button', { name: '模型设置', exact: true }).click();
 
   // AI provider settings and per-provider keys persist in the app config file.
   await expect(dialog.getByLabel('模型提供商')).toHaveValue('deepseek');
   await expect(dialog.getByLabel('接口地址')).toHaveValue('https://api.deepseek.com');
   await expect(dialog.getByLabel('模型名称')).toHaveValue('deepseek-flash');
   await expect(dialog).toContainText('DeepSeek：密钥未配置');
-  await expect(dialog).toContainText('QQ 自动同步');
-  await expect(dialog.getByLabel('QQ 数据目录')).toBeVisible();
-  await expect(dialog.getByLabel('QQ 数据库密钥')).toBeVisible();
   await dialog.getByLabel('API 密钥').fill('sk-e2e-deepseek');
   await dialog.getByRole('button', { name: '保存 AI 设置', exact: true }).click();
   await expect(dialog).toContainText('AI 设置与密钥已保存到本机');
@@ -64,32 +61,47 @@ test('消息规则、AI 提供商、QQ 项目范围与计划入库', async ({ pa
   await dialog.getByRole('button', { name: '清除此提供商的密钥', exact: true }).click();
   await expect(dialog).toContainText('OpenAI / ChatGPT：密钥未配置');
 
+  await dialog.getByRole('button', { name: 'QQ自动同步全局设置', exact: true }).click();
+  await expect(dialog).toContainText('QQ 自动同步');
+  await expect(dialog.getByLabel('QQ 数据目录')).toBeVisible();
+  await expect(dialog.getByLabel('QQ 数据库密钥')).toBeVisible();
   await dialog.getByLabel('本人姓名与称呼').fill('张三，小张');
   await dialog.getByLabel('班级名称与简称').fill('软件一班');
-  await dialog.getByRole('button', { name: '添加会话', exact: true }).click();
+  await dialog.getByRole('button', { name: '保存全局设置', exact: true }).click();
+  await expect(dialog).toContainText('全局设置已保存');
+
+  await dialog.getByRole('button', { name: '会话规则设置', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: '读取 QQ 列表', exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: '添加群聊规则', exact: true }).click();
   await dialog.getByLabel('会话名称').fill('年级通知');
   await expect(dialog.getByLabel('自动加入计划（跳过待确认）')).not.toBeChecked();
   await dialog.getByLabel('检查范围').selectOption('conditions');
   await dialog.getByLabel('@全体成员', { exact: true }).check();
   await dialog.getByLabel('限定项目（可选）').selectOption(project.data.id);
   await dialog.getByLabel('默认业务线（可选）').selectOption(line.data.id);
-  await dialog.getByRole('button', { name: '保存规则', exact: true }).click();
-  await expect(dialog).toContainText('规则已保存');
+  await dialog.getByRole('button', { name: '保存此规则', exact: true }).click();
+  await expect(dialog).toContainText('此规则已保存');
+  await dialog.getByRole('button', { name: '收拢详细', exact: true }).click();
+  await expect(dialog.getByLabel('会话名称')).toHaveCount(0);
+  await dialog.getByRole('button', { name: '展开详细', exact: true }).click();
+  await expect(dialog.getByLabel('会话名称')).toHaveValue('年级通知');
   await dialog.getByRole('button', { name: '关闭对话框', exact: true }).click();
   await page.getByRole('button', { name: 'QQ同步设置', exact: true }).click();
-  await dialog.getByRole('button', { name: '会话与识别设置', exact: true }).click();
+  await dialog.getByRole('button', { name: '会话规则设置', exact: true }).click();
   await expect(dialog.getByLabel('会话名称')).toHaveValue('年级通知');
-  await expect(dialog.getByLabel('本人姓名与称呼')).toHaveValue('张三，小张');
   await expect(dialog.getByLabel('限定项目（可选）')).toHaveValue(project.data.id);
   await expect(dialog.getByLabel('默认业务线（可选）')).toHaveValue(line.data.id);
+  await dialog.getByRole('button', { name: 'QQ自动同步全局设置', exact: true }).click();
+  await expect(dialog.getByLabel('本人姓名与称呼')).toHaveValue('张三，小张');
+  await dialog.getByRole('button', { name: '会话规则设置', exact: true }).click();
 
   // Project-only conversation: no default line; analysis must create inside the project.
   await dialog.getByLabel('默认业务线（可选）').selectOption('');
-  await dialog.getByRole('button', { name: '保存规则', exact: true }).click();
-  await expect(dialog).toContainText('规则已保存');
+  await dialog.getByRole('button', { name: '保存所有规则', exact: true }).click();
+  await expect(dialog).toContainText('所有规则已保存');
   await dialog.getByRole('button', { name: '关闭对话框', exact: true }).click();
   await page.getByRole('button', { name: 'QQ同步设置', exact: true }).click();
-  await dialog.getByRole('button', { name: '会话与识别设置', exact: true }).click();
+  await dialog.getByRole('button', { name: '会话规则设置', exact: true }).click();
   await expect(dialog.getByLabel('限定项目（可选）')).toHaveValue(project.data.id);
   await expect(dialog.getByLabel('默认业务线（可选）')).toHaveValue('');
   await dialog.getByRole('button', { name: '关闭对话框', exact: true }).click();
@@ -247,20 +259,24 @@ test('会话开启自动加入后，命中消息直接进入计划', async ({ pa
     await refresh(page);
     await page.getByRole('button', { name: 'QQ同步设置', exact: true }).click();
     const dialog = page.getByRole('dialog');
-    await dialog.getByRole('button', { name: '会话与识别设置', exact: true }).click();
+    await dialog.getByRole('button', { name: '模型设置', exact: true }).click();
     await dialog.getByLabel('模型提供商').selectOption('custom');
     await dialog.getByLabel('接口地址').fill(`http://127.0.0.1:${port}/v1`);
     await dialog.getByLabel('模型名称').fill('mock');
     await dialog.getByLabel('API 密钥').fill('sk-mock');
     await dialog.getByRole('button', { name: '保存 AI 设置', exact: true }).click();
     await expect(dialog).toContainText('AI 设置与密钥已保存到本机');
+    await dialog.getByRole('button', { name: 'QQ自动同步全局设置', exact: true }).click();
     await dialog.getByLabel('本人姓名与称呼').fill('测试');
-    await dialog.getByRole('button', { name: '添加会话', exact: true }).click();
+    await dialog.getByRole('button', { name: '保存全局设置', exact: true }).click();
+    await expect(dialog).toContainText('全局设置已保存');
+    await dialog.getByRole('button', { name: '会话规则设置', exact: true }).click();
+    await dialog.getByRole('button', { name: '添加群聊规则', exact: true }).click();
     await dialog.getByLabel('会话名称').fill('自动测试');
     await dialog.getByLabel('自动加入计划（跳过待确认）').check();
     await dialog.getByLabel('默认业务线（可选）').selectOption(line.data.id);
-    await dialog.getByRole('button', { name: '保存规则', exact: true }).click();
-    await expect(dialog).toContainText('规则已保存');
+    await dialog.getByRole('button', { name: '保存此规则', exact: true }).click();
+    await expect(dialog).toContainText('此规则已保存');
     await dialog.getByRole('button', { name: '关闭对话框', exact: true }).click();
 
     await page.getByRole('button', { name: 'QQ同步设置', exact: true }).click();

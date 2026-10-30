@@ -621,9 +621,22 @@ nav svg {
   width: calc(100% - 32px);
   max-width: 530px;
   max-height: 88dvh;
-  overflow-y: auto;
+  overflow: hidden;
   z-index: 21;
   box-shadow: 0 24px 100px #29352533;
+  display: flex;
+  flex-direction: column;
+}
+.dialog-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+}
+.dialog > .section-heading {
+  flex: none;
+  margin-bottom: 14px;
 }
 .dialog.wide {
   max-width: 700px;
@@ -632,7 +645,7 @@ nav svg {
   font-size: 20px;
 }
 .dialog .section-heading {
-  margin-bottom: 22px;
+  margin-bottom: 14px;
 }
 .field {
   display: flex;
@@ -2585,6 +2598,40 @@ select:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+}
+.message-rule-toolbar {
+  margin-bottom: 14px;
+}
+.message-rule-kinds {
+  margin: 8px 0 12px;
+}
+.message-rule legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+.message-rule legend span {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+}
+.message-rule > .hint {
+  font-size: 13px;
+}
+.rule-toggle {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+.rule-toggle:hover {
+  color: var(--accent-strong);
 }
 .message-conditions label {
   display: flex;

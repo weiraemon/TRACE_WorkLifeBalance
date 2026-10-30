@@ -59,7 +59,7 @@ export function Modal({
           <Dialog.Description className="sr-only">
             保存到当前 Obsidian Vault。未保存的内容在关闭后放弃。
           </Dialog.Description>
-          {children}
+          <div className="dialog-body">{children}</div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

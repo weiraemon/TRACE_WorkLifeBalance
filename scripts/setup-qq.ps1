@@ -125,12 +125,29 @@ function Find-Python {
     'py -3.11',
     'py -3.10',
     'py -3.13',
-    'python',
-    'python3',
     (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'),
     (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python311\python.exe'),
-    (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python310\python.exe')
+    (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python310\python.exe'),
+    (Join-Path $env:ProgramFiles 'Python312\python.exe'),
+    (Join-Path $env:ProgramFiles 'Python311\python.exe'),
+    'C:\Python312\python.exe',
+    'python3.12',
+    'python3.11',
+    'python3.10',
+    'python',
+    'python3'
   )
+  foreach ($root in @(
+      (Join-Path $env:LOCALAPPDATA 'Programs\Python'),
+      $env:ProgramFiles
+    )) {
+    if (-not $root -or -not (Test-Path -LiteralPath $root)) { continue }
+    $candidates += @(Get-ChildItem -LiteralPath $root -Directory -Filter 'Python3*' `
+      -ErrorAction SilentlyContinue | ForEach-Object {
+        $exe = Join-Path $_.FullName 'python.exe'
+        if (Test-Path -LiteralPath $exe) { $exe }
+      })
+  }
   foreach ($candidate in ($candidates | Select-Object -Unique)) {
     $python = Split-PythonCommand $candidate
     if (-not $python) { continue }
@@ -145,25 +162,48 @@ function Find-Python {
   return $null
 }
 
-function Install-Python {
-  if ($SkipDependencies) { return $null }
-  $winget = Find-CommandPath 'winget'
-  if (-not $winget) {
-    Write-Warn '未找到 Python 3.10+，也未找到 winget。请从 https://www.python.org/downloads/ 安装 Python 3.12 后重试。'
+function Install-PythonFromInstaller {
+  $url = 'https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe'
+  $installer = Join-Path $WorkDir 'python-3.12.10-amd64.exe'
+  Write-Step '下载 Python 3.12 安装程序'
+  try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+  } catch {
+  }
+  try {
+    Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing -TimeoutSec 180
+  } catch {
+    Write-Warn "Python 安装程序下载失败：$($_.Exception.Message)"
+    Write-Warn '请从 https://www.python.org/downloads/ 手动安装 Python 3.12 后重试。'
     return $null
   }
-  if (-not (Ask-Yes '未找到 Python 3.10+，是否用 winget 安装 Python 3.12？')) {
-    return $null
-  }
-  Invoke-Native $winget @(
-    'install', '--id', 'Python.Python.3.12', '-e', '--source', 'winget',
-    '--accept-package-agreements', '--accept-source-agreements'
+  Write-Step '安装 Python 3.12（当前用户）'
+  $process = Start-Process -FilePath $installer -Wait -PassThru -ArgumentList @(
+    '/quiet', 'InstallAllUsers=0', 'PrependPath=0', 'Include_pip=1', 'Include_test=0'
   )
-  if ($LASTEXITCODE -ne 0) {
-    Write-Warn 'Python 安装失败，请手动安装后重试。'
+  if ($process.ExitCode -ne 0) {
+    Write-Warn "Python 安装程序退出码：$($process.ExitCode)。请手动安装后重试。"
     return $null
   }
   return Find-Python
+}
+
+function Install-Python {
+  if ($SkipDependencies) { return $null }
+  $winget = Find-CommandPath 'winget'
+  if ($winget -and (Ask-Yes '未找到 Python 3.10+，是否先用 winget 安装 Python 3.12？')) {
+    Invoke-Native $winget @(
+      'install', '--id', 'Python.Python.3.12', '-e', '--source', 'winget',
+      '--accept-package-agreements', '--accept-source-agreements'
+    )
+    $installed = Find-Python
+    if ($installed) { return $installed }
+    Write-Warn 'winget 安装后仍未找到 Python，尝试官方安装程序。'
+  }
+  if (-not (Ask-Yes '是否下载官方 Python 3.12 安装程序并安装到当前用户？')) {
+    return $null
+  }
+  return Install-PythonFromInstaller
 }
 
 function Ensure-Sqlcipher([hashtable]$Python) {

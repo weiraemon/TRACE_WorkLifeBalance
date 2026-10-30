@@ -282,6 +282,81 @@ def groups(path: Path, key: str, cache_dir: Path | None = None) -> dict:
             shutil.rmtree(cleanup, ignore_errors=True)
 
 
+def contacts(path: Path, key: str, cache_dir: Path | None = None) -> dict:
+    recent: dict[str, int] = {}
+    connection, cleanup = open_nt(path / "nt_msg.db", key, cache_dir)
+    try:
+        cursor = connection.cursor()
+        rows = None
+        for table in ("recent_contact_v3_table", "recent_contact_table"):
+            try:
+                rows = cursor.execute(
+                    f'SELECT "40030", "40050" FROM "{table}" '
+                    f'WHERE "40030" IS NOT NULL AND "40030" != 0'
+                ).fetchall()
+                break
+            except Exception:
+                continue
+        for qq, last_time in rows or []:
+            qq_text = str(qq or "").strip()
+            if qq_text.isdigit():
+                recent[qq_text] = max(recent.get(qq_text, 0), int(last_time or 0))
+    finally:
+        connection.close()
+        if cleanup:
+            shutil.rmtree(cleanup, ignore_errors=True)
+
+    profile: dict[str, dict[str, str]] = {}
+    friends: set[str] = set()
+    profile_connection = None
+    profile_cleanup = None
+    profile_path = path / "profile_info.db"
+    if profile_path.is_file():
+        try:
+            profile_connection, profile_cleanup = open_nt(profile_path, key, cache_dir)
+            cursor = profile_connection.cursor()
+            try:
+                for qq, nickname, remark in cursor.execute(
+                    'SELECT "1002", "20002", "20009" FROM profile_info_v6'
+                ).fetchall():
+                    qq_text = str(qq or "").strip()
+                    if qq_text.isdigit():
+                        profile[qq_text] = {
+                            "name": str(nickname or "").strip(),
+                            "remark": str(remark or "").strip(),
+                        }
+                for uid, qq in cursor.execute('SELECT "1000", "1002" FROM buddy_list').fetchall():
+                    qq_text = str(qq or "").strip()
+                    if qq_text.isdigit():
+                        friends.add(qq_text)
+            except Exception:
+                pass
+        finally:
+            if profile_connection is not None:
+                profile_connection.close()
+            if profile_cleanup:
+                shutil.rmtree(profile_cleanup, ignore_errors=True)
+
+    contacts_by_qq: dict[str, dict] = {}
+    for qq_text in friends | set(recent):
+        item = profile.get(qq_text, {})
+        name_text = item.get("name", "").strip()
+        remark_text = item.get("remark", "").strip()
+        contacts_by_qq[qq_text] = {
+            "id": qq_text,
+            "name": name_text or remark_text or qq_text,
+            "remark": remark_text,
+            "lastTime": recent.get(qq_text, 0),
+        }
+    items = sorted(
+        contacts_by_qq.values(),
+        key=lambda item: (-item["lastTime"], item["name"], item["id"]),
+    )
+    for item in items:
+        item.pop("lastTime", None)
+    return {"contacts": items}
+
+
 def test(path: Path, key: str, cache_dir: Path | None = None) -> dict:
     connection, cleanup = open_nt(path / "nt_msg.db", key, cache_dir)
     try:
@@ -391,7 +466,7 @@ def range_messages(
                     "text": text,
                     "atAll": (not args.private)
                     and ("@全体成员" in text or "全体成员" in text),
-                    "atMe": False,
+                    "atMe": bool(args.private) and not is_self,
                     "fromSelf": is_self,
                 }
             )
@@ -410,7 +485,32 @@ def messages(
     connection, cleanup = open_nt(path / "nt_msg.db", key, cache_dir)
     try:
         cursor = connection.cursor()
-        max_rowid = cursor.execute("SELECT max(rowid) FROM group_msg_table").fetchone()[0] or 0
+        uid_map = {
+            uid: qq
+            for uid, qq in cursor.execute(
+                'SELECT "48902", "1002" FROM nt_uid_mapping_table'
+            ).fetchall()
+            if uid and qq
+        }
+        private = bool(args.private)
+        if private:
+            reverse: dict[str, str] = {}
+            for uid, qq in uid_map.items():
+                qq_key = str(qq)
+                if not qq_key:
+                    continue
+                if qq_key not in reverse or str(uid).startswith("u_"):
+                    reverse[qq_key] = uid
+            peer = reverse.get(str(args.private))
+            if not peer:
+                fail(f"找不到私聊对象 {args.private}")
+            table = "c2c_msg_table"
+        else:
+            if not args.group:
+                fail("缺少群号")
+            peer = args.group
+            table = "group_msg_table"
+        max_rowid = cursor.execute(f"SELECT max(rowid) FROM {table}").fetchone()[0] or 0
         cutoff = int(time.time()) - max(1, args.since_days) * 86400
         window_ms = (max(1, args.since_days) + 1) * 86400 * 1000
         start = args.after_rowid or max(0, int(max_rowid) - window_ms * (1 << 22))
@@ -420,13 +520,6 @@ def messages(
         last_time = args.after_time
         skipped = 0
         limit = max(1, min(args.limit, 200))
-        uid_map = {
-            uid: qq
-            for uid, qq in cursor.execute(
-                'SELECT "48902", "1002" FROM nt_uid_mapping_table'
-            ).fetchall()
-            if uid and qq
-        }
 
         def consider(row) -> None:
             nonlocal last_rowid, last_time
@@ -458,16 +551,19 @@ def messages(
             message_key = str(message_id)
             if message_key in collected:
                 return
+            chat_key = args.private if private else (group_id or args.group)
+            chat_qq = args.private if private else group_qq
             collected[message_key] = {
                 "id": message_key,
                 "rowid": str(rowid),
                 "time": int(timestamp or 0),
                 "sender": nickname or (str(sender_qq) if sender_qq else sender_uid) or "QQ",
                 "senderId": str(sender_qq or ""),
-                "groupId": str(group_id or args.group),
-                "groupQQ": str(group_qq or ""),
+                "groupId": str(chat_key or ""),
+                "groupQQ": str(chat_qq or ""),
                 "text": text,
-                "atAll": "@全体成员" in text or "全体成员" in text,
+                "atAll": (not private) and ("@全体成员" in text or "全体成员" in text),
+                "atMe": private and not is_self,
                 "fromSelf": is_self,
             }
 
@@ -475,15 +571,15 @@ def messages(
         while len(collected) < limit:
             try:
                 rows = cursor.execute(
-                    """
+                    f"""
                     SELECT rowid, "40001", "40050", "40020", "40033",
                            "40021", "40030", "40013", "40093", "40800"
-                    FROM group_msg_table
+                    FROM {table}
                     WHERE rowid > ? AND "40021" = ?
                     ORDER BY rowid ASC
                     LIMIT 200
                     """,
-                    (last_rowid, args.group),
+                    (last_rowid, peer),
                 ).fetchall()
             except Exception:
                 skipped += 1
@@ -505,15 +601,15 @@ def messages(
         if len(collected) < limit:
             try:
                 time_rows = cursor.execute(
-                    """
+                    f"""
                     SELECT rowid, "40001", "40050", "40020", "40033",
                            "40021", "40030", "40013", "40093", "40800"
-                    FROM group_msg_table
+                    FROM {table}
                     WHERE "40021" = ? AND "40050" >= ?
                     ORDER BY "40050" ASC
                     LIMIT 400
                     """,
-                    (args.group, lowest_time),
+                    (peer, lowest_time),
                 ).fetchall()
             except Exception:
                 time_rows = []
@@ -523,7 +619,7 @@ def messages(
                     break
 
         items = sorted(collected.values(), key=lambda item: (item["time"], int(item["rowid"])))[:limit]
-        if items:
+        if items and not private:
             ids = [int(item["id"]) for item in items]
             placeholders = ",".join("?" for _ in ids)
             at_me_rows = cursor.execute(
@@ -550,7 +646,7 @@ def messages(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["test", "groups", "messages"])
+    parser.add_argument("command", choices=["test", "groups", "contacts", "messages"])
     parser.add_argument("--db-dir", required=True)
     parser.add_argument("--group", default="")
     parser.add_argument("--private", default="")
@@ -575,12 +671,14 @@ def main() -> None:
             result = test(path, key, cache)
         elif args.command == "groups":
             result = groups(path, key, cache)
+        elif args.command == "contacts":
+            result = contacts(path, key, cache)
         else:
             if args.since_time:
                 result = range_messages(args, path, key, cache)
             else:
-                if not args.group:
-                    fail("缺少群号")
+                if not args.group and not args.private:
+                    fail("缺少群号或私聊 QQ 号")
                 result = messages(args, path, key, cache)
         print(json.dumps(result, ensure_ascii=False))
     except SystemExit:

@@ -245,7 +245,7 @@ function QqGroupPicker({
               </button>
             ))
           ) : (
-            <p className="hint">没有匹配的群；请确认已读取 QQ 群列表。</p>
+            <p className="hint">没有匹配的群；请确认已读取 QQ 列表。</p>
           )}
         </div>
       )}
@@ -257,7 +257,104 @@ function QqGroupPicker({
           </button>
         </p>
       )}
-      {!groups.length && <p className="hint">先在上方“读取 QQ 群列表”，再输入群名或群号搜索。</p>}
+      {!groups.length && <p className="hint">先在上方“读取 QQ 列表”，再输入群名或群号搜索。</p>}
+    </>
+  );
+}
+
+function QqContactPicker({
+  contacts,
+  value,
+  onSelect,
+}: {
+  contacts: { id: string; name: string; remark: string }[];
+  value: string;
+  onSelect: (contact: { id: string; name: string; remark: string } | null) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const selected = contacts.find((contact) => contact.id === value);
+  const normalized = query.trim().normalize('NFKC').toLowerCase();
+  const matches = normalized
+    ? contacts
+        .filter((contact) =>
+          [contact.name, contact.remark, contact.id].some((field) =>
+            field.normalize('NFKC').toLowerCase().includes(normalized),
+          ),
+        )
+        .slice(0, 20)
+    : [];
+  return (
+    <>
+      <Field label="QQ 联系人">
+        <input
+          value={query}
+          placeholder={
+            selected
+              ? `${selected.remark || selected.name}（${selected.id}）`
+              : '输入原名、备注或 QQ 号搜索'
+          }
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </Field>
+      {normalized && (
+        <div className="qq-group-matches" role="listbox" aria-label="匹配的 QQ 联系人">
+          {matches.length ? (
+            matches.map((contact) => (
+              <button
+                key={contact.id}
+                type="button"
+                className="qq-group-match"
+                onClick={() => {
+                  onSelect(contact);
+                  setQuery('');
+                }}
+              >
+                <span>{contact.remark || contact.name}</span>
+                <small>
+                  {contact.remark && contact.name && contact.remark !== contact.name
+                    ? `${contact.name} · ${contact.id}`
+                    : contact.id}
+                </small>
+              </button>
+            ))
+          ) : (
+            <p className="hint">没有匹配的联系人；请确认已读取 QQ 列表。</p>
+          )}
+          {/^\d{5,12}$/.test(normalized) &&
+            !matches.some((contact) => contact.id === normalized) && (
+              <button
+                type="button"
+                className="qq-group-match"
+                onClick={() => {
+                  onSelect({ id: normalized, name: normalized, remark: '' });
+                  setQuery('');
+                }}
+              >
+                <span>使用 QQ 号 {normalized}</span>
+                <small>联系人列表中没有该 QQ 时仍可绑定</small>
+              </button>
+            )}
+        </div>
+      )}
+      {value && (
+        <p className="hint">
+          已绑定：{selected ? `${selected.remark || selected.name}（${selected.id}）` : value}
+          {' · '}
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => {
+              onSelect(null);
+              setQuery('');
+            }}
+          >
+            取消绑定
+          </button>
+        </p>
+      )}
+      {!contacts.length && (
+        <p className="hint">先在上方“读取 QQ 列表”，再输入原名、备注或 QQ 号搜索。</p>
+      )}
     </>
   );
 }
@@ -701,7 +798,9 @@ export function MessageInbox({
 }) {
   const [view, setView] = useState<InboxView | null>(null);
   const [settings, setSettings] = useState<MessageSettings>({ names: [], classes: [], rules: [] });
-  const [tab, setTab] = useState<'inbox' | 'settings' | 'manual'>('inbox');
+  const [tab, setTab] = useState<'inbox' | 'manual' | 'global' | 'model' | 'rules'>('inbox');
+  const [ruleKindTab, setRuleKindTab] = useState<'group' | 'private'>('group');
+  const [collapsedRules, setCollapsedRules] = useState<Set<string>>(() => new Set());
   const [bulk, setBulk] = useState<'accept' | 'dismiss' | null>(null);
   const [quickRuleId, setQuickRuleId] = useState('');
   const [quickInput, setQuickInput] = useState('');
@@ -735,6 +834,7 @@ export function MessageInbox({
   });
   const [qqKey, setQqKey] = useState('');
   const [qqGroups, setQqGroups] = useState<{ id: string; name: string }[]>([]);
+  const [qqContacts, setQqContacts] = useState<{ id: string; name: string; remark: string }[]>([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
@@ -783,9 +883,15 @@ export function MessageInbox({
     setError('');
     setNotice('');
     try {
-      const result = await api<{ groups: { id: string; name: string }[] }>('messages/qq/groups');
+      const result = await api<{
+        groups: { id: string; name: string }[];
+        contacts: { id: string; name: string; remark: string }[];
+      }>('messages/qq/groups');
       setQqGroups(result.groups);
-      setNotice(`已读取 ${result.groups.length} 个 QQ 群`);
+      setQqContacts(result.contacts ?? []);
+      setNotice(
+        `已读取 ${result.groups.length} 个 QQ 群和 ${result.contacts?.length ?? 0} 个联系人`,
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -824,6 +930,45 @@ export function MessageInbox({
       ...s,
       rules: s.rules.map((r) => (r.id === id ? { ...r, ...update } : r)),
     }));
+  const saveSettings = (message = '规则已保存') =>
+    void run(async () => {
+      await api('messages/settings', { settings, revision: view?.revision ?? null });
+      setNotice(message);
+    });
+  const addRule = (kind: 'group' | 'private' = 'group') =>
+    setSettings((s) => ({
+      ...s,
+      rules: [
+        {
+          id: crypto.randomUUID(),
+          name: '',
+          kind,
+          enabled: kind === 'group',
+          useAi: true,
+          autoAccept: false,
+          includeSelf: false,
+          mode: 'all',
+          conditions: [],
+          senders: [],
+          keywords: [],
+          aliases: [],
+          projectId: null,
+          chatId: null,
+          lineId: null,
+        },
+        ...s.rules,
+      ],
+    }));
+  const toggleRule = (id: string) =>
+    setCollapsedRules((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const groupRuleCount = settings.rules.filter((rule) => rule.kind === 'group').length;
+  const privateRuleCount = settings.rules.filter((rule) => rule.kind === 'private').length;
+  const visibleRules = settings.rules.filter((rule) => rule.kind === ruleKindTab);
   if (!view)
     return (
       <>
@@ -849,7 +994,7 @@ export function MessageInbox({
     <section className="message-inbox" aria-label="QQ 自动同步">
       <p className="message-notice" role="status">
         支持本机 QQ
-        自动同步：在设置中启用并绑定群后，会定时读取新消息；也可粘贴消息手工验证。未绑定群不会自动读取。
+        自动同步：在设置中启用并绑定群或私聊联系人后，会定时读取新消息；也可粘贴消息手工验证。未绑定的会话不会自动读取。
       </p>
       <div className="segmented">
         <button aria-pressed={tab === 'inbox'} onClick={() => setTab('inbox')}>
@@ -858,8 +1003,14 @@ export function MessageInbox({
         <button aria-pressed={tab === 'manual'} onClick={() => setTab('manual')}>
           QQ手动同步
         </button>
-        <button aria-pressed={tab === 'settings'} onClick={() => setTab('settings')}>
-          会话与识别设置
+        <button aria-pressed={tab === 'global'} onClick={() => setTab('global')}>
+          QQ自动同步全局设置
+        </button>
+        <button aria-pressed={tab === 'model'} onClick={() => setTab('model')}>
+          模型设置
+        </button>
+        <button aria-pressed={tab === 'rules'} onClick={() => setTab('rules')}>
+          会话规则设置
         </button>
       </div>
       <ErrorMessage message={error} />
@@ -985,9 +1136,9 @@ export function MessageInbox({
             </Button>
           </form>
         </>
-      ) : tab === 'settings' ? (
+      ) : tab === 'model' ? (
         <>
-          <h3>AI 模型</h3>
+          <h3>模型设置</h3>
           <p className="hint">
             用于识别消息。可选 DeepSeek、OpenAI / ChatGPT 或其他 OpenAI
             兼容接口。设置与各提供商密钥保存在本机用户配置目录（{view.ai.location}），不会写入
@@ -1089,10 +1240,13 @@ export function MessageInbox({
               清除此提供商的密钥
             </Button>
           )}
-          <h3>QQ 自动同步</h3>
+        </>
+      ) : tab === 'global' ? (
+        <>
+          <h3>QQ 自动同步全局设置</h3>
           <p className="hint">
             读取本机 QQ 的
-            nt_msg.db，只同步选中的群；登录后补下来的离线消息会按原始时间进入识别流程。
+            nt_msg.db，只同步选中的群或私聊联系人；登录后补下来的离线消息会按原始时间进入识别流程。
             设置与密钥保存在本机配置目录，不写入 Markdown。
           </p>
           <form
@@ -1164,9 +1318,6 @@ export function MessageInbox({
             <Button disabled={busy || !qq.dataDir.trim()}>保存 QQ 设置</Button>
           </form>
           <div className="message-fields">
-            <Button type="button" disabled={busy || !view.qq.configured} onClick={loadGroups}>
-              读取 QQ 群列表
-            </Button>
             <Button
               type="button"
               disabled={busy || !view.qq.configured}
@@ -1226,10 +1377,7 @@ export function MessageInbox({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              void run(async () => {
-                await api('messages/settings', { settings, revision: view.revision });
-                setNotice('规则已保存');
-              });
+              saveSettings('全局设置已保存');
             }}
           >
             <h3>我的身份</h3>
@@ -1243,243 +1391,310 @@ export function MessageInbox({
               values={settings.classes}
               change={(classes) => setSettings((s) => ({ ...s, classes }))}
             />
-            <h3>选择会话</h3>
-            <p className="hint">
-              目前手动登记会话规则，尚不能从 QQ
-              自动列出聊天。每条规则独立筛选，多个条件满足任意一项即可。设置默认业务线后直接使用；留空时由
-              AI 匹配现有归属，都不匹配时自动预填新项目或业务线名称，可再手动修改。
-            </p>
-            {settings.rules.map((rule) => (
+            <Button disabled={busy} className="primary">
+              保存全局设置
+            </Button>
+          </form>
+        </>
+      ) : tab === 'rules' ? (
+        <>
+          <h3>会话规则设置</h3>
+          <div className="segmented message-rule-kinds">
+            <button aria-pressed={ruleKindTab === 'group'} onClick={() => setRuleKindTab('group')}>
+              群聊设置（{groupRuleCount}）
+            </button>
+            <button
+              aria-pressed={ruleKindTab === 'private'}
+              onClick={() => setRuleKindTab('private')}
+            >
+              私聊设置（{privateRuleCount}）
+            </button>
+          </div>
+          <p className="hint">
+            每条规则独立筛选，多个条件满足任意一项即可。设置默认业务线后直接使用；留空时由 AI
+            匹配现有归属，都不匹配时自动预填新项目或业务线名称，可再手动修改。
+          </p>
+          <div className="message-fields message-rule-toolbar">
+            <Button type="button" disabled={busy || !view.qq.configured} onClick={loadGroups}>
+              读取 QQ 列表
+            </Button>
+            <Button
+              type="button"
+              disabled={settings.rules.length >= 50}
+              onClick={() => addRule(ruleKindTab)}
+            >
+              添加{ruleKindTab === 'group' ? '群聊' : '私聊'}规则
+            </Button>
+            <Button type="button" disabled={busy} onClick={() => saveSettings('所有规则已保存')}>
+              保存所有规则
+            </Button>
+          </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              saveSettings('所有规则已保存');
+            }}
+          >
+            {!visibleRules.length && (
+              <p className="hint">
+                {`暂无${ruleKindTab === 'group' ? '群聊' : '私聊'}规则，点击上方“添加${
+                  ruleKindTab === 'group' ? '群聊' : '私聊'
+                }规则”开始。`}
+              </p>
+            )}
+            {visibleRules.map((rule) => (
               <fieldset key={rule.id} className="message-rule">
-                <legend>{rule.name || '新会话'}</legend>
-                <Field label="会话类型">
-                  <select
-                    value={rule.kind}
-                    onChange={(e) =>
-                      updateRule(rule.id, {
-                        kind: e.target.value as 'group' | 'private',
-                        chatId: null,
-                      })
-                    }
+                <legend>
+                  <span>{rule.name || '新会话'}</span>
+                  <button
+                    type="button"
+                    className="rule-toggle"
+                    aria-expanded={!collapsedRules.has(rule.id)}
+                    onClick={() => toggleRule(rule.id)}
                   >
-                    <option value="group">群聊</option>
-                    <option value="private">个人聊天</option>
-                  </select>
-                </Field>
-                {rule.kind === 'group' ? (
-                  <QqGroupPicker
-                    groups={qqGroups}
-                    value={rule.chatId ?? ''}
-                    onSelect={(group) => {
-                      const previous = qqGroups.find((item) => item.id === rule.chatId);
-                      const keepCustomName =
-                        Boolean(rule.name.trim()) &&
-                        rule.name !== '新会话' &&
-                        rule.name !== previous?.name;
-                      updateRule(rule.id, {
-                        chatId: group?.id ?? null,
-                        ...(group && !keepCustomName ? { name: group.name } : {}),
-                      });
-                    }}
-                  />
-                ) : (
-                  <Field label="QQ 号">
-                    <input
-                      value={rule.chatId ?? ''}
-                      placeholder="对方 QQ 号（私聊暂不自动同步）"
-                      onChange={(e) =>
-                        updateRule(rule.id, { chatId: e.target.value.trim() || null })
-                      }
-                    />
-                  </Field>
-                )}
-                <Field label="会话名称">
-                  <input
-                    required
-                    value={rule.name}
-                    onChange={(e) => updateRule(rule.id, { name: e.target.value })}
-                  />
-                </Field>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={rule.enabled}
-                    onChange={(e) => updateRule(rule.id, { enabled: e.target.checked })}
-                  />
-                  启用此会话
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={activeAi.ready && rule.useAi}
-                    disabled={!activeAi.ready}
-                    onChange={(e) =>
-                      updateRule(rule.id, {
-                        useAi: e.target.checked,
-                        ...(e.target.checked ? {} : { autoAccept: false }),
-                      })
-                    }
-                  />
-                  使用 AI 辅助日程添加
-                </label>
-                {!activeAi.ready && (
-                  <p className="hint">
-                    需先在“AI 模型”中配置可用的 API 密钥，才可使用 AI 辅助；当前会按未使用 AI 处理。
-                  </p>
-                )}
-                {activeAi.ready && !rule.useAi && (
-                  <p className="hint">
-                    关闭后只做规则过滤，消息原样进入待确认，由你设置日期、项目和业务线；可在卡片上再点“用
-                    AI 识别”。
-                  </p>
-                )}
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={activeAi.ready && rule.autoAccept}
-                    disabled={!activeAi.ready || !rule.useAi}
-                    onChange={(e) => updateRule(rule.id, { autoAccept: e.target.checked })}
-                  />
-                  自动加入计划（跳过待确认）
-                </label>
-                {rule.autoAccept && activeAi.ready && rule.useAi && (
-                  <p className="hint">
-                    命中规则的消息会直接创建节点和待办。建议只给可信的通知群开启。
-                  </p>
-                )}
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={rule.includeSelf}
-                    onChange={(e) => updateRule(rule.id, { includeSelf: e.target.checked })}
-                  />
-                  同步本人发送的消息
-                </label>
-                {rule.includeSelf && (
-                  <p className="hint">
-                    本人发送的消息也会交给 AI
-                    检查；即使选择“只检查符合条件的消息”，本人消息也直接检查。
-                  </p>
-                )}
-                <Field label="检查范围">
-                  <select
-                    value={rule.mode}
-                    onChange={(e) =>
-                      updateRule(rule.id, { mode: e.target.value as 'all' | 'conditions' })
-                    }
-                  >
-                    <option value="all">全部消息交给 AI 检查</option>
-                    <option value="conditions">只检查符合条件的消息</option>
-                  </select>
-                </Field>
-                {rule.mode === 'conditions' && (
-                  <div className="message-conditions">
-                    {Object.entries(conditionLabels).map(([condition, label]) => (
-                      <label key={condition}>
-                        <input
-                          type="checkbox"
-                          checked={rule.conditions.includes(
-                            condition as keyof typeof conditionLabels,
-                          )}
-                          onChange={(e) =>
-                            updateRule(rule.id, {
-                              conditions: e.target.checked
-                                ? [...rule.conditions, condition as keyof typeof conditionLabels]
-                                : rule.conditions.filter((c) => c !== condition),
-                            })
-                          }
-                        />
-                        {label}
-                      </label>
-                    ))}
-                  </div>
-                )}
-                <Terms
-                  label="本会话中的别名"
-                  values={rule.aliases}
-                  change={(aliases) => updateRule(rule.id, { aliases })}
-                />
-                <Terms
-                  label="指定发送人"
-                  values={rule.senders}
-                  change={(senders) => updateRule(rule.id, { senders })}
-                />
-                <Terms
-                  label="关键词"
-                  values={rule.keywords}
-                  change={(keywords) => updateRule(rule.id, { keywords })}
-                />
-                <ProjectSelect
-                  snapshot={snapshot}
-                  value={rule.projectId ?? ''}
-                  change={(projectId) => {
-                    const line = snapshot.entries.find(
-                      (e) => e.data.id === rule.lineId && e.data.type === 'workline',
-                    );
-                    const keepLine =
-                      !projectId ||
-                      (line?.data.type === 'workline' && line.data.projectId === projectId);
-                    updateRule(rule.id, {
-                      projectId: projectId || null,
-                      lineId: keepLine ? rule.lineId : null,
-                    });
-                  }}
-                />
-                <LineSelect
-                  snapshot={snapshot}
-                  projectId={rule.projectId}
-                  value={rule.lineId ?? ''}
-                  change={(lineId) => updateRule(rule.id, { lineId: lineId || null })}
-                />
+                    {collapsedRules.has(rule.id) ? '展开详细' : '收拢详细'}
+                  </button>
+                </legend>
                 <p className="hint">
-                  只设项目时，AI 只会在该项目下匹配或新建业务线；再设默认业务线则直接使用。
+                  {rule.kind === 'group' ? '群聊' : '私聊'} · {rule.enabled ? '已启用' : '未启用'} ·{' '}
+                  {rule.chatId || '未绑定'}
                 </p>
-                <Button
-                  type="button"
-                  onClick={() =>
-                    setSettings((s) => ({ ...s, rules: s.rules.filter((r) => r.id !== rule.id) }))
-                  }
-                >
-                  移除此规则
-                </Button>
+                {!collapsedRules.has(rule.id) && (
+                  <>
+                    <Field label="会话类型">
+                      <select
+                        value={rule.kind}
+                        onChange={(e) => {
+                          const kind = e.target.value as 'group' | 'private';
+                          setRuleKindTab(kind);
+                          updateRule(rule.id, {
+                            kind,
+                            chatId: null,
+                            ...(kind === 'private'
+                              ? {
+                                  enabled: false,
+                                  autoAccept: false,
+                                  conditions: rule.conditions.map((condition) =>
+                                    condition === 'atAll' ? 'atMe' : condition,
+                                  ),
+                                }
+                              : {}),
+                          });
+                        }}
+                      >
+                        <option value="group">群聊</option>
+                        <option value="private">个人聊天</option>
+                      </select>
+                    </Field>
+                    {rule.kind === 'group' ? (
+                      <QqGroupPicker
+                        groups={qqGroups}
+                        value={rule.chatId ?? ''}
+                        onSelect={(group) => {
+                          const previous = qqGroups.find((item) => item.id === rule.chatId);
+                          const keepCustomName =
+                            Boolean(rule.name.trim()) &&
+                            rule.name !== '新会话' &&
+                            rule.name !== previous?.name;
+                          updateRule(rule.id, {
+                            chatId: group?.id ?? null,
+                            ...(group && !keepCustomName ? { name: group.name } : {}),
+                          });
+                        }}
+                      />
+                    ) : (
+                      <>
+                        <QqContactPicker
+                          contacts={qqContacts}
+                          value={rule.chatId ?? ''}
+                          onSelect={(contact) => {
+                            const previous = qqContacts.find((item) => item.id === rule.chatId);
+                            const keepCustomName =
+                              Boolean(rule.name.trim()) &&
+                              rule.name !== '新会话' &&
+                              rule.name !== (previous?.remark || previous?.name);
+                            updateRule(rule.id, {
+                              chatId: contact?.id ?? null,
+                              ...(contact && !keepCustomName
+                                ? { name: contact.remark || contact.name }
+                                : {}),
+                            });
+                          }}
+                        />
+                        <p className="hint">
+                          私聊按每条消息独立处理：连续发送多条可能生成多次待确认或重复处理。不建议用于正常聊天，更适合给自己或大小号快速记事项。
+                        </p>
+                      </>
+                    )}
+                    <Field label="会话名称">
+                      <input
+                        required
+                        value={rule.name}
+                        onChange={(e) => updateRule(rule.id, { name: e.target.value })}
+                      />
+                    </Field>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={rule.enabled}
+                        onChange={(e) => updateRule(rule.id, { enabled: e.target.checked })}
+                      />
+                      启用此会话
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={activeAi.ready && rule.useAi}
+                        disabled={!activeAi.ready}
+                        onChange={(e) =>
+                          updateRule(rule.id, {
+                            useAi: e.target.checked,
+                            ...(e.target.checked ? {} : { autoAccept: false }),
+                          })
+                        }
+                      />
+                      使用 AI 辅助日程添加
+                    </label>
+                    {!activeAi.ready && (
+                      <p className="hint">
+                        需先在“AI 模型”中配置可用的 API 密钥，才可使用 AI 辅助；当前会按未使用 AI
+                        处理。
+                      </p>
+                    )}
+                    {activeAi.ready && !rule.useAi && (
+                      <p className="hint">
+                        关闭后只做规则过滤，消息原样进入待确认，由你设置日期、项目和业务线；可在卡片上再点“用
+                        AI 识别”。
+                      </p>
+                    )}
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={activeAi.ready && rule.autoAccept}
+                        disabled={!activeAi.ready || !rule.useAi}
+                        onChange={(e) => updateRule(rule.id, { autoAccept: e.target.checked })}
+                      />
+                      自动加入计划（跳过待确认）
+                    </label>
+                    {rule.autoAccept && activeAi.ready && rule.useAi && (
+                      <p className="hint">
+                        命中规则的消息会直接创建节点和待办。建议只给可信的通知群开启。
+                      </p>
+                    )}
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={rule.includeSelf}
+                        onChange={(e) => updateRule(rule.id, { includeSelf: e.target.checked })}
+                      />
+                      同步本人发送的消息
+                    </label>
+                    {rule.includeSelf && (
+                      <p className="hint">
+                        本人发送的消息也会交给 AI
+                        检查；即使选择“只检查符合条件的消息”，本人消息也直接检查。
+                      </p>
+                    )}
+                    <Field label="检查范围">
+                      <select
+                        value={rule.mode}
+                        onChange={(e) =>
+                          updateRule(rule.id, { mode: e.target.value as 'all' | 'conditions' })
+                        }
+                      >
+                        <option value="all">全部消息交给 AI 检查</option>
+                        <option value="conditions">只检查符合条件的消息</option>
+                      </select>
+                    </Field>
+                    {rule.mode === 'conditions' && (
+                      <div className="message-conditions">
+                        {Object.entries(conditionLabels).map(([condition, label]) => (
+                          <label key={condition}>
+                            <input
+                              type="checkbox"
+                              checked={rule.conditions.includes(
+                                condition as keyof typeof conditionLabels,
+                              )}
+                              onChange={(e) =>
+                                updateRule(rule.id, {
+                                  conditions: e.target.checked
+                                    ? [
+                                        ...rule.conditions,
+                                        condition as keyof typeof conditionLabels,
+                                      ]
+                                    : rule.conditions.filter((c) => c !== condition),
+                                })
+                              }
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    <Terms
+                      label="本会话中的别名"
+                      values={rule.aliases}
+                      change={(aliases) => updateRule(rule.id, { aliases })}
+                    />
+                    <Terms
+                      label="指定发送人"
+                      values={rule.senders}
+                      change={(senders) => updateRule(rule.id, { senders })}
+                    />
+                    <Terms
+                      label="关键词"
+                      values={rule.keywords}
+                      change={(keywords) => updateRule(rule.id, { keywords })}
+                    />
+                    <ProjectSelect
+                      snapshot={snapshot}
+                      value={rule.projectId ?? ''}
+                      change={(projectId) => {
+                        const line = snapshot.entries.find(
+                          (e) => e.data.id === rule.lineId && e.data.type === 'workline',
+                        );
+                        const keepLine =
+                          !projectId ||
+                          (line?.data.type === 'workline' && line.data.projectId === projectId);
+                        updateRule(rule.id, {
+                          projectId: projectId || null,
+                          lineId: keepLine ? rule.lineId : null,
+                        });
+                      }}
+                    />
+                    <LineSelect
+                      snapshot={snapshot}
+                      projectId={rule.projectId}
+                      value={rule.lineId ?? ''}
+                      change={(lineId) => updateRule(rule.id, { lineId: lineId || null })}
+                    />
+                    <p className="hint">
+                      只设项目时，AI 只会在该项目下匹配或新建业务线；再设默认业务线则直接使用。
+                    </p>
+                    <div className="message-fields">
+                      <Button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => saveSettings('此规则已保存')}
+                      >
+                        保存此规则
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() =>
+                          setSettings((s) => ({
+                            ...s,
+                            rules: s.rules.filter((r) => r.id !== rule.id),
+                          }))
+                        }
+                      >
+                        移除此规则
+                      </Button>
+                    </div>
+                  </>
+                )}
               </fieldset>
             ))}
-            <div className="form-actions">
-              <Button
-                type="button"
-                disabled={settings.rules.length >= 50}
-                onClick={() =>
-                  setSettings((s) => ({
-                    ...s,
-                    rules: [
-                      ...s.rules,
-                      {
-                        id: crypto.randomUUID(),
-                        name: '',
-                        kind: 'group',
-                        enabled: true,
-                        useAi: true,
-                        autoAccept: false,
-                        includeSelf: false,
-                        mode: 'all',
-                        conditions: [],
-                        senders: [],
-                        keywords: [],
-                        aliases: [],
-                        projectId: null,
-                        chatId: null,
-                        lineId: null,
-                      },
-                    ],
-                  }))
-                }
-              >
-                添加会话
-              </Button>
-              <Button disabled={busy} className="primary">
-                保存规则
-              </Button>
-            </div>
           </form>
         </>
       ) : (
@@ -1576,7 +1791,7 @@ export function MessageInbox({
                 {busy ? '正在处理…' : `按规则筛选并发送给 ${aiLabel}`}
               </Button>
               {!activeAi.ready && (
-                <p className="hint">请先在“会话与识别设置”保存可用的 AI 接口、模型和密钥。</p>
+                <p className="hint">请先在“模型设置”保存可用的 AI 接口、模型和密钥。</p>
               )}
             </form>
           </details>

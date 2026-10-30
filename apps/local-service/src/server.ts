@@ -19,6 +19,7 @@ import {
 } from '../../../packages/domain/messages';
 import {
   analyzeMessage,
+  dropNoopChanges,
   mergeSameTitle,
   messageFingerprint,
   type ExistingMessageItem,
@@ -205,9 +206,11 @@ const server = http.createServer(async (req, res) => {
       }
       if (url.pathname === '/api/messages/qq/groups' && req.method === 'GET') {
         try {
-          return send(res, 200, { groups: await qqSync.groups() });
+          const groups = await qqSync.groups();
+          const contacts = await qqSync.contacts().catch(() => []);
+          return send(res, 200, { groups, contacts });
         } catch (error) {
-          throw new VaultError(error instanceof Error ? error.message : '读取 QQ 群列表失败', 400);
+          throw new VaultError(error instanceof Error ? error.message : '读取 QQ 列表失败', 400);
         }
       }
       if (url.pathname === '/api/messages/qq/test' && req.method === 'POST') {
@@ -321,14 +324,19 @@ const server = http.createServer(async (req, res) => {
           }
         for (const rule of input.settings.rules) {
           const previous = current.state.settings.rules.find((item) => item.id === rule.id);
+          const cursorId = (item: { kind: 'group' | 'private'; chatId: string | null }) =>
+            item.chatId ? (item.kind === 'private' ? `private:${item.chatId}` : item.chatId) : null;
+          const nextCursorId = cursorId(rule);
+          const previousCursorId = previous ? cursorId(previous) : null;
           const resetCursor =
-            Boolean(rule.chatId) &&
+            Boolean(nextCursorId) &&
             (!previous ||
-              previous.chatId !== rule.chatId ||
+              previousCursorId !== nextCursorId ||
+              previous.kind !== rule.kind ||
               (!previous.includeSelf && rule.includeSelf));
           if (resetCursor)
             current.state.sync = current.state.sync.filter(
-              (cursor) => cursor.chatId !== rule.chatId,
+              (cursor) => cursor.chatId !== nextCursorId && cursor.chatId !== previousCursorId,
             );
         }
         current.state.settings = input.settings;
@@ -412,6 +420,7 @@ const server = http.createServer(async (req, res) => {
                     title: data.title,
                     dueDate: data.dueDate,
                     dueTime: data.dueTime,
+                    location: data.location ?? null,
                     lineTitle: lineTitle(data.lineId),
                   },
                 ];
@@ -424,6 +433,7 @@ const server = http.createServer(async (req, res) => {
                     title: data.title,
                     dueDate: data.dueDate,
                     dueTime: null,
+                    location: null,
                     lineTitle: milestone ? lineTitle(milestone.lineId) : '',
                   },
                 ];
@@ -469,18 +479,15 @@ const server = http.createServer(async (req, res) => {
             !rule.lineId && projectData?.type === 'project'
               ? { id: projectData.id, title: projectData.title }
               : null;
-          const suggestions = await analyzeMessage(
-            input.message,
-            current.state.settings,
-            key,
-            fetch,
-            {
+          const suggestions = dropNoopChanges(
+            await analyzeMessage(input.message, current.state.settings, key, fetch, {
               catalog: rule.lineId ? [] : scopedCatalog,
               defaultLine,
               projectScope,
               existing,
               ai,
-            },
+            }),
+            existing,
           );
           const actionable = mergeSameTitle(
             suggestions.filter((s) => s.kind !== 'ignore'),
