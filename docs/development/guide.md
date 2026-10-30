@@ -6,11 +6,13 @@
 | -------------------------------------- | ------------------------------------------------------------------------------ |
 | 新契约、日期、关联校验、计时去重       | packages/domain/index.ts                                                       |
 | 层级、排序、当天清单、完成推导         | packages/domain/workspace.ts                                                   |
-| 文件安全、跨文件发布与恢复、升线、删除 | apps/local-service/src/vault.ts                                                |
-| Notes 分层与受管段落                   | apps/local-service/src/line-notes.ts                                           |
-| HTTP 会话与本地打开                    | apps/local-service/src/server.ts                                               |
+| 文件安全、跨文件发布与恢复、升线、删除 | apps/local-service/src/native/vault.ts                                         |
+| Notes 分层与受管段落                   | apps/local-service/src/native/line-notes.ts                                    |
+| 消息同步配置、识别、存储与 QQ 读取     | apps/local-service/src/sync/                                                   |
+| HTTP 会话、API 路由与本地打开          | apps/local-service/src/server.ts                                               |
+| 消息同步界面                           | apps/web/src/features/sync/                                                    |
 | 今日快速收集与实际表单                 | apps/web/src/features/TodayCapture.tsx、QuickCapture.tsx、ActualRecordForm.tsx |
-| 右键、Notes、工作空间                  | apps/web/src/features                                                          |
+| 原生业务界面（工作空间、知识、回顾等） | apps/web/src/features 根目录                                                   |
 | 固化的产品边界                         | AGENTS.md                                                                      |
 
 开发模式为同一个本地服务挂载 Vite。默认端口 4317；E2E 用独立端口 4318。构建后运行生产服务，源码变更不会自动重启已有生产服务。

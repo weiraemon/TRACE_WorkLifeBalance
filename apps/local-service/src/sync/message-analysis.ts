@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { day, milestoneTags } from '../../../packages/domain/index';
+import { day, milestoneTags } from '../../../../packages/domain/index';
 import {
   aiDefaults,
   destinationSchema,
@@ -10,7 +10,7 @@ import {
   type MessageSettings,
   type SourceMessage,
   type Suggestion,
-} from '../../../packages/domain/messages';
+} from '../../../../packages/domain/messages';
 
 const fallbackAi: AiSettings = {
   provider: 'deepseek',

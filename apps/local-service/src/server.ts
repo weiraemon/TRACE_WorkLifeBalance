@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { z } from 'zod';
-import { Vault, VaultError } from './vault';
+import { Vault, VaultError } from './native/vault';
 import { recordContract, saveOptionsSchema } from '../../../packages/domain/index';
 import { randomUUID } from 'node:crypto';
 import {
@@ -23,9 +23,15 @@ import {
   mergeSameTitle,
   messageFingerprint,
   type ExistingMessageItem,
-} from './message-analysis';
-import { activeAi, aiView, normalizeAiSettings, saveAiConfig, saveQqConfig } from './app-config';
-import { QqSync } from './qq-sync';
+} from './sync/message-analysis';
+import {
+  activeAi,
+  aiView,
+  normalizeAiSettings,
+  saveAiConfig,
+  saveQqConfig,
+} from './sync/app-config';
+import { QqSync } from './sync/qq-sync';
 
 const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const port = Number(process.env.ATLAS_PORT ?? 4317);

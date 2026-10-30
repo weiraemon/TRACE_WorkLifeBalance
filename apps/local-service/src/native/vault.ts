@@ -4,7 +4,7 @@ import { hostname } from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
 import { parseDocument, stringify, isMap } from 'yaml';
 import { z } from 'zod';
-import { inboxPath, readInboxText, writeInboxText } from './message-store';
+import { inboxPath, readInboxText, writeInboxText } from '../sync/message-store';
 import {
   fallbackDestination,
   inboxSchema,
@@ -12,7 +12,7 @@ import {
   type Inbox,
   type MessageDestination,
   type Suggestion,
-} from '../../../packages/domain/messages';
+} from '../../../../packages/domain/messages';
 import {
   parseRecord,
   validateChange,
@@ -30,8 +30,8 @@ import {
   type BusinessLine,
   type Milestone,
   type Todo,
-} from '../../../packages/domain/index';
-import { spaceSubtree, lineFor, spaceParentId } from '../../../packages/domain/workspace';
+} from '../../../../packages/domain/index';
+import { spaceSubtree, lineFor, spaceParentId } from '../../../../packages/domain/workspace';
 import {
   appendComment,
   section,

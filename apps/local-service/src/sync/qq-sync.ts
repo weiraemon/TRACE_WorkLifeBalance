@@ -10,8 +10,8 @@ import {
   type MessageSettings,
   type QqStatus,
   type SourceMessage,
-} from '../../../packages/domain/messages';
-import { Vault } from './vault';
+} from '../../../../packages/domain/messages';
+import { Vault } from '../native/vault';
 import {
   analyzeMessage,
   dropNoopChanges,
@@ -22,7 +22,7 @@ import {
 import { activeAi, activeQq, normalizeAiSettings, qqCacheDir, qqView } from './app-config';
 import { randomUUID } from 'node:crypto';
 
-const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const helper = path.join(project, 'scripts', 'qq_sync.py');
 
 type QqMessage = {

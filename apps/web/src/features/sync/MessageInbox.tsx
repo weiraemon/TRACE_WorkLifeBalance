@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Snapshot } from '../../../../packages/domain/index';
+import type { Snapshot } from '../../../../../packages/domain/index';
 import {
   aiDefaults,
   aiProviders,
@@ -13,10 +13,10 @@ import {
   type MessageRule,
   type Candidate,
   type Suggestion,
-} from '../../../../packages/domain/messages';
-import { api } from '../api';
-import { Button, Field, ErrorMessage } from '../components/ui';
-import { parseQuickCapture } from './quickCaptureParser';
+} from '../../../../../packages/domain/messages';
+import { api } from '../../api';
+import { Button, Field, ErrorMessage } from '../../components/ui';
+import { parseQuickCapture } from '../quickCaptureParser';
 
 function beijingInput(date: Date) {
   return date.toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).slice(0, 16).replace(' ', 'T');

@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { Vault } from '../apps/local-service/src/vault';
+import { Vault } from '../apps/local-service/src/native/vault';
 import { parseRecord } from '../packages/domain/index';
 import { emptyInbox, type Candidate } from '../packages/domain/messages';
 const roots: string[] = [],

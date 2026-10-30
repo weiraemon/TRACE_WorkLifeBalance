@@ -10,7 +10,7 @@ import {
   type AiProvider,
   type AiSettings,
   type AiView,
-} from '../../../packages/domain/messages';
+} from '../../../../packages/domain/messages';
 
 // App-level settings live outside the Markdown Vault: they are machine secrets,
 // not user notes, and must not be copied by Vault backups or synced folders.

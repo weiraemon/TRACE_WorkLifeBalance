@@ -26,8 +26,8 @@ import { DeleteSpaceDialog } from './features/DeleteSpaceDialog';
 import { Knowledge } from './pages/Knowledge';
 import { Review } from './pages/Review';
 import { Today } from './pages/Today';
-import { MessageInbox } from './features/MessageInbox';
-import { WechatSync } from './features/WechatSync';
+import { MessageInbox } from './features/sync/MessageInbox';
+import { WechatSync } from './features/sync/WechatSync';
 const Timeline = lazy(() => import('./features/Timeline').then((m) => ({ default: m.Timeline })));
 const pages = [
   { id: 'today', name: '今日' },

@@ -12,7 +12,7 @@ import {
   readQqConfig,
   saveAiConfig,
   saveQqConfig,
-} from '../apps/local-service/src/app-config';
+} from '../apps/local-service/src/sync/app-config';
 
 let dir = '';
 beforeEach(async () => {

@@ -6,7 +6,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { connect, seed, refresh, snapshot, notes, headers } from './helpers';
 import { emptyInbox } from '../../packages/domain/messages';
-import { writeInboxText } from '../../apps/local-service/src/message-store';
+import { writeInboxText } from '../../apps/local-service/src/sync/message-store';
 
 test('消息规则、AI 提供商、QQ 项目范围与计划入库', async ({ page }) => {
   await fs.rm('.test-vault/app-config', { recursive: true, force: true });

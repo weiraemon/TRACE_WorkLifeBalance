@@ -1,4 +1,4 @@
-import { inboxSchema, emptyInbox, type Inbox } from '../../../packages/domain/messages';
+import { inboxSchema, emptyInbox, type Inbox } from '../../../../packages/domain/messages';
 
 export const inboxPath = '.atlas/qq-inbox.md';
 const start = '<!-- chaos:qq-inbox -->';

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Field } from '../components/ui';
+import { Button, Field } from '../../components/ui';
 
 export function WechatSync() {
   const [tab, setTab] = useState<'inbox' | 'manual' | 'settings'>('manual');

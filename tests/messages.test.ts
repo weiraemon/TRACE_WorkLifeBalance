@@ -16,8 +16,8 @@ import {
   mergeSameTitle,
   messageFingerprint,
   parseSuggestions,
-} from '../apps/local-service/src/message-analysis';
-import { readInboxText, writeInboxText } from '../apps/local-service/src/message-store';
+} from '../apps/local-service/src/sync/message-analysis';
+import { readInboxText, writeInboxText } from '../apps/local-service/src/sync/message-store';
 
 const id = randomUUID();
 const state = emptyInbox();
