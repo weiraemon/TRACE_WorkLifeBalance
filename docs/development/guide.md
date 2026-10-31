@@ -22,13 +22,19 @@
 
 开发模式为同一个本地服务挂载 Vite。默认端口 4317；E2E 用独立端口 4318。构建后运行生产服务，源码变更不会自动重启已有生产服务。
 
+Windows x64 桌面发布使用 `npm run package:desktop`：前端与统一服务由 esbuild/Vite 构建到 `.desktop/`，Electron Packager 生成 `CHAOS.exe` 并压缩到 `releases/`。`apps/desktop` 只负责窗口、目录选择、QQ 初始化工具、单实例与子进程生命周期，不实现业务写入。每次新建发布目录，不复制本机配置或用户数据。`project-root.ts` 统一定位静态资源和 QQ 脚本，服务包保留 `apps/local-service/src/` 层级。
+
+`npm run desktop` 构建后启动开发用桌面窗口；`npm run test:desktop` 检查已构建的 `.desktop/`。内置 Python 3.12.10 与 SQLCipher 0.6.4，下载地址及 SHA-256 锁定在 `scripts/desktop-runtimes.json`，构建时实测原生数据库能力。桌面服务优先使用 `CHAOS_BUNDLED_PYTHON`，网页版继续尊重原 Python 配置。QQ 初始化工具复用原脚本并自动识别内置环境，不再安装 Node/Python。
+
+渲染器启用 sandbox、contextIsolation，关闭 Node 集成；preload 仅暴露目录选择和固定 QQ 初始化入口，并校验调用来自主窗口同源页面。外部 HTTP/HTTPS 链接交给默认浏览器。配置保存在 `%APPDATA%\CHAOS\workspace.json`，浏览器外观缓存位于其 `desktop/` 子目录。关闭窗口先通过进程 IPC 让统一服务退出，服务收到父进程断开也会关闭，释放工作目录锁。桌面默认仍使用 4317 端口，启动前需退出源码服务。
+
 前端沿用 5 秒重读，窗口激活和恢复可见时立即同步，并校准“今日”的日期。自动跨天不重挂录入表单；空白实际表单更新时间，已填写的草稿保持日期时间并提供历史日期提示及更正入口。
 
 [前端架构](../architecture/frontend.md)说明页面、控件、状态与样式的边界。实际录入现在支持在同一次保存中完成关联节点，前后端契约为 `atlas-lines-25`；存储结构不变。升级后需重启本地服务并刷新页面，已有记录无需迁移。
 
 ## 验证
 
-运行 `npm test`、`npm run build`、`npm run test:e2e`。测试目录为系统随机临时目录或项目 .test-vault，不自行搜索用户目录。文件测试依赖 NTFS 硬链接与 Junction 权限，不通过跳过断言获取通过结果。
+运行 `npm run check` 检查领域／集成、前端构建与网页 E2E；桌面改动另运行 `npm run build:desktop`、`npm run test:desktop`。设置 `CHAOS_DESKTOP_EXECUTABLE` 可对打包后的绝对 exe 路径执行同一组桌面测试。测试目录为系统随机临时目录或项目 .test-vault，不自行搜索用户目录。文件测试依赖 NTFS 硬链接与 Junction 权限，不通过跳过断言获取通过结果。
 
 成功连接的工作目录保存为项目根目录 `.chaos.local.json` 中的 `vaultPath`（绝对路径），启动时自动连接。文件及写入临时文件均被 Git 忽略，不随仓库分发；工作内容仍以 Markdown 目录为准。目录不存在或被其他服务占用时，服务继续启动，界面保留地址并提示原因。配置 JSON 损坏时保留原文，修正配置后重新启动。
 

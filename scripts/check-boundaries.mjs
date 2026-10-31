@@ -13,7 +13,9 @@ function files(dir) {
           : [],
     );
 }
-for (const file of files('apps/local-service/src').concat(['packages/domain/business.ts'])) {
+for (const file of files('apps/local-service/src').concat(files('apps/desktop'), [
+  'packages/domain/business.ts',
+])) {
   const source = ts.createSourceFile(
     file,
     fs.readFileSync(file, 'utf8'),
@@ -26,6 +28,10 @@ for (const file of files('apps/local-service/src').concat(['packages/domain/busi
     if (!specifier || !ts.isStringLiteral(specifier) || !specifier.text.startsWith('.')) continue;
     const target = path.resolve(path.dirname(file), specifier.text).replaceAll('\\', '/');
     const native = file.includes('/native/');
+    if (file.startsWith('apps/desktop/') && /\/(?:native|application|domain)\//.test(target))
+      errors.push(
+        file + ': desktop shell must use the shared service, not business/storage internals',
+      );
     const business =
       file.endsWith('/workspace-service.ts') || file === 'packages/domain/business.ts';
     if (

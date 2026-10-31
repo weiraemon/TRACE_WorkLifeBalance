@@ -2,7 +2,7 @@ import { intakeServiceFor } from '../application/message-intake-service';
 import { messageServiceFor } from '../application/message-inbox-service';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { projectRoot as project } from '../project-root';
 import {
   type Candidate,
   type QqStatus,
@@ -12,7 +12,6 @@ import type { Vault } from '../native/vault';
 import { activeAi, activeQq, normalizeAiSettings, qqCacheDir, qqView } from './app-config';
 import { randomUUID } from 'node:crypto';
 
-const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const helper = path.join(project, 'scripts', 'qq_sync.py');
 
 type QqMessage = {
@@ -77,7 +76,10 @@ export class QqSync {
   constructor(private readonly vault: () => Vault | undefined) {}
 
   private async call(args: string[], key: string) {
-    const [command, ...prefix] = commandParts((await activeQq()).python);
+    const configured = (await activeQq()).python;
+    const [command, ...prefix] = process.env.CHAOS_BUNDLED_PYTHON
+      ? [process.env.CHAOS_BUNDLED_PYTHON]
+      : commandParts(configured);
     const cacheDir = qqCacheDir();
     return new Promise<any>((resolve, reject) => {
       const child = spawn(command, [...prefix, helper, ...args, '--cache-dir', cacheDir], {

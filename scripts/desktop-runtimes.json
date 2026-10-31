@@ -1,0 +1,12 @@
+{
+  "python": {
+    "file": "python-3.12.10-embed-amd64.zip",
+    "url": "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip",
+    "sha256": "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3"
+  },
+  "sqlcipher": {
+    "file": "sqlcipher3-0.6.4-cp312-cp312-win_amd64.whl.zip",
+    "url": "https://files.pythonhosted.org/packages/7d/99/ab20279f6598cdd3aacadef04200819c1e70dfca195381987d875fc6423a/sqlcipher3-0.6.4-cp312-cp312-win_amd64.whl",
+    "sha256": "ff612c1f731a1870457a3fa4c0095bf27ce13ad7e2035ec3f98a489e2d6ccf5c"
+  }
+}

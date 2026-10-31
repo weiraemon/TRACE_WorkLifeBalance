@@ -66,6 +66,22 @@ export function Connect({
             onChange={(e) => setValue(e.target.value)}
           />
         </Field>
+        {window.chaosDesktop && (
+          <Button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              void window
+                .chaosDesktop!.chooseDirectory()
+                .then((selected) => {
+                  if (selected) setValue(selected);
+                })
+                .catch((error) => setError(String(error)));
+            }}
+          >
+            浏览文件夹…
+          </Button>
+        )}
         <ErrorMessage message={error} />
         <Button disabled={busy} className="primary">
           {busy ? '正在扫描…' : '连接工作目录'}

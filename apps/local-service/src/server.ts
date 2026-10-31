@@ -5,7 +5,7 @@ import { messageServiceFor } from './application/message-inbox-service';
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { projectRoot as project } from './project-root';
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { z } from 'zod';
@@ -22,9 +22,8 @@ import {
 import { aiView, saveAiConfig, saveQqConfig } from './sync/app-config';
 import { QqSync } from './sync/qq-sync';
 
-const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
-const port = Number(process.env.ATLAS_PORT ?? 4317);
-const origin = `http://127.0.0.1:${port}`;
+let port = Number(process.env.ATLAS_PORT ?? 4317);
+let origin = `http://127.0.0.1:${port}`;
 const configPath = path.resolve(
   process.env.ATLAS_CONFIG_PATH ?? path.join(project, '.chaos.local.json'),
 );
@@ -544,12 +543,15 @@ server.once('error', async (error: NodeJS.ErrnoException) => {
   process.exit(1);
 });
 server.listen(port, '127.0.0.1', () => {
+  port = (server.address() as import('node:net').AddressInfo).port;
+  origin = `http://127.0.0.1:${port}`;
   restoring = restoreConnection();
   void restoring.then(() => {
     console.log(
       `ATLAS ready: ${origin}\n${vault ? 'Restored the last workspace.' : 'Choose an existing Vault in the browser.'}`,
     );
     qqSync.restart();
+    process.send?.({ type: 'ready', port });
   });
 });
 let stopping = false;
@@ -565,3 +567,9 @@ const shutdown = async () => {
 };
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+process.on('message', (message) => {
+  if (message && typeof message === 'object' && 'type' in message && message.type === 'shutdown')
+    void shutdown();
+});
+// A desktop crash must not leave a hidden service holding the workspace lock.
+if (process.connected) process.on('disconnect', () => void shutdown());

@@ -1244,6 +1244,16 @@ export function MessageInbox({
       ) : tab === 'global' ? (
         <>
           <h3>QQ 自动同步全局设置</h3>
+          {window.chaosDesktop && (
+            <div className="actions">
+              <Button onClick={() => void run(() => window.chaosDesktop!.setupQq())}>
+                初始化 QQ 数据库读取…
+              </Button>
+              <span className="hint">
+                已内置 Python 与 SQLCipher。首次初始化会打开交互工具，按提示登录 QQ。
+              </span>
+            </div>
+          )}
           <p className="hint">
             读取本机 QQ 的
             nt_msg.db，只同步选中的群或私聊联系人；登录后补下来的离线消息会按原始时间进入识别流程。
@@ -1303,9 +1313,14 @@ export function MessageInbox({
                 onChange={(e) => setQq({ ...qq, backfillDays: Number(e.target.value) || 7 })}
               />
             </Field>
-            <Field label="Python 命令">
-              <input value={qq.python} onChange={(e) => setQq({ ...qq, python: e.target.value })} />
-            </Field>
+            {!window.chaosDesktop && (
+              <Field label="Python 命令">
+                <input
+                  value={qq.python}
+                  onChange={(e) => setQq({ ...qq, python: e.target.value })}
+                />
+              </Field>
+            )}
             <Field label="QQ 数据库密钥">
               <input
                 type="password"

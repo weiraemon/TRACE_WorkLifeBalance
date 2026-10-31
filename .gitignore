@@ -1,5 +1,7 @@
 node_modules/
 dist/
+releases/
+.desktop/
 test-results/
 playwright-report/
 .test-vault/

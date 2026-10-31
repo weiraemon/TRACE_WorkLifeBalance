@@ -28,6 +28,11 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
+$BundledPython = Join-Path $RepoRoot 'runtime\python\python.exe'
+if (Test-Path -LiteralPath $BundledPython) {
+  if (-not $PythonCommand) { $PythonCommand = '"' + $BundledPython + '"' }
+  $SkipDependencies = $true
+}
 $Helper = Join-Path $RepoRoot 'scripts\qq_sync.py'
 $Probe = Join-Path $RepoRoot 'scripts\qq_probe.py'
 $ProfilePath = if ($env:CHAOS_CACHE_DIR) {
@@ -809,7 +814,7 @@ try {
   Write-Step '检查运行环境'
   $node = Find-CommandPath 'node'
   $npm = Find-CommandPath 'npm.cmd'
-  if (-not $node -or -not $npm) {
+  if (-not (Test-Path -LiteralPath $BundledPython) -and (-not $node -or -not $npm)) {
     if ($SkipDependencies) {
       Write-Warn '未找到 Node.js/npm；已跳过安装，但 CHAOS 需要 Node.js 22.12+。'
     } else {
@@ -1006,7 +1011,7 @@ try {
   Write-Host ''
   Write-Host '初始化完成。' -ForegroundColor Green
   if ($key) {
-    Write-Host '下一步：双击 start-chaos.cmd，打开“QQ同步设置”，测试读取并启用自动同步。'
+    Write-Host '下一步：打开 CHAOS 的“QQ同步设置”，测试读取并启用自动同步。'
     if ($didExtract) { Write-Host 'QQ 已被提取流程关闭，请重新打开 QQ 并保持登录。' }
   } else {
     Write-Host '下一步：重新运行本脚本并完成 QQ 登录，或在“QQ同步设置”中手动填写密钥。'

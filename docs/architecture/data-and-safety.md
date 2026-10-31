@@ -6,6 +6,8 @@
 
 本机 `.chaos.local.json` 只保存上次成功连接的 `vaultPath`，不保存工作内容；文件及其临时文件被 Git 忽略。成功连接后以临时文件原子替换配置，失败连接不改写上次路径；启动恢复失败时保留默认路径供用户修正。测试使用独立配置文件。
 
+Electron 桌面版沿用同一服务和保护机制，将目录配置放在 `%APPDATA%\CHAOS\workspace.json`，与本机 QQ／AI 设置一起保留在程序包外。桌面安装目录不保存用户工作内容或密钥。渲染页面没有 Node 能力，目录选择与 QQ 初始化仅经受限 preload 调用。内置 Python／SQLCipher 由固定版本与 SHA-256 校验；原有手动备份策略不变。
+
 目录锁 `.atlas/service.lock` 记录进程 PID、唯一令牌、主机与进程启动标识。连接时只在确认旧进程不存在或 PID 已复用后回收遗留锁，并沿用原有独占创建与中断恢复流程；仍在运行或无法确认的锁不会因超时而失效。旧格式锁继续识别，锁损坏或来自其他主机时停止自动回收。
 
 只支持当前七类：project、workline、milestone、todo、actual、resource、review。todo.kind 为 todo 或 idea，二者归属 milestoneId；节点归属 lineId，业务线归属 projectId。不保存完整祖先路径，不做无限嵌套。
