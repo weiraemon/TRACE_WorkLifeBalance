@@ -7,13 +7,29 @@ import { spawn } from 'node:child_process';
 import { z } from 'zod';
 import { Vault, VaultError } from './vault';
 import { recordContract, saveOptionsSchema } from '../../../packages/domain/index';
+import { readLocalConfig, rememberVault } from './local-config';
 
 const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const port = Number(process.env.ATLAS_PORT ?? 4317);
 const origin = `http://127.0.0.1:${port}`;
+const configPath = path.resolve(
+  process.env.ATLAS_CONFIG_PATH ?? path.join(project, '.chaos.local.json'),
+);
 const token = randomBytes(32).toString('hex');
 let vault: Vault | undefined;
 let switching = false;
+let defaultRoot = '';
+let connectionError = '';
+let restoring: Promise<void> = Promise.resolve();
+async function restoreConnection() {
+  try {
+    defaultRoot = (await readLocalConfig(configPath)).vaultPath ?? '';
+    if (defaultRoot) vault = await Vault.open(defaultRoot);
+  } catch (error) {
+    connectionError = `无法恢复上次的工作目录：${error instanceof Error ? error.message : String(error)}`;
+    console.error(connectionError);
+  }
+}
 const production = process.argv.includes('--production');
 const vite = production
   ? undefined
@@ -87,12 +103,14 @@ const server = http.createServer(async (req, res) => {
     return send(res, 403, { error: '仅允许本机同源访问' });
   const url = new URL(req.url ?? '/', origin);
   try {
+    await restoring;
     if (url.pathname === '/api/session' && req.method === 'GET')
       return send(res, 200, {
         token,
         connected: Boolean(vault),
-        root: vault?.root ?? '',
+        root: vault?.root ?? defaultRoot,
         vaultId: vault?.sessionId ?? '',
+        connectionError,
       });
     if (url.pathname.startsWith('/api/')) {
       if (req.headers['x-atlas-token'] !== token)
@@ -104,18 +122,23 @@ const server = http.createServer(async (req, res) => {
         if (switching) throw new VaultError('Vault 正在切换，请稍后重试', 409);
         if (vault && path.resolve(input.path) === vault.root) {
           await vault.recover();
+          await rememberVault(configPath, vault.root);
+          connectionError = '';
           return send(res, 200, await vault.scan());
         }
         switching = true;
         try {
           const next = await Vault.open(input.path);
           try {
+            await rememberVault(configPath, next.root);
             await vault?.close();
           } catch (error) {
             await next.close();
             throw error;
           }
           vault = next;
+          defaultRoot = next.root;
+          connectionError = '';
           return send(res, 200, await next.scan());
         } finally {
           switching = false;
@@ -276,16 +299,20 @@ server.once('error', async (error: NodeJS.ErrnoException) => {
   await vite?.close();
   process.exit(1);
 });
-server.listen(port, '127.0.0.1', () =>
-  console.log(
-    `ATLAS ready: ${origin}\nChoose an existing Vault in the browser. No existing notes are migrated.`,
-  ),
-);
+server.listen(port, '127.0.0.1', () => {
+  restoring = restoreConnection();
+  void restoring.then(() =>
+    console.log(
+      `ATLAS ready: ${origin}\n${vault ? 'Restored the last workspace.' : 'Choose an existing Vault in the browser.'}`,
+    ),
+  );
+});
 let stopping = false;
 const shutdown = async () => {
   if (stopping) return;
   stopping = true;
   server.close();
+  await restoring;
   await vault?.close();
   await vite?.close();
   process.exit(0);

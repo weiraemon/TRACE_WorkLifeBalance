@@ -1,6 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { hostname } from 'node:os';
+import { promisify } from 'node:util';
 import { parseDocument, stringify, isMap } from 'yaml';
 import { z } from 'zod';
 import {
@@ -40,6 +43,48 @@ export class VaultError extends Error {
   }
 }
 export const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
+const execute = promisify(execFile);
+const lockSchema = z.object({
+  pid: z.number().int().positive(),
+  token: z.string().uuid(),
+  host: z.string().optional(),
+  startedAt: z.string().nullable().optional(),
+});
+let ownProcessStart: Promise<string | null> | undefined;
+async function processStart(pid: number): Promise<string | null> {
+  try {
+    if (process.platform === 'win32') {
+      const { stdout } = await execute(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().ToString('o')`,
+        ],
+        { windowsHide: true, timeout: 5000 },
+      );
+      return stdout.trim() || null;
+    }
+    if (process.platform === 'linux') {
+      const stat = await fs.readFile(`/proc/${pid}/stat`, 'utf8');
+      return (
+        (await fs.readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim() +
+        ':' +
+        stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]
+      );
+    }
+  } catch {}
+  return null;
+}
+function processExists(pid: number) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
+  }
+}
 const slash = (value: string) => value.split(path.sep).join('/');
 const ignored = new Set(['.git', '.obsidian', '.atlas', 'node_modules']);
 const frontmatter = /^(\uFEFF?---\r?\n)([\s\S]*?)(^---(?:\r?\n|$))/m;
@@ -129,20 +174,54 @@ export class Vault {
     const vault = new Vault(root);
     await vault.safe('.atlas', true);
     await fs.mkdir(path.join(root, '.atlas'), { recursive: true });
-    try {
-      await fs.writeFile(
-        await vault.safe('.atlas/service.lock', true),
-        JSON.stringify({ pid: process.pid, token: vault.lockToken }),
-        { flag: 'wx' },
-      );
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST')
-        throw new VaultError(
-          'Vault 已由一个 ATLAS 服务打开；异常退出时请核实进程后移除 .atlas/service.lock',
-          409,
-        );
-      throw error;
+    const lockPath = await vault.safe('.atlas/service.lock', true);
+    const startedAt = await (ownProcessStart ??= processStart(process.pid));
+    const owner = JSON.stringify({
+      pid: process.pid,
+      token: vault.lockToken,
+      host: hostname(),
+      startedAt,
+    });
+    let acquired = false;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await fs.writeFile(lockPath, owner, { flag: 'wx' });
+        acquired = true;
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      }
+      try {
+        const source = await fs.readFile(await vault.safe('.atlas/service.lock'), 'utf8');
+        const parsed = lockSchema.safeParse(JSON.parse(source));
+        if (!parsed.success)
+          throw new VaultError('进程锁内容无法识别，请核实 .atlas/service.lock；未自动删除', 409);
+        const lock = parsed.data;
+        if (lock.host && lock.host !== hostname())
+          throw new VaultError('工作目录的锁来自另一台电脑，请先确认该服务已关闭', 409);
+        if (processExists(lock.pid)) {
+          const currentStart = lock.pid === process.pid ? startedAt : await processStart(lock.pid);
+          const reusedPid = lock.startedAt && currentStart && lock.startedAt !== currentStart;
+          const oldLock =
+            !lock.startedAt &&
+            currentStart &&
+            process.platform === 'win32' &&
+            Date.parse(currentStart) > (await fs.stat(lockPath)).mtimeMs + 1000;
+          if (!reusedPid && !oldLock && processExists(lock.pid))
+            throw new VaultError('Vault 已由一个 ATLAS 服务打开，请关闭该服务后重试', 409);
+        }
+        // 回收前再次核对，避免移除检查期间其他服务换上的锁。
+        if ((await fs.readFile(await vault.safe('.atlas/service.lock'), 'utf8')) !== source)
+          continue;
+        await fs.unlink(lockPath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        if (error instanceof SyntaxError)
+          throw new VaultError('进程锁内容损坏，请核实 .atlas/service.lock；未自动删除', 409);
+        throw error;
+      }
     }
+    if (!acquired) throw new VaultError('工作目录正在被其他服务连接，请稍后重试', 409);
     try {
       await vault.resumeChanges();
       return vault;

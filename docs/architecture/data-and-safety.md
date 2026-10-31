@@ -4,6 +4,10 @@
 
 普通 Markdown 工作目录是唯一权威数据源，Obsidian 不是运行依赖。ATLAS 管理字段保存在顶层 `atlas.managed: true` 和 `atlas.record`，稳定 UUID 不随路径变化。YAML AST 只替换 ATLAS 字段，保留其他字段、注释及自由正文。
 
+本机 `.chaos.local.json` 只保存上次成功连接的 `vaultPath`，不保存工作内容；文件及其临时文件被 Git 忽略。成功连接后以临时文件原子替换配置，失败连接不改写上次路径；启动恢复失败时保留默认路径供用户修正。测试使用独立配置文件。
+
+目录锁 `.atlas/service.lock` 记录进程 PID、唯一令牌、主机与进程启动标识。连接时只在确认旧进程不存在或 PID 已复用后回收遗留锁，并沿用原有独占创建与中断恢复流程；仍在运行或无法确认的锁不会因超时而失效。旧格式锁继续识别，锁损坏或来自其他主机时停止自动回收。
+
 只支持当前七类：project、workline、milestone、todo、actual、resource、review。todo.kind 为 todo 或 idea，二者归属 milestoneId；节点归属 lineId，业务线归属 projectId。不保存完整祖先路径，不做无限嵌套。
 
 旧状态枚举、工作对象说明副本、预计时长、实际修订数组和按推进／完成区分的重复条目关联已移除。completedAt 是唯一手动完成事实；普通节点有子条目时通过其完成事实推导完成。项目与业务线不按下级自动完成。
