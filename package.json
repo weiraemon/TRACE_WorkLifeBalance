@@ -13,11 +13,11 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "format": "prettier --write apps packages tests scripts *.ts *.json *.md \"docs/**/*.md\"",
-    "check": "npm test && npm run build && npm run test:e2e"
+    "check": "npm run check:architecture && npm test && npm run build && npm run test:e2e",
+    "check:architecture": "node scripts/check-boundaries.mjs"
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.19",
-    "@fullcalendar/interaction": "^6.1.19",
     "@fullcalendar/react": "^6.1.19",
     "@fullcalendar/timegrid": "^6.1.19",
     "@radix-ui/react-dialog": "^1.1.15",

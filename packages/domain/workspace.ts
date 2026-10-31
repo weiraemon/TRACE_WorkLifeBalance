@@ -16,7 +16,36 @@ export type MilestoneContext = {
   project: Project;
 };
 export type TodoContext = MilestoneContext & { todo: Todo };
+export function agendaForDay(entries: Entry[], date = localDay()) {
+  const rows = [
+    ...milestonesForDay(entries, date).map((context) => ({
+      context,
+      item: context.milestone,
+      time: context.milestone.dueTime,
+      done: isComplete(context.milestone, entries),
+    })),
+    ...todosForDay(entries, date).map((context) => ({
+      context,
+      item: context.todo,
+      time: null,
+      done: isComplete(context.todo, entries),
+    })),
+  ];
+  return rows.sort(
+    (a, b) =>
+      Number(a.done) - Number(b.done) ||
+      (a.done ? 0 : (a.time ?? '99:99').localeCompare(b.time ?? '99:99')) ||
+      (a.done ? 0 : b.item.importance - a.item.importance) ||
+      a.item.createdAt.localeCompare(b.item.createdAt) ||
+      a.item.id.localeCompare(b.item.id),
+  );
+}
 export const todoDate = (context: TodoContext) => context.todo.dueDate ?? context.milestone.dueDate;
+export const shouldHideMilestone = (milestone: Milestone, entries: Entry[], today = localDay()) =>
+  !milestone.pool &&
+  milestone.dueDate !== null &&
+  daysAway(milestone.dueDate, today)! < -2 &&
+  isComplete(milestone, entries);
 export function activeLines(entries: Entry[]): BusinessLine[] {
   const closedProjects = new Set(
     entries.flatMap(({ data }) => (data.type === 'project' && data.completedAt ? [data.id] : [])),

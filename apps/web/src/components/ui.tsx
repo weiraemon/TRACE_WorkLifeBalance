@@ -17,11 +17,13 @@ export function Modal({
   children,
   onClose,
   wide = false,
+  className = '',
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   wide?: boolean;
+  className?: string;
 }) {
   useEffect(() => {
     const closePicker = (event: KeyboardEvent) => {
@@ -45,7 +47,7 @@ export function Modal({
       <Dialog.Portal>
         <Dialog.Overlay className="overlay" />
         <Dialog.Content
-          className={'dialog ' + (wide ? 'wide' : '')}
+          className={`dialog ${wide ? 'wide' : ''} ${className}`}
           onInteractOutside={(event) => event.preventDefault()}
         >
           <div className="section-heading">
@@ -59,7 +61,7 @@ export function Modal({
           <Dialog.Description className="sr-only">
             保存到当前 Obsidian Vault。未保存的内容在关闭后放弃。
           </Dialog.Description>
-          <div className="dialog-body">{children}</div>
+          {children}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

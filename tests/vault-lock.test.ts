@@ -3,6 +3,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+const oldToken = randomUUID();
 import { Vault } from '../apps/local-service/src/native/vault';
 
 const roots: string[] = [];
@@ -26,28 +28,29 @@ it('recovers an abandoned lock without changing user notes', async () => {
     child.once('error', reject);
     child.once('exit', () => resolve());
   });
-  const root = await fixture(JSON.stringify({ pid: child.pid, token: 'old' }));
+  const root = await fixture(JSON.stringify({ pid: child.pid, token: oldToken }));
   const vault = await Vault.open(root);
   opened.push(vault);
   expect(
     JSON.parse(await fs.readFile(path.join(root, '.atlas/service.lock'), 'utf8')).token,
-  ).not.toBe('old');
+  ).not.toBe(oldToken);
   expect(await fs.readFile(path.join(root, 'personal.md'), 'utf8')).toBe(
     'User notes stay untouched.',
   );
 });
 it.each(['alive', 'permission', 'malformed'])('preserves uncertain locks: %s', async (kind) => {
-  const original = kind === 'malformed' ? '{' : JSON.stringify({ pid: process.pid, token: 'old' });
+  const original =
+    kind === 'malformed' ? '{' : JSON.stringify({ pid: process.pid, token: oldToken });
   const root = await fixture(original);
   if (kind === 'permission')
     vi.spyOn(process, 'kill').mockImplementation(() => {
       throw Object.assign(new Error('denied'), { code: 'EPERM' });
     });
-  await expect(Vault.open(root)).rejects.toThrow('已由');
+  await expect(Vault.open(root)).rejects.toThrow(kind === 'malformed' ? '损坏' : '已由');
   expect(await fs.readFile(path.join(root, '.atlas/service.lock'), 'utf8')).toBe(original);
 });
 it('allows only one concurrent recovery to own the directory', async () => {
-  const root = await fixture(JSON.stringify({ pid: 123456, token: 'old' }));
+  const root = await fixture(JSON.stringify({ pid: 123456, token: oldToken }));
   const realKill = process.kill.bind(process);
   vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
     if (pid === 123456) throw Object.assign(new Error('gone'), { code: 'ESRCH' });

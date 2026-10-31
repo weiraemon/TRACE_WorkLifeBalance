@@ -3,6 +3,67 @@ import { connect, seed, nav, write, refresh, snapshot, localDay } from './helper
 
 test.beforeEach(async ({ page }) => connect(page));
 
+test('仅超过两天且已完成的节点隐藏，较早未完成节点及过期提醒保留且不改数据', async ({ page }) => {
+  const { line } = await seed(page);
+  const day = (offset: number) => {
+    const date = new Date(localDay() + 'T12:00:00');
+    date.setDate(date.getDate() + offset);
+    return localDay(date);
+  };
+  const old = await write(page, 'milestone', {
+    title: '三天前未完成',
+    lineId: line.data.id,
+    dueDate: day(-3),
+  });
+  await write(page, 'todo', { title: '旧节点的行动', milestoneId: old.data.id });
+  await write(page, 'milestone', {
+    title: '四天前已完成',
+    lineId: line.data.id,
+    dueDate: day(-4),
+    completedAt: new Date().toISOString(),
+  });
+  await write(page, 'milestone', { title: '恰好两天前', lineId: line.data.id, dueDate: day(-2) });
+  await write(page, 'milestone', { title: '没有截止日期', lineId: line.data.id });
+  await refresh(page);
+  const before = (await snapshot(page)).entries;
+  await page
+    .getByRole('status')
+    .filter({ hasText: '过期事件 · 2' })
+    .getByRole('button', { name: '查看', exact: true })
+    .click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.locator('.overdue-event-name strong')).toHaveText([
+    '三天前未完成',
+    '恰好两天前',
+  ]);
+  await page.getByRole('button', { name: '关闭对话框', exact: true }).click();
+  await nav(page, '工作空间');
+  const board = page.locator('.workspace-content');
+  for (const title of ['四天前已完成'])
+    await expect(
+      board.getByRole('article', { name: `关键节点 · ${title}`, exact: true }),
+    ).toHaveCount(0);
+  for (const title of ['三天前未完成', '恰好两天前', '没有截止日期', '待办池'])
+    await expect(
+      board.getByRole('article', { name: `关键节点 · ${title}`, exact: true }),
+    ).toBeVisible();
+  await page.getByLabel('显示较早已完成节点', { exact: true }).check();
+  await expect(
+    board.getByRole('article', { name: '关键节点 · 三天前未完成', exact: true }),
+  ).toContainText('旧节点的行动');
+  await expect(
+    board.getByRole('article', { name: '关键节点 · 四天前已完成', exact: true }),
+  ).toHaveCount(1);
+  expect((await snapshot(page)).entries).toEqual(before);
+  await page.reload();
+  await nav(page, '工作空间');
+  await expect(page.getByLabel('显示较早已完成节点', { exact: true })).not.toBeChecked();
+  await expect(
+    board.getByRole('article', { name: '关键节点 · 四天前已完成', exact: true }),
+  ).toHaveCount(0);
+  expect((await snapshot(page)).entries).toEqual(before);
+});
+
 test('悬浮颜色直接调整重要性，不触发完成；日期仅保留右键快捷', async ({ page }) => {
   const { line, node, todo, idea } = await seed(page);
   await nav(page, '工作空间');

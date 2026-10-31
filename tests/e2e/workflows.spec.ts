@@ -5,11 +5,11 @@ import { randomUUID } from 'node:crypto';
 import { connect, nav, seed, write, refresh, snapshot, notes, headers, localDay } from './helpers';
 test.beforeEach(async ({ page }) => connect(page));
 
-test('首页先写内容再绑定业务线，可快速创建 TODO / IDEA，不产生实际时间或今日计划', async ({
+test('首页先写内容再绑定业务线，可快速创建 TODO / IDEA，TODO 安排到所选日，IDEA 保持无期限，不产生实际时间', async ({
   page,
 }) => {
   const { line } = await seed(page);
-  await page.getByRole('button', { name: 'TODO / IDEA', exact: true }).click();
+  await page.getByRole('tab', { name: '待办 / 节点', exact: true }).click();
   const capture = page.getByRole('region', { name: '快速创建 TODO / IDEA' });
   for (const kind of ['idea', 'todo']) {
     await capture.getByLabel('要做什么', { exact: true }).fill('临时' + kind);
@@ -28,79 +28,65 @@ test('首页先写内容再绑定业务线，可快速创建 TODO / IDEA，不�
     expect(pool?.data).toMatchObject({ type: 'milestone', pool: true, lineId: line.data.id });
   }
   expect(s.entries.filter((e) => e.data.type === 'actual')).toHaveLength(0);
+  await expect(page.getByRole('region', { name: '当天待办', exact: true })).toContainText(
+    '临时todo',
+  );
   await expect(page.getByRole('region', { name: '当天待办', exact: true })).not.toContainText(
-    '临时',
+    '临时idea',
   );
   expect(await notes(page, line.data.id)).not.toContain('临时');
 });
 
-test('实际表单新建条目与批注一起保存，取消草稿不留条目，完成只记录一个事实', async ({ page }) => {
-  const { line } = await seed(page);
-  let dialog = page.getByRole('form', { name: '实际工作录入', exact: true });
-  await dialog.getByRole('button', { name: '新建 TODO / IDEA', exact: true }).click();
-  let capture = dialog.getByRole('region', { name: '快速创建 TODO / IDEA' });
-  await capture.getByLabel('要做什么', { exact: true }).fill('被取消的想法');
-  await capture.getByLabel('业务线', { exact: true }).selectOption(line.data.id);
-  await capture.getByRole('button', { name: '添加', exact: true }).click();
-  await dialog.getByRole('button', { name: '清空', exact: true }).click();
-  expect(
-    (await snapshot(page)).entries.some(
-      (e) => e.data.type === 'todo' && e.data.title === '被取消的想法',
-    ),
-  ).toBe(false);
-  dialog = page.getByRole('form', { name: '实际工作录入', exact: true });
-  await dialog.getByRole('button', { name: '新建 TODO / IDEA', exact: true }).click();
-  await dialog.getByLabel('开始时间', { exact: true }).fill('10:00');
-  await dialog.getByLabel('结束时间', { exact: true }).fill('11:00');
-  await dialog.getByLabel('具体事件', { exact: true }).fill('比较两种解释');
-  capture = dialog.getByRole('region', { name: '快速创建 TODO / IDEA' });
+test('新增统一在待办节点页签，实际录入仅关联已有条目，切换保留正文', async ({ page }) => {
+  const { line, node } = await seed(page);
+  const form = page.getByRole('form', { name: '实际工作录入', exact: true });
+  await form.getByLabel('具体事件', { exact: true }).fill('比较两种解释');
+  await form.getByLabel('开始时间', { exact: true }).fill('10:00');
+  await form.getByLabel('结束时间', { exact: true }).fill('11:00');
+  await form.getByText('关联节点或待办（可选）', { exact: true }).click();
+  await expect(form.getByRole('button', { name: '新建 TODO / IDEA', exact: true })).toHaveCount(0);
+  await expect(
+    form.getByRole('region', { name: '快速创建 TODO / IDEA', includeHidden: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('region', { name: '快速创建 TODO / IDEA', includeHidden: true }),
+  ).toHaveCount(1);
+  await page.getByRole('tab', { name: '待办 / 节点', exact: true }).click();
+  const capture = page.getByRole('region', { name: '快速创建 TODO / IDEA', exact: true });
   await capture.getByLabel('要做什么', { exact: true }).fill('检查样本分布');
   await capture.getByLabel('业务线', { exact: true }).selectOption(line.data.id);
+  await capture.getByLabel('具体节点', { exact: true }).selectOption(node.data.id);
   await capture.getByLabel('批注', { exact: true }).fill('原解释不能覆盖异常样本');
   await capture.getByRole('button', { name: '添加', exact: true }).click();
-  await dialog.getByRole('checkbox', { name: '本次完成 检查样本分布', exact: true }).check();
-  await dialog.getByRole('button', { name: '保存实际工作', exact: true }).click();
-  await expect(dialog.getByLabel('具体事件', { exact: true })).toHaveValue('');
-  const s = await snapshot(page),
-    item = s.entries.find((e) => e.data.type === 'todo' && e.data.title === '检查样本分布')!.data;
-  expect(item).toHaveProperty('completedAt', expect.any(String));
-  const actual = s.entries.find((e) => e.data.type === 'actual')!.data;
-  expect(actual).toMatchObject({ itemIds: [item.id], description: '比较两种解释' });
-  expect(actual).not.toHaveProperty('history');
-  const text = await notes(page, line.data.id);
-  expect(text.split('原解释不能覆盖异常样本')).toHaveLength(2);
-});
-
-test('一次实际工作可以连续新建多条 TODO / IDEA 并一起保存', async ({ page }) => {
-  const { line } = await seed(page);
-  const form = page.getByRole('form', { name: '实际工作录入', exact: true });
-  await form.getByRole('button', { name: '新建 TODO / IDEA', exact: true }).click();
-  const capture = form.getByRole('region', { name: '快速创建 TODO / IDEA' });
-  await capture.getByLabel('业务线', { exact: true }).selectOption(line.data.id);
-  for (const title of ['补充材料清单', '安排下周复盘']) {
-    await capture.getByLabel('要做什么', { exact: true }).fill(title);
-    await capture.getByRole('button', { name: '添加', exact: true }).click();
-  }
-  await expect(form).toContainText('本次已新增 2 条 TODO / IDEA，可以继续添加。');
-  await form.getByLabel('具体事件', { exact: true }).fill('整理后续安排');
-  await form.getByLabel('开始时间', { exact: true }).fill('14:00');
-  await form.getByLabel('结束时间', { exact: true }).fill('14:30');
+  await expect(capture.getByLabel('要做什么', { exact: true })).toHaveValue('');
+  let state = await snapshot(page);
+  const item = state.entries.find(
+    (e) => e.data.type === 'todo' && e.data.title === '检查样本分布',
+  )!.data;
+  expect(item).toHaveProperty('completedAt', null);
+  expect(state.entries.filter((e) => e.data.type === 'actual')).toHaveLength(0);
+  await page.getByRole('tab', { name: '今日已做', exact: true }).click();
+  await expect(form.getByLabel('具体事件', { exact: true })).toHaveValue('比较两种解释');
+  const pool = form.getByRole('region', { name: '待选池', exact: true });
+  await pool
+    .locator('.actual-pool-choice')
+    .filter({ hasText: 'TODO · 检查样本分布' })
+    .getByRole('button', { name: '加入', exact: true })
+    .click();
+  await form.getByRole('checkbox', { name: '本次完成 检查样本分布', exact: true }).check();
   await form.getByRole('button', { name: '保存实际工作', exact: true }).click();
   await expect(form.getByLabel('具体事件', { exact: true })).toHaveValue('');
-  await refresh(page);
-
-  const state = await snapshot(page);
-  const items = state.entries
-    .filter(
-      (entry) =>
-        entry.data.type === 'todo' && ['补充材料清单', '安排下周复盘'].includes(entry.data.title),
-    )
-    .map((entry) => entry.data.id);
-  expect(items).toHaveLength(2);
-  const actual = state.entries
-    .map((entry) => entry.data)
-    .find((record) => record.type === 'actual');
-  expect(actual?.itemIds.slice().sort()).toEqual(items.sort());
+  state = await snapshot(page);
+  expect(state.entries.find((e) => e.data.id === item.id)?.data).toHaveProperty(
+    'completedAt',
+    expect.any(String),
+  );
+  expect(state.entries.filter((e) => e.data.type === 'actual')).toHaveLength(1);
+  expect(state.entries.find((e) => e.data.type === 'actual')?.data).toMatchObject({
+    itemIds: [item.id],
+    description: '比较两种解释',
+  });
+  expect((await notes(page, line.data.id)).split('原解释不能覆盖异常样本')).toHaveLength(2);
 });
 
 test('一次实际工作可以关联多个不同节点', async ({ page }) => {
@@ -114,6 +100,7 @@ test('一次实际工作可以关联多个不同节点', async ({ page }) => {
   await form.getByLabel('具体事件', { exact: true }).fill('同步推进两个节点');
   await form.getByLabel('开始时间', { exact: true }).fill('15:00');
   await form.getByLabel('结束时间', { exact: true }).fill('16:00');
+  await form.getByText('关联节点或待办（可选）', { exact: true }).click();
   const pool = form.getByRole('region', { name: '待选池', exact: true });
   await pool.getByLabel('业务线', { exact: true }).selectOption(line.data.id);
   for (const title of ['方案会议', '复盘节点'])
@@ -144,6 +131,7 @@ test('实际工作可从已有待办绑定，节点和待办批注均可留空�
   await form.getByLabel('具体事件', { exact: true }).fill('完成方案会议后的材料确认');
   await form.getByLabel('开始时间', { exact: true }).fill('10:00');
   await form.getByLabel('结束时间', { exact: true }).fill('10:30');
+  await form.getByText('关联节点或待办（可选）', { exact: true }).click();
   const pool = form.getByRole('region', { name: '待选池', exact: true });
   await pool.getByLabel('业务线', { exact: true }).selectOption(line.data.id);
   for (const title of ['节点 · 方案会议', 'TODO · 找人要材料'])
@@ -152,6 +140,8 @@ test('实际工作可从已有待办绑定，节点和待办批注均可留空�
       .filter({ hasText: title })
       .getByRole('button', { name: '加入', exact: true })
       .click();
+  await form.getByText('成果 / 下一步 · 方案会议', { exact: true }).click();
+  await form.getByText('成果 / 下一步 · 找人要材料', { exact: true }).click();
   await expect(form.getByLabel('批注 · 方案会议', { exact: true })).toHaveValue('');
   await expect(form.getByLabel('批注 · 找人要材料', { exact: true })).toHaveValue('');
   await form.getByRole('checkbox', { name: '本次完成 找人要材料', exact: true }).check();

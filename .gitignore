@@ -4,6 +4,8 @@ test-results/
 playwright-report/
 .test-vault/
 .session.json
+.chaos.local.json
+.chaos.local.json.*.tmp
 examples/workspace-vault/.atlas/
 docs/screenshots/
 docs/development/test-report.md

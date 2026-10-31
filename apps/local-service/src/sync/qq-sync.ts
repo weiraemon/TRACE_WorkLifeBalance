@@ -1,25 +1,14 @@
+import { intakeServiceFor } from '../application/message-intake-service';
+import { messageServiceFor } from '../application/message-inbox-service';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  matchMessage,
   type Candidate,
-  type Inbox,
-  type MessageCatalog,
-  type MessageRule,
-  type MessageSettings,
   type QqStatus,
   type SourceMessage,
 } from '../../../../packages/domain/messages';
-import { Vault } from '../native/vault';
-import {
-  analyzeMessage,
-  dropNoopChanges,
-  mergeSameTitle,
-  messageFingerprint,
-  messageKey,
-  type ExistingMessageItem,
-} from './message-analysis';
+import type { Vault } from '../native/vault';
 import { activeAi, activeQq, normalizeAiSettings, qqCacheDir, qqView } from './app-config';
 import { randomUUID } from 'node:crypto';
 
@@ -191,210 +180,6 @@ export class QqSync {
     this.timer = undefined;
   }
 
-  private async catalog(vault: Vault): Promise<MessageCatalog> {
-    const workspace = await vault.scan();
-    return workspace.entries.flatMap(({ data: p }) =>
-      p.type === 'project' && !p.completedAt
-        ? [
-            {
-              id: p.id,
-              title: p.title,
-              lines: workspace.entries.flatMap(({ data: l }) =>
-                l.type === 'workline' && l.projectId === p.id && !l.completedAt
-                  ? [{ id: l.id, title: l.title }]
-                  : [],
-              ),
-            },
-          ]
-        : [],
-    );
-  }
-
-  private async existingItems(vault: Vault): Promise<ExistingMessageItem[]> {
-    const workspace = await vault.scan();
-    const lineTitle = (lineId: string) => {
-      const entry = workspace.entries.find(({ data }) => data.id === lineId);
-      return entry?.data.type === 'workline' ? entry.data.title : '';
-    };
-    const milestones = new Map(
-      workspace.entries.flatMap(({ data }) =>
-        data.type === 'milestone' ? [[data.id, data] as const] : [],
-      ),
-    );
-    return workspace.entries
-      .flatMap(({ data }): ExistingMessageItem[] => {
-        if (data.type === 'milestone' && !data.pool && !data.completedAt)
-          return [
-            {
-              id: data.id,
-              type: 'milestone' as const,
-              title: data.title,
-              dueDate: data.dueDate,
-              dueTime: data.dueTime,
-              location: data.location ?? null,
-              lineTitle: lineTitle(data.lineId),
-            },
-          ];
-        if (data.type === 'todo' && !data.completedAt) {
-          const milestone = milestones.get(data.milestoneId);
-          return [
-            {
-              id: data.id,
-              type: 'todo' as const,
-              title: data.title,
-              dueDate: data.dueDate,
-              dueTime: null,
-              location: null,
-              lineTitle: milestone ? lineTitle(milestone.lineId) : '',
-            },
-          ];
-        }
-        return [];
-      })
-      .slice(0, 120);
-  }
-
-  private async queueRaw(
-    inbox: Inbox,
-    rule: MessageRule,
-    source: SourceMessage,
-    settings: MessageSettings = inbox.settings,
-    resyncSeen = false,
-  ): Promise<Candidate | null> {
-    if (!matchMessage(settings, source)) return null;
-    const fingerprint = messageFingerprint(source);
-    const sourceKey = messageKey(source);
-    const alreadyPending = inbox.candidates.some(
-      (item) =>
-        item.fingerprint === fingerprint ||
-        Boolean(sourceKey && messageKey(item.source) === sourceKey),
-    );
-    if (alreadyPending) return null;
-    const alreadySeen = inbox.seen.some(
-      (item) =>
-        item.fingerprint === fingerprint || Boolean(sourceKey && item.messageId === sourceKey),
-    );
-    if (!resyncSeen && alreadySeen) return null;
-    const title =
-      source.text
-        .replace(/^(?:\s*@\S+\s*)+/, '')
-        .split(/\r?\n/)[0]
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 120) || '待整理消息';
-    const at = new Date().toISOString();
-    inbox.seen = [...inbox.seen, { fingerprint, at, messageId: sourceKey ?? undefined }].slice(
-      -500,
-    );
-    const candidate: Candidate = {
-      id: randomUUID(),
-      fingerprint,
-      raw: true,
-      source,
-      conversation: rule.name,
-      projectId: rule.projectId,
-      lineId: rule.lineId,
-      receivedAt: at,
-      suggestion: {
-        kind: 'task',
-        targetId: null,
-        completed: false,
-        title,
-        dueDate: null,
-        dueTime: null,
-        reason: '未使用 AI，等待手动设置',
-        uncertainty: '请设置日期、项目和业务线后确认，或点击“用 AI 识别”。',
-        actions: [],
-        tags: [],
-        location: null,
-        destination: null,
-      },
-    };
-    inbox.candidates.push(candidate);
-    return candidate;
-  }
-
-  private async analyze(
-    vault: Vault,
-    inbox: Inbox,
-    rule: MessageRule,
-    source: SourceMessage,
-    settings: MessageSettings = inbox.settings,
-    resyncSeen = false,
-  ): Promise<Candidate[]> {
-    if (!matchMessage(settings, source)) return [];
-    const fingerprint = messageFingerprint(source);
-    const sourceKey = messageKey(source);
-    const alreadyPending = inbox.candidates.some(
-      (item) =>
-        item.fingerprint === fingerprint ||
-        Boolean(sourceKey && messageKey(item.source) === sourceKey),
-    );
-    if (alreadyPending) return [];
-    const alreadySeen = inbox.seen.some(
-      (item) =>
-        item.fingerprint === fingerprint || Boolean(sourceKey && item.messageId === sourceKey),
-    );
-    if (!resyncSeen && alreadySeen) return [];
-    if (inbox.candidates.length >= 100) throw new Error('待确认消息已满 100 条');
-    const aiConfig = await activeAi();
-    const ai = normalizeAiSettings({
-      provider: aiConfig.config.provider,
-      baseUrl: aiConfig.profile.baseUrl,
-      model: aiConfig.profile.model,
-      jsonMode: aiConfig.profile.jsonMode,
-    });
-    if (!aiConfig.key) throw new Error('尚未配置 AI 密钥');
-    const catalog = await this.catalog(vault);
-    const projectData = rule.projectId
-      ? catalog.find((item) => item.id === rule.projectId)
-      : undefined;
-    if (rule.projectId && !projectData) throw new Error('会话限定项目已删除或结束');
-    const defaultLine = rule.lineId
-      ? catalog.flatMap((item) => item.lines).find((line) => line.id === rule.lineId)
-      : undefined;
-    if (rule.lineId && !defaultLine) throw new Error('会话默认业务线已删除或结束');
-    const projectScope =
-      !rule.lineId && projectData ? { id: projectData.id, title: projectData.title } : null;
-    const existing = await this.existingItems(vault);
-    const suggestions = dropNoopChanges(
-      await analyzeMessage(source, settings, aiConfig.key, fetch, {
-        catalog: rule.lineId ? [] : projectScope ? [projectData!] : catalog,
-        defaultLine: defaultLine ? { title: defaultLine.title } : null,
-        projectScope,
-        existing,
-        ai,
-      }),
-      existing,
-    );
-    const actionable = mergeSameTitle(
-      suggestions.filter((suggestion) => suggestion.kind !== 'ignore'),
-      existing,
-    );
-    if (!actionable.length) return [];
-    const at = new Date().toISOString();
-    inbox.seen = [...inbox.seen, { fingerprint, at, messageId: sourceKey ?? undefined }].slice(
-      -500,
-    );
-    const added: Candidate[] = [];
-    for (const suggestion of actionable) {
-      const candidate: Candidate = {
-        id: randomUUID(),
-        fingerprint,
-        raw: false,
-        source,
-        suggestion,
-        conversation: rule.name,
-        projectId: rule.projectId,
-        lineId: rule.lineId,
-        receivedAt: at,
-      };
-      inbox.candidates.push(candidate);
-      added.push(candidate);
-    }
-    return added;
-  }
-
   async manual(
     ruleId: string,
     from: number,
@@ -426,7 +211,7 @@ export class QqSync {
     if (!vault) throw new Error('尚未连接工作目录');
     const config = await activeQq();
     if (!config.dataDir || !config.key) throw new Error('请先完成 QQ 同步设置');
-    let inbox = await vault.messageInbox();
+    let inbox = await messageServiceFor(vault).messageInbox();
     let revision = inbox.revision;
     const sourceRule = inbox.state.settings.rules.find((rule) => rule.id === ruleId);
     if (!sourceRule) throw new Error('会话规则不存在');
@@ -484,11 +269,24 @@ export class QqSync {
     let skippedExpired = 0;
     for (const source of sources) {
       if (!effectiveUseAi) {
-        const raw = await this.queueRaw(inbox.state, rule, source, settings, resyncSeen);
+        const raw = await intakeServiceFor(vault).queueRaw(
+          inbox.state,
+          rule,
+          source,
+          settings,
+          resyncSeen,
+        );
         if (raw) added.push(raw);
         continue;
       }
-      const created = await this.analyze(vault, inbox.state, rule, source, settings, resyncSeen);
+      const created = await intakeServiceFor(vault).analyze(
+        vault,
+        inbox.state,
+        rule,
+        source,
+        settings,
+        resyncSeen,
+      );
       const kept = created.filter((candidate) => !expiredSuggestion(candidate.suggestion));
       if (kept.length !== created.length) {
         const createdIds = new Set(created.map((candidate) => candidate.id));
@@ -501,8 +299,8 @@ export class QqSync {
       added.push(...kept);
     }
     if (messages.length) {
-      await vault.saveMessageInbox(inbox.state, revision);
-      const refreshed = await vault.messageInbox();
+      await messageServiceFor(vault).saveMessageInbox(inbox.state, revision);
+      const refreshed = await messageServiceFor(vault).messageInbox();
       inbox = refreshed;
       revision = refreshed.revision;
     }
@@ -512,14 +310,14 @@ export class QqSync {
       for (const candidate of added) {
         if (!['task', 'event'].includes(candidate.suggestion.kind)) continue;
         try {
-          await vault.acceptMessage(
+          await messageServiceFor(vault).acceptMessage(
             candidate.id,
             revision,
             candidate.lineId ?? '',
             candidate.suggestion,
           );
           autoAdded += 1;
-          const refreshed = await vault.messageInbox();
+          const refreshed = await messageServiceFor(vault).messageInbox();
           inbox = refreshed;
           revision = refreshed.revision;
         } catch {
@@ -536,68 +334,6 @@ export class QqSync {
       usedAi: effectiveUseAi,
       failed,
     };
-  }
-
-  async enqueueRaw(ruleId: string, text: string) {
-    const vault = this.vault();
-    if (!vault) throw new Error('尚未连接工作目录');
-    const inbox = await vault.messageInbox();
-    const sourceRule = inbox.state.settings.rules.find((rule) => rule.id === ruleId);
-    if (!sourceRule) throw new Error('会话规则不存在');
-    const rule = { ...sourceRule, enabled: true, mode: 'all' as const };
-    const settings = {
-      ...inbox.state.settings,
-      rules: inbox.state.settings.rules.map((item) => (item.id === rule.id ? rule : item)),
-    };
-    const source: SourceMessage = {
-      ruleId: rule.id,
-      sender: '手动',
-      sentAt: new Date().toISOString(),
-      text,
-      context: '',
-      atAll: false,
-      atMe: false,
-      remoteId: null,
-      fromSelf: false,
-    };
-    const candidate = await this.queueRaw(inbox.state, rule, source, settings, true);
-    if (!candidate) throw new Error('这条文字已在待确认或已处理');
-    await vault.saveMessageInbox(inbox.state, inbox.revision);
-    return { id: candidate.id, message: '已加入待确认' };
-  }
-
-  async recognize(candidateId: string, revision: string | null) {
-    if (this.running || this.manualRunning) throw new Error('QQ 正在同步，请稍后重试');
-    const vault = this.vault();
-    if (!vault) throw new Error('尚未连接工作目录');
-    this.manualRunning = true;
-    try {
-      const inbox = await vault.messageInbox();
-      if (revision !== inbox.revision) throw new Error('消息收集已更改，请刷新后重试');
-      const candidate = inbox.state.candidates.find((item) => item.id === candidateId);
-      if (!candidate) throw new Error('事项已处理或不存在');
-      if (!candidate.raw) throw new Error('这条消息已经使用 AI 识别');
-      const sourceRule = inbox.state.settings.rules.find(
-        (rule) => rule.id === candidate.source.ruleId,
-      );
-      if (!sourceRule) throw new Error('会话规则不存在');
-      const rule = { ...sourceRule, enabled: true };
-      const settings = {
-        ...inbox.state.settings,
-        rules: inbox.state.settings.rules.map((item) => (item.id === rule.id ? rule : item)),
-      };
-      inbox.state.candidates = inbox.state.candidates.filter((item) => item.id !== candidateId);
-      const added = await this.analyze(vault, inbox.state, rule, candidate.source, settings, true);
-      await vault.saveMessageInbox(inbox.state, revision);
-      return {
-        added: added.length,
-        message: added.length
-          ? `AI 已识别 ${added.length} 项，请核对后确认`
-          : 'AI 未生成事项；可继续手动填写或关闭',
-      };
-    } finally {
-      this.manualRunning = false;
-    }
   }
 
   async run() {
@@ -625,7 +361,7 @@ export class QqSync {
     }
     if (!aiReady) this.lastError = 'AI 密钥未配置，消息按未使用 AI 加入待确认';
     try {
-      let inbox = await vault.messageInbox();
+      let inbox = await messageServiceFor(vault).messageInbox();
       let revision = inbox.revision;
       const rules = inbox.state.settings.rules.filter(
         (rule) => rule.enabled && rule.chatId && (rule.kind === 'group' || rule.kind === 'private'),
@@ -683,24 +419,24 @@ export class QqSync {
         for (const source of sources) {
           try {
             if (!rule.useAi || !aiReady) {
-              await this.queueRaw(inbox.state, rule, source);
+              await intakeServiceFor(vault).queueRaw(inbox.state, rule, source);
             } else {
-              const added = await this.analyze(vault, inbox.state, rule, source);
+              const added = await intakeServiceFor(vault).analyze(vault, inbox.state, rule, source);
               if (rule.autoAccept && added.length) {
                 try {
-                  await vault.saveMessageInbox(inbox.state, revision);
-                  let refreshed = await vault.messageInbox();
+                  await messageServiceFor(vault).saveMessageInbox(inbox.state, revision);
+                  let refreshed = await messageServiceFor(vault).messageInbox();
                   inbox = refreshed;
                   revision = refreshed.revision;
                   for (const candidate of added) {
                     if (!['task', 'event'].includes(candidate.suggestion.kind)) continue;
-                    await vault.acceptMessage(
+                    await messageServiceFor(vault).acceptMessage(
                       candidate.id,
                       revision,
                       candidate.lineId ?? '',
                       candidate.suggestion,
                     );
-                    refreshed = await vault.messageInbox();
+                    refreshed = await messageServiceFor(vault).messageInbox();
                     inbox = refreshed;
                     revision = refreshed.revision;
                   }
@@ -732,8 +468,8 @@ export class QqSync {
           else inbox.state.sync.push(sync);
         }
         try {
-          await vault.saveMessageInbox(inbox.state, revision);
-          const refreshed = await vault.messageInbox();
+          await messageServiceFor(vault).saveMessageInbox(inbox.state, revision);
+          const refreshed = await messageServiceFor(vault).messageInbox();
           inbox = refreshed;
           revision = refreshed.revision;
         } catch (error) {

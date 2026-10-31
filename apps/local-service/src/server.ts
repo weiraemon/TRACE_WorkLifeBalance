@@ -1,3 +1,7 @@
+import { intakeServiceFor } from './application/message-intake-service';
+import { workspaceServiceFor } from './application/workspace-service';
+import { businessApiVersion, businessCommandSchema } from '../../../packages/domain/business';
+import { messageServiceFor } from './application/message-inbox-service';
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -7,40 +11,38 @@ import { spawn } from 'node:child_process';
 import { z } from 'zod';
 import { Vault, VaultError } from './native/vault';
 import { recordContract, saveOptionsSchema } from '../../../packages/domain/index';
-import { randomUUID } from 'node:crypto';
+import { readLocalConfig, rememberVault } from './local-config';
+
 import {
-  aiDefaults,
   aiProviderSchema,
   messageSettingsSchema,
   sourceMessageSchema,
   suggestionSchema,
-  matchMessage,
-  type AiSettings,
 } from '../../../packages/domain/messages';
-import {
-  analyzeMessage,
-  dropNoopChanges,
-  mergeSameTitle,
-  messageFingerprint,
-  messageKey,
-  type ExistingMessageItem,
-} from './sync/message-analysis';
-import {
-  activeAi,
-  aiView,
-  normalizeAiSettings,
-  saveAiConfig,
-  saveQqConfig,
-} from './sync/app-config';
+import { aiView, saveAiConfig, saveQqConfig } from './sync/app-config';
 import { QqSync } from './sync/qq-sync';
 
 const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const port = Number(process.env.ATLAS_PORT ?? 4317);
 const origin = `http://127.0.0.1:${port}`;
+const configPath = path.resolve(
+  process.env.ATLAS_CONFIG_PATH ?? path.join(project, '.chaos.local.json'),
+);
 const token = randomBytes(32).toString('hex');
 let vault: Vault | undefined;
 let switching = false;
-const analyzingMessages = new WeakSet<Vault>();
+let defaultRoot = '';
+let connectionError = '';
+let restoring: Promise<void> = Promise.resolve();
+async function restoreConnection() {
+  try {
+    defaultRoot = (await readLocalConfig(configPath)).vaultPath ?? '';
+    if (defaultRoot) vault = await Vault.open(defaultRoot);
+  } catch (error) {
+    connectionError = `无法恢复上次的工作目录：${error instanceof Error ? error.message : String(error)}`;
+    console.error(connectionError);
+  }
+}
 const qqSync = new QqSync(() => vault);
 const production = process.argv.includes('--production');
 const vite = production
@@ -115,12 +117,14 @@ const server = http.createServer(async (req, res) => {
     return send(res, 403, { error: '仅允许本机同源访问' });
   const url = new URL(req.url ?? '/', origin);
   try {
+    await restoring;
     if (url.pathname === '/api/session' && req.method === 'GET')
       return send(res, 200, {
         token,
         connected: Boolean(vault),
-        root: vault?.root ?? '',
+        root: vault?.root ?? defaultRoot,
         vaultId: vault?.sessionId ?? '',
+        connectionError,
       });
     if (url.pathname.startsWith('/api/')) {
       if (req.headers['x-atlas-token'] !== token)
@@ -132,18 +136,23 @@ const server = http.createServer(async (req, res) => {
         if (switching) throw new VaultError('Vault 正在切换，请稍后重试', 409);
         if (vault && path.resolve(input.path) === vault.root) {
           await vault.recover();
+          await rememberVault(configPath, vault.root);
+          connectionError = '';
           return send(res, 200, await vault.scan());
         }
         switching = true;
         try {
           const next = await Vault.open(input.path);
           try {
+            await rememberVault(configPath, next.root);
             await vault?.close();
           } catch (error) {
             await next.close();
             throw error;
           }
           vault = next;
+          defaultRoot = next.root;
+          connectionError = '';
           return send(res, 200, await next.scan());
         } finally {
           switching = false;
@@ -153,10 +162,25 @@ const server = http.createServer(async (req, res) => {
       const active = vault;
       if (switching || req.headers['x-atlas-vault'] !== active.sessionId)
         throw new VaultError('其他窗口已切换 Vault；此窗口停止读写，请重新连接原 Vault', 409);
+      if (url.pathname === '/api/business/v1/schema' && req.method === 'GET')
+        return send(res, 200, {
+          version: businessApiVersion,
+          schema: z.toJSONSchema(businessCommandSchema, { io: 'input' }),
+        });
+      if (url.pathname === '/api/business/v1/workspace' && req.method === 'GET')
+        return send(res, 200, {
+          version: businessApiVersion,
+          snapshot: await workspaceServiceFor(active).snapshot(),
+        });
+      if (url.pathname === '/api/business/v1/commands' && req.method === 'POST')
+        return send(res, 200, {
+          version: businessApiVersion,
+          result: await workspaceServiceFor(active).execute(await body(req)),
+        });
       if (url.pathname === '/api/snapshot' && req.method === 'GET')
         return send(res, 200, await active.scan());
       if (url.pathname === '/api/messages' && req.method === 'GET') {
-        const { state, revision } = await active.messageInbox();
+        const { state, revision } = await messageServiceFor(active).messageInbox();
         return send(res, 200, {
           state,
           revision,
@@ -280,74 +304,7 @@ const server = http.createServer(async (req, res) => {
           .object({ settings: messageSettingsSchema, revision: z.string().nullable() })
           .strict()
           .parse(await body(req));
-        const current = await active.messageInbox();
-        const snapshot = await active.scan();
-        for (const rule of input.settings.rules) {
-          const project = rule.projectId
-            ? snapshot.entries.find(
-                (e) => e.data.id === rule.projectId && e.data.type === 'project',
-              )
-            : undefined;
-          const projectData = project?.data;
-          if (
-            rule.projectId &&
-            (!projectData || projectData.type !== 'project' || projectData.completedAt)
-          )
-            throw new VaultError(`会话「${rule.name}」的限定项目已删除或结束`);
-          const line = rule.lineId
-            ? snapshot.entries.find((e) => e.data.id === rule.lineId && e.data.type === 'workline')
-            : undefined;
-          const lineData = line?.data;
-          if (rule.lineId && (!lineData || lineData.type !== 'workline' || lineData.completedAt))
-            throw new VaultError(`会话「${rule.name}」的默认业务线已删除或结束`);
-          if (lineData?.type === 'workline') {
-            const parent = snapshot.entries.find((e) => e.data.id === lineData.projectId);
-            const parentData = parent?.data;
-            if (!parentData || parentData.type !== 'project' || parentData.completedAt)
-              throw new VaultError(`会话「${rule.name}」的默认业务线所在项目已结束`);
-            if (rule.projectId && lineData.projectId !== rule.projectId)
-              throw new VaultError(`会话「${rule.name}」的默认业务线不属于限定项目`);
-          }
-        }
-        const aiConfig = await activeAi();
-        let aiReady = false;
-        try {
-          if (aiConfig.key) {
-            normalizeAiSettings({
-              provider: aiConfig.config.provider,
-              baseUrl: aiConfig.profile.baseUrl,
-              model: aiConfig.profile.model,
-              jsonMode: aiConfig.profile.jsonMode,
-            });
-            aiReady = true;
-          }
-        } catch {
-          aiReady = false;
-        }
-        if (!aiReady)
-          for (const rule of input.settings.rules) {
-            rule.useAi = false;
-            rule.autoAccept = false;
-          }
-        for (const rule of input.settings.rules) {
-          const previous = current.state.settings.rules.find((item) => item.id === rule.id);
-          const cursorId = (item: { kind: 'group' | 'private'; chatId: string | null }) =>
-            item.chatId ? (item.kind === 'private' ? `private:${item.chatId}` : item.chatId) : null;
-          const nextCursorId = cursorId(rule);
-          const previousCursorId = previous ? cursorId(previous) : null;
-          const resetCursor =
-            Boolean(nextCursorId) &&
-            (!previous ||
-              previousCursorId !== nextCursorId ||
-              previous.kind !== rule.kind ||
-              (!previous.includeSelf && rule.includeSelf));
-          if (resetCursor)
-            current.state.sync = current.state.sync.filter(
-              (cursor) => cursor.chatId !== nextCursorId && cursor.chatId !== previousCursorId,
-            );
-        }
-        current.state.settings = input.settings;
-        await active.saveMessageInbox(current.state, input.revision);
+        await messageServiceFor(active).saveSettings(input.settings, input.revision);
         return send(res, 200, { saved: true });
       }
       if (url.pathname === '/api/messages/analyze' && req.method === 'POST') {
@@ -355,222 +312,20 @@ const server = http.createServer(async (req, res) => {
           .object({ message: sourceMessageSchema, revision: z.string().nullable() })
           .strict()
           .parse(await body(req));
-        if (analyzingMessages.has(active))
-          throw new VaultError('已有消息正在分析，请稍后再试', 409);
-        analyzingMessages.add(active);
-        try {
-          const current = await active.messageInbox();
-          if (current.revision !== input.revision)
-            throw new VaultError('规则已更改，请刷新后重试', 409);
-          if (!matchMessage(current.state.settings, input.message))
-            return send(res, 200, { message: '未命中已启用的会话规则，没有发送给 AI 模型' });
-          const fingerprint = messageFingerprint(input.message);
-          const sourceKey = messageKey(input.message);
-          const cutoff = Date.now() - 7 * 86400000;
-          current.state.seen = current.state.seen.filter((s) => Date.parse(s.at) >= cutoff);
-          const alreadySeen = current.state.seen.some(
-            (s) => s.fingerprint === fingerprint || Boolean(sourceKey && s.messageId === sourceKey),
-          );
-          const alreadyPending = current.state.candidates.some(
-            (c) =>
-              c.fingerprint === fingerprint ||
-              Boolean(sourceKey && messageKey(c.source) === sourceKey),
-          );
-          if (alreadySeen || alreadyPending)
-            return send(res, 200, { message: '这条消息已处理或已在待确认列表中' });
-          if (current.state.candidates.length >= 100)
-            throw new VaultError('请先处理待确认消息（最多 100 条）');
-          const rule = current.state.settings.rules.find((r) => r.id === input.message.ruleId)!;
-          const { config, profile, key } = await activeAi();
-          const label = aiDefaults[config.provider].label;
-          if (!key) throw new VaultError(`请先在“会话与识别设置”保存 ${label} API 密钥`);
-          let ai: AiSettings;
-          try {
-            ai = normalizeAiSettings({
-              provider: config.provider,
-              baseUrl: profile.baseUrl,
-              model: profile.model,
-              jsonMode: profile.jsonMode,
-            });
-          } catch (error) {
-            throw new VaultError(
-              `${label} 设置无效：${error instanceof Error ? error.message : '请检查接口地址和模型'}`,
-              400,
-            );
-          }
-          const workspace = await active.scan();
-          const catalog = workspace.entries.flatMap(({ data: p }) =>
-            p.type === 'project' && !p.completedAt
-              ? [
-                  {
-                    id: p.id,
-                    title: p.title,
-                    lines: workspace.entries.flatMap(({ data: l }) =>
-                      l.type === 'workline' && l.projectId === p.id && !l.completedAt
-                        ? [{ id: l.id, title: l.title }]
-                        : [],
-                    ),
-                  },
-                ]
-              : [],
-          );
-          const lineTitle = (lineId: string) => {
-            const entry = workspace.entries.find(({ data }) => data.id === lineId);
-            return entry?.data.type === 'workline' ? entry.data.title : '';
-          };
-          const milestones = new Map(
-            workspace.entries.flatMap(({ data }) =>
-              data.type === 'milestone' ? [[data.id, data] as const] : [],
-            ),
-          );
-          const existing = workspace.entries
-            .flatMap(({ data }): ExistingMessageItem[] => {
-              if (data.type === 'milestone' && !data.pool && !data.completedAt)
-                return [
-                  {
-                    id: data.id,
-                    type: 'milestone' as const,
-                    title: data.title,
-                    dueDate: data.dueDate,
-                    dueTime: data.dueTime,
-                    location: data.location ?? null,
-                    lineTitle: lineTitle(data.lineId),
-                  },
-                ];
-              if (data.type === 'todo' && !data.completedAt) {
-                const milestone = milestones.get(data.milestoneId);
-                return [
-                  {
-                    id: data.id,
-                    type: 'todo' as const,
-                    title: data.title,
-                    dueDate: data.dueDate,
-                    dueTime: null,
-                    location: null,
-                    lineTitle: milestone ? lineTitle(milestone.lineId) : '',
-                  },
-                ];
-              }
-              return [];
-            })
-            .slice(0, 120);
-          const projectEntry = rule.projectId
-            ? workspace.entries.find(
-                (e) => e.data.id === rule.projectId && e.data.type === 'project',
-              )
-            : undefined;
-          const projectData = projectEntry?.data;
-          if (
-            rule.projectId &&
-            (!projectData || projectData.type !== 'project' || projectData.completedAt)
-          )
-            throw new VaultError('会话限定项目已删除或结束，请先修改会话设置');
-          const defaultLineEntry = rule.lineId
-            ? workspace.entries.find((e) => e.data.id === rule.lineId && e.data.type === 'workline')
-            : undefined;
-          const defaultLineData = defaultLineEntry?.data;
-          if (
-            rule.lineId &&
-            (!defaultLineData || defaultLineData.type !== 'workline' || defaultLineData.completedAt)
-          )
-            throw new VaultError('会话默认业务线已删除或结束，请先修改会话设置');
-          if (defaultLineData?.type === 'workline') {
-            const parent = workspace.entries.find((e) => e.data.id === defaultLineData.projectId);
-            const parentData = parent?.data;
-            if (!parentData || parentData.type !== 'project' || parentData.completedAt)
-              throw new VaultError('会话默认业务线所在项目已结束，请先修改会话设置');
-            if (rule.projectId && defaultLineData.projectId !== rule.projectId)
-              throw new VaultError('会话默认业务线与限定项目不一致，请先修改会话设置');
-          }
-          const scopedCatalog = rule.projectId
-            ? catalog.filter((p) => p.id === rule.projectId)
-            : catalog;
-          const defaultLineTitle =
-            rule.lineId && defaultLineData?.type === 'workline' ? defaultLineData.title : null;
-          const defaultLine = defaultLineTitle ? { title: defaultLineTitle } : null;
-          const projectScope =
-            !rule.lineId && projectData?.type === 'project'
-              ? { id: projectData.id, title: projectData.title }
-              : null;
-          const suggestions = dropNoopChanges(
-            await analyzeMessage(input.message, current.state.settings, key, fetch, {
-              catalog: rule.lineId ? [] : scopedCatalog,
-              defaultLine,
-              projectScope,
-              existing,
-              ai,
-            }),
-            existing,
-          );
-          const actionable = mergeSameTitle(
-            suggestions.filter((s) => s.kind !== 'ignore'),
-            existing,
-          );
-          if (current.state.candidates.length + actionable.length > 100)
-            throw new VaultError(
-              '本条通知包含多个事项，待确认列表空间不足；请先处理已有事项后重试，本次未保存',
-            );
-          const at = new Date().toISOString();
-          current.state.seen = [
-            ...current.state.seen,
-            { fingerprint, at, messageId: sourceKey ?? undefined },
-          ].slice(-500);
-          const added: { id: string; suggestion: (typeof actionable)[number] }[] = [];
-          for (const suggestion of actionable) {
-            const candidate = {
-              id: randomUUID(),
-              fingerprint,
-              raw: false,
-              source: input.message,
-              suggestion,
-              conversation: rule.name,
-              projectId: rule.projectId,
-              lineId: rule.lineId,
-              receivedAt: at,
-            };
-            current.state.candidates.push(candidate);
-            added.push({ id: candidate.id, suggestion });
-          }
-          await active.saveMessageInbox(current.state, input.revision);
-          if (rule.autoAccept && added.length) {
-            let fresh = await active.messageInbox();
-            let revision = fresh.revision;
-            let accepted = 0;
-            let failed = 0;
-            for (const item of added) {
-              if (!['task', 'event'].includes(item.suggestion.kind)) continue;
-              try {
-                await active.acceptMessage(item.id, revision, rule.lineId ?? '', item.suggestion);
-                accepted += 1;
-                fresh = await active.messageInbox();
-                revision = fresh.revision;
-              } catch {
-                failed += 1;
-              }
-            }
-            return send(res, 200, {
-              message: `已自动加入 ${accepted} 项计划${
-                added.length - accepted ? `，${added.length - accepted} 项仍待确认` : ''
-              }${failed ? `（${failed} 项自动加入失败）` : ''}`,
-            });
-          }
-          return send(res, 200, {
-            message: !actionable.length
-              ? `未生成事项：${suggestions.map((s) => s.reason).join('；')}`
-              : `已生成 ${actionable.length} 项待确认事项，请分别核对日期与适用对象，尚未加入日程`,
-          });
-        } finally {
-          analyzingMessages.delete(active);
-        }
+        return send(
+          res,
+          200,
+          await intakeServiceFor(active).receive(input.message, input.revision),
+        );
       }
       if (url.pathname === '/api/messages/dismiss' && req.method === 'POST') {
         const input = z
           .object({ id: z.string().uuid(), revision: z.string().nullable() })
           .strict()
           .parse(await body(req));
-        const current = await active.messageInbox();
+        const current = await messageServiceFor(active).messageInbox();
         current.state.candidates = current.state.candidates.filter((c) => c.id !== input.id);
-        await active.saveMessageInbox(current.state, input.revision);
+        await messageServiceFor(active).saveMessageInbox(current.state, input.revision);
         return send(res, 200, { dismissed: true });
       }
       if (url.pathname === '/api/messages/accept' && req.method === 'POST') {
@@ -587,7 +342,7 @@ const server = http.createServer(async (req, res) => {
         return send(
           res,
           200,
-          await active.acceptMessage(
+          await messageServiceFor(active).acceptMessage(
             input.id,
             input.revision,
             input.lineId,
@@ -605,7 +360,11 @@ const server = http.createServer(async (req, res) => {
           .strict()
           .parse(await body(req));
         try {
-          return send(res, 200, await qqSync.enqueueRaw(input.ruleId, input.text));
+          return send(
+            res,
+            200,
+            await intakeServiceFor(active).enqueueRaw(input.ruleId, input.text),
+          );
         } catch (error) {
           throw new VaultError(error instanceof Error ? error.message : '加入待确认失败', 400);
         }
@@ -616,7 +375,7 @@ const server = http.createServer(async (req, res) => {
           .strict()
           .parse(await body(req));
         try {
-          return send(res, 200, await qqSync.recognize(input.id, input.revision));
+          return send(res, 200, await intakeServiceFor(active).recognize(input.id, input.revision));
         } catch (error) {
           throw new VaultError(error instanceof Error ? error.message : 'AI 识别失败', 400);
         }
@@ -629,42 +388,7 @@ const server = http.createServer(async (req, res) => {
           })
           .strict()
           .parse(await body(req));
-        const current = await active.messageInbox();
-        if (current.revision !== input.revision)
-          throw new VaultError('消息收集已更改，请刷新后重试', 409);
-        const candidates = [...current.state.candidates];
-        if (input.action === 'dismiss') {
-          current.state.candidates = [];
-          await active.saveMessageInbox(current.state, input.revision);
-          return send(res, 200, {
-            message: `已一键忽略 ${candidates.length} 条待确认事项`,
-            dismissed: candidates.length,
-            accepted: 0,
-            failed: 0,
-          });
-        }
-        let accepted = 0;
-        let failed = 0;
-        for (const candidate of candidates) {
-          try {
-            const fresh = await active.messageInbox();
-            await active.acceptMessage(
-              candidate.id,
-              fresh.revision,
-              candidate.lineId ?? '',
-              candidate.suggestion,
-            );
-            accepted += 1;
-          } catch {
-            failed += 1;
-          }
-        }
-        return send(res, 200, {
-          message: `已一键确认 ${accepted} 条${failed ? `，${failed} 条未能确认并保留待确认` : ''}`,
-          accepted,
-          failed,
-          dismissed: 0,
-        });
+        return send(res, 200, await messageServiceFor(active).bulk(input.action, input.revision));
       }
       if (url.pathname === '/api/delete-preview' && req.method === 'POST') {
         const input = z
@@ -730,7 +454,11 @@ const server = http.createServer(async (req, res) => {
               .optional(),
           })
           .parse(await body(req));
-        return send(res, 200, await active.save(input.data, input.revision, input.options));
+        return send(
+          res,
+          200,
+          await workspaceServiceFor(active).saveRecord(input.data, input.revision, input.options),
+        );
       }
       if (url.pathname === '/api/backups' && req.method === 'GET')
         return send(res, 200, await active.backups());
@@ -816,10 +544,13 @@ server.once('error', async (error: NodeJS.ErrnoException) => {
   process.exit(1);
 });
 server.listen(port, '127.0.0.1', () => {
-  console.log(
-    `ATLAS ready: ${origin}\nChoose an existing Vault in the browser. No existing notes are migrated.`,
-  );
-  qqSync.restart();
+  restoring = restoreConnection();
+  void restoring.then(() => {
+    console.log(
+      `ATLAS ready: ${origin}\n${vault ? 'Restored the last workspace.' : 'Choose an existing Vault in the browser.'}`,
+    );
+    qqSync.restart();
+  });
 });
 let stopping = false;
 const shutdown = async () => {
@@ -827,6 +558,7 @@ const shutdown = async () => {
   stopping = true;
   qqSync.stop();
   server.close();
+  await restoring;
   await vault?.close();
   await vite?.close();
   process.exit(0);

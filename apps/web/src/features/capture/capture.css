@@ -1,0 +1,62 @@
+.quick-capture {
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+}
+.quick-capture-controls {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr) minmax(0, 1fr);
+  align-items: end;
+  gap: 10px;
+}
+.quick-capture-controls .field {
+  margin: 0;
+  min-width: 0;
+}
+.quick-capture input,
+.quick-capture select,
+.quick-capture textarea {
+  min-width: 0;
+  width: 100%;
+}
+@media (max-width: 600px) {
+  .quick-capture-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .quick-capture-controls > .field:last-child {
+    grid-column: 1 / -1;
+  }
+}
+.compact-capture .quick-capture-controls {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+.compact-capture .quick-capture-controls > .field {
+  flex: 1;
+  min-width: 0;
+}
+
+.capture-recognition-heading {
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  margin-bottom: 12px;
+}
+.compact-capture .quick-capture-paste {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.compact-capture .quick-capture-paste .field {
+  margin-bottom: 8px;
+}
+.compact-capture .quick-capture-paste textarea {
+  min-height: 72px;
+  height: 72px;
+}
+.compact-capture > .form-actions {
+  position: sticky;
+  bottom: -16px;
+  padding: 12px 0;
+  margin-top: 12px;
+  background: var(--paper);
+}

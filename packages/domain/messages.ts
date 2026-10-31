@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { day } from './index';
+import { planDestinationSchema as destinationSchema } from './business';
 
 const terms = z.array(z.string().trim().min(1).max(100)).max(30);
 export const aiProviders = ['deepseek', 'openai', 'custom'] as const;
@@ -82,37 +83,14 @@ export const sourceMessageSchema = z
     fromSelf: z.boolean().default(false),
   })
   .strict();
-export const destinationSchema = z.discriminatedUnion('kind', [
-  z
-    .object({
-      kind: z.literal('existing'),
-      lineId: z.string().uuid(),
-      reason: z.string().max(1000),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('newLine'),
-      projectId: z.string().uuid(),
-      lineTitle: z.string().trim().min(1).max(300),
-      reason: z.string().max(1000),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('newProject'),
-      projectTitle: z.string().trim().min(1).max(300),
-      lineTitle: z.string().trim().min(1).max(300),
-      reason: z.string().max(1000),
-    })
-    .strict(),
-]);
-export type MessageDestination = z.infer<typeof destinationSchema>;
-export type MessageCatalog = {
-  id: string;
-  title: string;
-  lines: { id: string; title: string }[];
-}[];
+export {
+  planDestinationSchema as destinationSchema,
+  resolvePlanDestination as fallbackDestination,
+} from './business';
+export type {
+  PlanDestination as MessageDestination,
+  BusinessCatalog as MessageCatalog,
+} from './business';
 export const suggestionSchema = z
   .object({
     kind: z.enum(['task', 'event', 'change', 'cancel', 'ignore']),
@@ -237,38 +215,4 @@ export function matchMessage(settings: MessageSettings, message: SourceMessage) 
         keyword: contains(rule.keywords),
       })[c],
   );
-}
-
-// When the model gives no usable affiliation, derive one from the item itself so
-// the user never has to choose or type a project/line just to file a message.
-export function fallbackDestination(
-  title: string,
-  context: string,
-  catalog: MessageCatalog,
-  projectId: string | null = null,
-): MessageDestination {
-  const clean = (value: string) => value.replace(/[\r\n]+/g, ' ').trim();
-  const normalize = (value: string) => value.normalize('NFKC').toLowerCase();
-  const text = normalize(`${title}\n${context}`);
-  const lineTitle = clean(title).slice(0, 300) || '待整理';
-  const scoped = projectId ? catalog.find((item) => item.id === projectId) : undefined;
-  const project = scoped ?? catalog.find((item) => text.includes(normalize(item.title)));
-  if (project) {
-    const line = project.lines.find((item) => text.includes(normalize(item.title)));
-    if (line) return { kind: 'existing', lineId: line.id, reason: '按消息内容匹配现有业务线' };
-    return {
-      kind: 'newLine',
-      projectId: project.id,
-      lineTitle,
-      reason: scoped
-        ? `按消息内容在限定项目「${project.title}」下新建业务线`
-        : `按消息内容在「${project.title}」下新建业务线`,
-    };
-  }
-  return {
-    kind: 'newProject',
-    projectTitle: lineTitle.slice(0, 60),
-    lineTitle,
-    reason: '按消息内容新建项目与业务线',
-  };
 }

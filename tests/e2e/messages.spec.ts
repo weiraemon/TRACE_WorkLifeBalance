@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -8,26 +8,34 @@ import { connect, seed, refresh, snapshot, notes, headers } from './helpers';
 import { emptyInbox } from '../../packages/domain/messages';
 import { writeInboxText } from '../../apps/local-service/src/sync/message-store';
 
+async function openSync(page: Page, kind: 'QQ' | '微信') {
+  await page.getByRole('button', { name: '备份', exact: true }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: kind + '同步设置', exact: true })
+    .click();
+}
+
 test('消息规则、AI 提供商、QQ 项目范围与计划入库', async ({ page }) => {
   await fs.rm('.test-vault/app-config', { recursive: true, force: true });
   await connect(page);
   const { project, line } = await seed(page);
   await refresh(page);
-  await page.getByRole('button', { name: 'QQ同步设置', exact: true }).click();
+  await openSync(page, 'QQ');
   const dialog = page.getByRole('dialog');
   await expect(dialog).toContainText('支持本机 QQ 自动同步');
   await dialog.getByRole('button', { name: 'QQ手动同步', exact: true }).click();
   await expect(dialog.getByRole('button', { name: '开始手动同步', exact: true })).toBeVisible();
   await dialog.getByRole('button', { name: '关闭对话框', exact: true }).click();
 
-  await page.getByRole('button', { name: '微信同步设置', exact: true }).click();
+  await openSync(page, '微信');
   const wechat = page.getByRole('dialog');
   await expect(wechat).toContainText('微信同步尚未接入');
   await wechat.getByRole('button', { name: '微信手动同步', exact: true }).click();
   await expect(wechat.getByRole('button', { name: '开始手动同步', exact: true })).toBeDisabled();
   await wechat.getByRole('button', { name: '关闭对话框', exact: true }).click();
 
-  await page.getByRole('button', { name: 'QQ同步设置', exact: true }).click();
+  await openSync(page, 'QQ');
   await dialog.getByRole('button', { name: '模型设置', exact: true }).click();
 
   // AI provider settings and per-provider keys persist in the app config file.
@@ -86,7 +94,7 @@ test('消息规则、AI 提供商、QQ 项目范围与计划入库', async ({ pa
   await dialog.getByRole('button', { name: '展开详细', exact: true }).click();
   await expect(dialog.getByLabel('会话名称')).toHaveValue('年级通知');
   await dialog.getByRole('button', { name: '关闭对话框', exact: true }).click();
-  await page.getByRole('button', { name: 'QQ同步设置', exact: true }).click();
+  await openSync(page, 'QQ');
   await dialog.getByRole('button', { name: '会话规则设置', exact: true }).click();
   await expect(dialog.getByLabel('会话名称')).toHaveValue('年级通知');
   await expect(dialog.getByLabel('限定项目（可选）')).toHaveValue(project.data.id);
@@ -100,7 +108,7 @@ test('消息规则、AI 提供商、QQ 项目范围与计划入库', async ({ pa
   await dialog.getByRole('button', { name: '保存所有规则', exact: true }).click();
   await expect(dialog).toContainText('所有规则已保存');
   await dialog.getByRole('button', { name: '关闭对话框', exact: true }).click();
-  await page.getByRole('button', { name: 'QQ同步设置', exact: true }).click();
+  await openSync(page, 'QQ');
   await dialog.getByRole('button', { name: '会话规则设置', exact: true }).click();
   await expect(dialog.getByLabel('限定项目（可选）')).toHaveValue(project.data.id);
   await expect(dialog.getByLabel('默认业务线（可选）')).toHaveValue('');
@@ -185,7 +193,7 @@ test('消息规则、AI 提供商、QQ 项目范围与计划入库', async ({ pa
   );
   const file = path.join(current.root, '.atlas/qq-inbox.md');
   await fs.writeFile(file, writeInboxText(await fs.readFile(file, 'utf8'), state));
-  await page.getByRole('button', { name: 'QQ同步设置', exact: true }).click();
+  await openSync(page, 'QQ');
   await expect(dialog.getByRole('heading', { name: '交登记表', exact: true })).toBeVisible();
   const defaultCard = dialog.locator('article.message-candidate').filter({ hasText: '交登记表' });
   await expect(defaultCard).toContainText('已使用会话默认业务线');
@@ -222,6 +230,13 @@ test('消息规则、AI 提供商、QQ 项目范围与计划入库', async ({ pa
   expect(createdLine).toBeTruthy();
   expect(await notes(page, createdLine!.data.id)).toContain('寒期项目开始申报');
   await page.screenshot({ path: '.test-vault/messages-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 375, height: 900 });
+  await expect(dialog).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: '.test-vault/messages-mobile.png', fullPage: true });
+  await dialog.getByRole('button', { name: '关闭对话框', exact: true }).click();
+  await expect(page.getByRole('region', { name: '做了什么', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'QQ同步设置', exact: true })).toHaveCount(0);
 });
 
 test('会话开启自动加入后，命中消息直接进入计划', async ({ page }) => {
@@ -257,7 +272,7 @@ test('会话开启自动加入后，命中消息直接进入计划', async ({ pa
     await connect(page);
     const { line } = await seed(page);
     await refresh(page);
-    await page.getByRole('button', { name: 'QQ同步设置', exact: true }).click();
+    await openSync(page, 'QQ');
     const dialog = page.getByRole('dialog');
     await dialog.getByRole('button', { name: '模型设置', exact: true }).click();
     await dialog.getByLabel('模型提供商').selectOption('custom');
@@ -279,7 +294,7 @@ test('会话开启自动加入后，命中消息直接进入计划', async ({ pa
     await expect(dialog).toContainText('此规则已保存');
     await dialog.getByRole('button', { name: '关闭对话框', exact: true }).click();
 
-    await page.getByRole('button', { name: 'QQ同步设置', exact: true }).click();
+    await openSync(page, 'QQ');
     const inbox = page.getByRole('dialog');
     await inbox.getByText('粘贴 QQ 消息进行识别', { exact: true }).click();
     await inbox.getByLabel('来源会话').selectOption({ label: '群聊 · 自动测试' });

@@ -1,18 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { hostname } from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { hostname } from 'node:os';
+import { promisify } from 'node:util';
 import { parseDocument, stringify, isMap } from 'yaml';
 import { z } from 'zod';
-import { inboxPath, readInboxText, writeInboxText } from '../sync/message-store';
-import {
-  fallbackDestination,
-  inboxSchema,
-  suggestionSchema,
-  type Inbox,
-  type MessageDestination,
-  type Suggestion,
-} from '../../../../packages/domain/messages';
 import {
   parseRecord,
   validateChange,
@@ -50,6 +43,49 @@ export class VaultError extends Error {
   }
 }
 export const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
+const execute = promisify(execFile);
+const lockSchema = z.object({
+  pid: z.number().int().positive(),
+  token: z.string().uuid(),
+  host: z.string().optional(),
+  hostname: z.string().optional(),
+  startedAt: z.string().nullable().optional(),
+});
+let ownProcessStart: Promise<string | null> | undefined;
+async function processStart(pid: number): Promise<string | null> {
+  try {
+    if (process.platform === 'win32') {
+      const { stdout } = await execute(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().ToString('o')`,
+        ],
+        { windowsHide: true, timeout: 5000 },
+      );
+      return stdout.trim() || null;
+    }
+    if (process.platform === 'linux') {
+      const stat = await fs.readFile(`/proc/${pid}/stat`, 'utf8');
+      return (
+        (await fs.readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim() +
+        ':' +
+        stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]
+      );
+    }
+  } catch {}
+  return null;
+}
+function processExists(pid: number) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
+  }
+}
 const slash = (value: string) => value.split(path.sep).join('/');
 const ignored = new Set(['.git', '.obsidian', '.atlas', 'node_modules']);
 const frontmatter = /^(\uFEFF?---\r?\n)([\s\S]*?)(^---(?:\r?\n|$))/m;
@@ -70,8 +106,8 @@ const changesSchema = z
       .strict(),
   )
   .max(10000);
-type FileChange = z.infer<typeof changesSchema>[number];
-async function readText(filename: string) {
+export type FileChange = z.infer<typeof changesSchema>[number];
+export async function readText(filename: string) {
   const bytes = await fs.readFile(filename);
   try {
     return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
@@ -139,83 +175,61 @@ export class Vault {
     const vault = new Vault(root);
     await vault.safe('.atlas', true);
     await fs.mkdir(path.join(root, '.atlas'), { recursive: true });
-    await vault.acquireLock();
+    const lockPath = await vault.safe('.atlas/service.lock', true);
+    const startedAt = await (ownProcessStart ??= processStart(process.pid));
+    const owner = JSON.stringify({
+      pid: process.pid,
+      token: vault.lockToken,
+      host: hostname(),
+      startedAt,
+    });
+    let acquired = false;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await fs.writeFile(lockPath, owner, { flag: 'wx' });
+        acquired = true;
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      }
+      try {
+        const source = await fs.readFile(await vault.safe('.atlas/service.lock'), 'utf8');
+        const parsed = lockSchema.safeParse(JSON.parse(source));
+        if (!parsed.success)
+          throw new VaultError('进程锁内容无法识别，请核实 .atlas/service.lock；未自动删除', 409);
+        const lock = parsed.data;
+        const lockHost = lock.host ?? lock.hostname;
+        if (lockHost && lockHost !== hostname())
+          throw new VaultError('工作目录的锁来自另一台电脑，请先确认该服务已关闭', 409);
+        if (processExists(lock.pid)) {
+          const currentStart = lock.pid === process.pid ? startedAt : await processStart(lock.pid);
+          const reusedPid = lock.startedAt && currentStart && lock.startedAt !== currentStart;
+          const oldLock =
+            !lock.startedAt &&
+            currentStart &&
+            process.platform === 'win32' &&
+            Date.parse(currentStart) > (await fs.stat(lockPath)).mtimeMs + 1000;
+          if (!reusedPid && !oldLock && processExists(lock.pid))
+            throw new VaultError('Vault 已由一个 ATLAS 服务打开，请关闭该服务后重试', 409);
+        }
+        // 回收前再次核对，避免移除检查期间其他服务换上的锁。
+        if ((await fs.readFile(await vault.safe('.atlas/service.lock'), 'utf8')) !== source)
+          continue;
+        await fs.unlink(lockPath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        if (error instanceof SyntaxError)
+          throw new VaultError('进程锁内容损坏，请核实 .atlas/service.lock；未自动删除', 409);
+        throw error;
+      }
+    }
+    if (!acquired) throw new VaultError('工作目录正在被其他服务连接，请稍后重试', 409);
     try {
       await vault.resumeChanges();
       return vault;
     } catch (error) {
       await vault.close();
       throw error;
-    }
-  }
-  private async acquireLock() {
-    const busy = () =>
-      new VaultError(
-        '工作目录已由一个 CHAOS 服务打开，或无法确认旧锁是否失效。请先关闭其他启动窗口后重试；不要删除仍在使用的锁文件。',
-        409,
-      );
-    const writeLock = async () =>
-      fs.writeFile(
-        await this.safe('.atlas/service.lock', true),
-        JSON.stringify({ pid: process.pid, token: this.lockToken, hostname: hostname() }),
-        { flag: 'wx' },
-      );
-    try {
-      await writeLock();
-      return;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-    }
-    // Serialize stale-lock recovery so two starters cannot remove each other's new lock.
-    const guardPath = await this.safe('.atlas/service-lock-recovery', true);
-    let guard;
-    try {
-      guard = await fs.open(guardPath, 'wx');
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw busy();
-      throw error;
-    }
-    try {
-      const lockPath = await this.safe('.atlas/service.lock', true);
-      let contents: string | undefined;
-      try {
-        contents = await fs.readFile(lockPath, 'utf8');
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      }
-      if (contents !== undefined) {
-        let lock;
-        try {
-          lock = JSON.parse(contents);
-        } catch {
-          throw busy();
-        }
-        if (
-          !lock ||
-          !Number.isSafeInteger(lock.pid) ||
-          lock.pid <= 0 ||
-          (lock.hostname && lock.hostname !== hostname())
-        )
-          throw busy();
-        try {
-          process.kill(lock.pid, 0);
-          throw busy();
-        } catch (error) {
-          // Only ESRCH proves the owner is gone; permission errors are not proof.
-          if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw busy();
-        }
-        if ((await fs.readFile(lockPath, 'utf8')) !== contents) throw busy();
-        await fs.unlink(lockPath);
-      }
-      try {
-        await writeLock();
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw busy();
-        throw error;
-      }
-    } finally {
-      await guard.close();
-      await fs.unlink(guardPath);
     }
   }
   async close() {
@@ -519,7 +533,12 @@ export class Vault {
     }
     return changes;
   }
-  async save(input: unknown, revision?: string, options: SaveOptions = {}): Promise<Entry> {
+  async save(
+    input: unknown,
+    revision?: string,
+    options: SaveOptions = {},
+    companions: FileChange[] = [],
+  ): Promise<Entry> {
     return this.serialized(async () => {
       let data = parseRecord(input);
       const settings = saveOptionsSchema.parse(options);
@@ -672,16 +691,37 @@ export class Vault {
       }
       for (const item of settings.newItems) changed.set(item.id, parseRecord(item));
       if (data.type === 'actual') {
-        const linkedIds = data.itemIds;
+        const itemIds = data.itemIds;
+        const linkedIds = [...itemIds, ...data.milestoneIds];
         if (
-          settings.newItems.some((r) => !linkedIds.includes(r.id)) ||
+          settings.newItems.some((r) => !itemIds.includes(r.id)) ||
           settings.completeIds.some((id) => !linkedIds.includes(id))
         )
           throw new VaultError('新条目和本次完成必须关联到这段实际工作');
-        for (const id of settings.completeIds) {
+        for (const id of new Set(settings.completeIds)) {
           const item = changed.get(id) ?? snapshot.entries.find((e) => e.data.id === id)?.data;
-          if (item?.type !== 'todo') throw new VaultError('完成条目不存在');
-          changed.set(id, { ...item, completedAt: item.completedAt ?? now, updatedAt: now });
+          if (item?.type === 'milestone') {
+            if (item.pool) throw new VaultError('待办池不完成');
+            const children = [
+              ...snapshot.entries.map((entry) => changed.get(entry.data.id) ?? entry.data),
+              ...settings.newItems,
+            ].filter(
+              (record): record is Todo => record.type === 'todo' && record.milestoneId === id,
+            );
+            for (const child of children)
+              changed.set(child.id, {
+                ...child,
+                completedAt: child.completedAt ?? now,
+                updatedAt: now,
+              });
+            changed.set(id, {
+              ...item,
+              completedAt: children.length ? null : (item.completedAt ?? now),
+              updatedAt: now,
+            });
+          } else if (item?.type === 'todo') {
+            changed.set(id, { ...item, completedAt: item.completedAt ?? now, updatedAt: now });
+          } else throw new VaultError('完成对象不存在');
         }
       } else if (settings.completeIds.length) throw new VaultError('本次完成只用于实际工作');
       if (
@@ -777,314 +817,46 @@ export class Vault {
         );
       }
       const changes = await this.prepareChanges(snapshot.entries, [...changed.values()], bodies);
-      await this.commitChanges(changes);
+      await this.commitChanges([...changes, ...companions]);
       const result = (await this.scan()).entries.find((e) => e.data.id === data.id);
       if (!result) throw new VaultError('记录已发布但无法读取，请检查诊断', 409);
       return result;
     });
   }
 
-  async messageInbox() {
-    const target = await this.safe(inboxPath, true);
-    let source = '';
-    try {
-      source = await readText(target);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    }
-    return { state: readInboxText(source), revision: source ? hash(source) : null, source };
-  }
-
-  async saveMessageInbox(input: Inbox, revision: string | null) {
+  // Trusted application services may publish related metadata with a business operation.
+  async applyBatch<T>(
+    build: (context: {
+      snapshot: Snapshot;
+      createLineParts: (line: BusinessLine) => RecordData[];
+      notesBody: (line: BusinessLine, bodies: Map<string, string>) => Promise<string>;
+    }) => Promise<{
+      records: RecordData[];
+      bodies?: Map<string, string>;
+      files?: FileChange[];
+      result: T;
+    }>,
+  ): Promise<T> {
     return this.serialized(async () => {
-      const current = await this.messageInbox();
-      if (current.revision !== revision) throw new VaultError('消息收集已更改，请刷新后重试', 409);
-      await this.commitChanges([
-        {
-          path: inboxPath,
-          content: writeInboxText(current.source, inboxSchema.parse(input)),
-          expected: revision,
-        },
-      ]);
-    });
-  }
-
-  async acceptMessage(
-    id: string,
-    revision: string | null,
-    lineId: string,
-    input: Suggestion,
-    projectId: string | null = null,
-  ) {
-    return this.serialized(async () => {
-      const inbox = await this.messageInbox();
-      if (revision !== inbox.revision) throw new VaultError('消息收集已更改，请刷新后重试', 409);
-      const candidate = inbox.state.candidates.find((c) => c.id === id);
-      if (!candidate) throw new VaultError('事项已处理或不存在', 409);
-      const suggestion = suggestionSchema.parse(input);
-      if (suggestion.kind === 'change' || suggestion.kind === 'cancel') {
-        const targetId = suggestion.targetId ?? candidate.suggestion.targetId;
-        if (!targetId) throw new VaultError('未找到要修改的现有事项，请到工作空间核对');
-        const target = (await this.scan()).entries.find((e) => e.data.id === targetId)?.data;
-        if (!target || (target.type !== 'milestone' && target.type !== 'todo'))
-          throw new VaultError('要修改的事项已不存在或类型不支持');
-        if (target.completedAt) throw new VaultError('要修改的事项已完成，请刷新');
-        const now = new Date().toISOString();
-        const records: RecordData[] = [];
-        if (suggestion.kind === 'change') {
-          if (suggestion.completed) {
-            records.push({ ...target, completedAt: now, updatedAt: now });
-            if (target.type === 'milestone') {
-              const snapshot = await this.scan();
-              for (const { data } of snapshot.entries)
-                if (data.type === 'todo' && data.milestoneId === target.id && !data.completedAt)
-                  records.push({ ...data, completedAt: now, updatedAt: now });
-            }
-          } else if (target.type === 'milestone') {
-            records.push({
-              ...target,
-              dueDate: suggestion.dueDate,
-              dueTime: suggestion.dueTime,
-              location: suggestion.location ?? target.location,
-              updatedAt: now,
-            });
-          } else {
-            if (suggestion.dueTime)
-              throw new VaultError('待办没有独立时刻，请修改所属节点或先升为节点');
-            records.push({ ...target, dueDate: suggestion.dueDate, updatedAt: now });
-          }
-        } else {
-          records.push({ ...target, completedAt: now, updatedAt: now });
-          if (target.type === 'milestone') {
-            const snapshot = await this.scan();
-            for (const { data } of snapshot.entries)
-              if (data.type === 'todo' && data.milestoneId === target.id && !data.completedAt)
-                records.push({ ...data, completedAt: now, updatedAt: now });
-          }
-        }
-        const snapshot = await this.scan();
-        inbox.state.candidates = inbox.state.candidates.filter((c) => c.id !== id);
-        const changes = await this.prepareChanges(snapshot.entries, records);
-        changes.push({
-          path: inboxPath,
-          content: writeInboxText(inbox.source, inbox.state),
-          expected: inbox.revision,
-        });
-        await this.commitChanges(changes);
-        return { ids: records.map((record) => record.id) };
-      }
-      if (!['task', 'event'].includes(candidate.suggestion.kind))
-        throw new VaultError('事项类型已变化，请刷新后重试');
       const snapshot = await this.scan();
-      const now = new Date().toISOString();
-      const make = (type: string, fields: object) =>
-        parseRecord({
-          schemaVersion: 1,
-          id: randomUUID(),
-          createdAt: now,
-          updatedAt: now,
-          type,
-          ...fields,
-        });
-      const records: RecordData[] = [];
-      const bodies = new Map<string, string>();
-      const catalog = snapshot.entries.flatMap(({ data: p }) =>
-        p.type === 'project' && !p.completedAt
-          ? [
-              {
-                id: p.id,
-                title: p.title,
-                lines: snapshot.entries.flatMap(({ data: l }) =>
-                  l.type === 'workline' && l.projectId === p.id && !l.completedAt
-                    ? [{ id: l.id, title: l.title }]
-                    : [],
-                ),
-              },
-            ]
-          : [],
-      );
-      let target: MessageDestination | null = suggestion.destination ?? null;
-      const scopedId = projectId ?? candidate.projectId;
-      const scopedProject = scopedId ? catalog.find((p) => p.id === scopedId) : undefined;
-      if (scopedId && !scopedProject)
-        throw new VaultError('会话限定项目已删除或结束，无法创建业务线');
-      const scopeCatalog = scopedProject ? [scopedProject] : catalog;
-      if (scopedProject && target?.kind === 'newProject')
-        target = {
-          kind: 'newLine',
-          projectId: scopedProject.id,
-          lineTitle: target.lineTitle,
-          reason: target.reason,
-        };
-      const lineAvailable = (id: string) => {
-        const entry = snapshot.entries.find((e) => e.data.id === id && e.data.type === 'workline');
-        if (!entry) return false;
-        const data = entry.data;
-        if (data.type !== 'workline' || data.completedAt) return false;
-        const parent = snapshot.entries.find((e) => e.data.id === data.projectId);
-        return Boolean(parent && parent.data.type === 'project' && !parent.data.completedAt);
-      };
-      if (lineId && !lineAvailable(lineId)) lineId = '';
-      if (
-        lineId &&
-        scopedProject &&
-        !scopeCatalog.some((p) => p.lines.some((l) => l.id === lineId))
-      )
-        lineId = '';
-      if (!lineId) {
-        const current = target;
-        const stale =
-          current == null ||
-          (current.kind === 'existing' &&
-            !scopeCatalog.some((p) => p.lines.some((l) => l.id === current.lineId))) ||
-          (current.kind === 'newLine' && !scopeCatalog.some((p) => p.id === current.projectId));
-        if (stale)
-          target = fallbackDestination(
-            suggestion.title,
-            candidate.source.text,
-            scopeCatalog,
-            scopedProject?.id ?? null,
-          );
-      }
-      if (!lineId && target?.kind === 'existing') lineId = target.lineId;
-      if (!lineId && target && target.kind !== 'existing') {
-        const normalize = (s: string) => s.normalize('NFKC').trim().toLowerCase();
-        const cleanTitle = (s: string) => s.replace(/[\r\n]+/g, ' ').trim();
-        const projectTitle = target.kind === 'newProject' ? cleanTitle(target.projectTitle) : '';
-        const lineTitle = cleanTitle(target.lineTitle);
-        if (!lineTitle) throw new VaultError('推荐业务线名称无效，请手动填写');
-        if (target.kind === 'newProject' && !projectTitle)
-          throw new VaultError('推荐项目名称无效，请手动填写');
-        let projectId = target.kind === 'newLine' ? target.projectId : '';
-        if (target.kind === 'newProject') {
-          const matches = snapshot.entries.filter(
-            (e) =>
-              e.data.type === 'project' &&
-              !e.data.completedAt &&
-              normalize(e.data.title) === normalize(projectTitle),
-          );
-          if (matches.length > 1) throw new VaultError('同名项目不唯一，请手动选择业务线');
-          if (matches.length) projectId = matches[0].data.id;
-          else {
-            const project = make('project', { title: projectTitle });
-            records.push(project);
-            projectId = project.id;
-          }
-        }
-        const parent = [...snapshot.entries.map((e) => e.data), ...records].find(
-          (r) => r.id === projectId,
-        );
-        if (parent?.type !== 'project' || parent.completedAt)
-          throw new VaultError('推荐项目已删除或结束，请重新选择归属');
-        const matches = snapshot.entries.filter(
-          (e) =>
-            e.data.type === 'workline' &&
-            !e.data.completedAt &&
-            e.data.projectId === projectId &&
-            normalize(e.data.title) === normalize(lineTitle),
-        );
-        if (matches.length > 1) throw new VaultError('同名业务线不唯一，请手动选择');
-        if (matches.length) lineId = matches[0].data.id;
-        else {
-          const parts = this.createLineParts(
-            make('workline', { title: lineTitle, projectId }) as BusinessLine,
-          );
-          records.push(...parts);
-          const newLine = parts[0] as BusinessLine;
-          lineId = newLine.id;
-          bodies.set(newLine.notesId!, '\n# ' + newLine.title + '\n');
-        }
-      }
-      const working = [
-        ...snapshot.entries,
-        ...records.map((data) => ({ data, path: '', revision: '' })),
-      ];
-      const lines = working.filter((e) => e.data.id === lineId);
-      const line = lines.length === 1 ? lines[0].data : undefined;
-      const project =
-        line?.type === 'workline'
-          ? working.find((e) => e.data.id === line.projectId)?.data
-          : undefined;
-      if (
-        line?.type !== 'workline' ||
-        line.completedAt ||
-        project?.type !== 'project' ||
-        project.completedAt
-      )
-        throw new VaultError('请选择未结束项目中的业务线');
-      const pools = working.filter(
-        (e) => e.data.type === 'milestone' && e.data.lineId === lineId && e.data.pool,
-      );
-      if (pools.length !== 1) throw new VaultError('业务线待办池缺失或重复');
-      let node = pools[0].data as Milestone;
-      if (suggestion.kind === 'event' || suggestion.dueDate) {
-        node = make('milestone', {
-          title: suggestion.title,
-          lineId,
-          dueDate: suggestion.dueDate,
-          dueTime: suggestion.dueTime,
-          tags: suggestion.tags,
-          location: suggestion.location,
-        }) as Milestone;
-        records.push(node);
-      }
-      const titles = suggestion.actions.length
-        ? suggestion.actions
-        : suggestion.kind === 'task'
-          ? [suggestion.title]
-          : [];
-      for (const title of titles)
-        records.push(
-          make('todo', {
-            title,
-            milestoneId: node.id,
-            dueDate: node.pool ? suggestion.dueDate : null,
-          }),
-        );
-      const virtual = [
-        ...snapshot.entries,
-        ...records.map((data) => ({ data, path: '', revision: '' })),
-      ];
-      for (const record of records) validateChange(record, virtual);
-      const original = await this.notesBody(line, snapshot.entries, bodies);
-      // Keep source text once, attached to the node (or the first pool TODO).
-      const quote = (value: string) =>
-        value
-          .replaceAll('<', '&lt;')
-          .replaceAll('>', '&gt;')
-          .split(/\r?\n/)
-          .map((s) => '> ' + s)
-          .join('\n');
-      const source = candidate.source;
-      const label = (value: string) =>
-        value
-          .replace(/[\r\n]+/g, ' ')
-          .replaceAll('<', '&lt;')
-          .replaceAll('>', '&gt;');
-      const location = suggestion.location ? `地点：${label(suggestion.location)}\n\n` : '';
-      const text = `QQ · ${label(candidate.conversation)} · ${label(source.sender)} · ${source.sentAt}\n\n${location}${quote(source.text)}${source.context ? '\n\n相关上下文：\n' + quote(source.context) : ''}`;
-      bodies.set(
-        line.notesId!,
-        appendComment(
-          original,
-          node,
-          node.pool ? (records.find((r) => r.type === 'todo') as Todo) : undefined,
-          {
-            id: candidate.id,
-            text,
-            date: localDay(),
-          },
-        ),
-      );
-      inbox.state.candidates = inbox.state.candidates.filter((c) => c.id !== id);
-      const changes = await this.prepareChanges(snapshot.entries, records, bodies);
-      changes.push({
-        path: inboxPath,
-        content: writeInboxText(inbox.source, inbox.state),
-        expected: inbox.revision,
+      if (snapshot.issues.length) throw new VaultError('工作目录存在诊断，请先处理后再写入', 409);
+      const batch = await build({
+        snapshot,
+        createLineParts: (line) => this.createLineParts(line),
+        notesBody: (line, bodies) => this.notesBody(line, snapshot.entries, bodies),
       });
-      await this.commitChanges(changes);
-      return { ids: records.map((r) => r.id) };
+      const changed = new Map(batch.records.map((record) => [record.id, record]));
+      if (changed.size !== batch.records.length) throw new VaultError('批次包含重复 ID', 409);
+      const virtual = [
+        ...snapshot.entries.filter((entry) => !changed.has(entry.data.id)),
+        ...batch.records.map((data) => ({ data, path: '', revision: '' })),
+      ];
+      for (const record of batch.records) validateChange(parseRecord(record), virtual);
+      await this.commitChanges([
+        ...(await this.prepareChanges(snapshot.entries, batch.records, batch.bodies)),
+        ...(batch.files ?? []),
+      ]);
+      return batch.result;
     });
   }
 

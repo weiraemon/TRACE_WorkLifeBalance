@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { connect, seed, write, refresh, nav, snapshot, notes, headers, localDay } from './helpers';
-import { recordContract } from '../../packages/domain/index';
+import { recordContract, weekStart } from '../../packages/domain/index';
 
 test.beforeEach(async ({ page }) => connect(page));
 const day = (offset: number) => {
@@ -224,20 +224,77 @@ test('静蓝主题覆盖各页并记住选择，切换不改变数据或重要�
   expect((await palette()).background).toBe('rgb(248, 246, 239)');
 });
 
-test('清理后的周复盘表单仍可创建与编辑', async ({ page }) => {
+test('回顾可视化展示投入与计划实际，时间线点击拖动和右键均不写入数据', async ({ page }) => {
+  const { node, todo } = await seed(page);
+  await write(page, 'actual', {
+    date: localDay(),
+    startTime: '09:00',
+    endTime: '10:00',
+    description: '比较两种方案',
+    milestoneIds: [node.data.id],
+    itemIds: [todo.data.id],
+  });
+  await write(page, 'review', {
+    week: weekStart(localDay()),
+    mainline: '论文研究',
+    outcomes: '完成本周重点',
+    nextWeek: '验证结论',
+  });
+  await refresh(page);
+  const yesterday = new Date(localDay() + 'T12:00:00');
+  yesterday.setDate(yesterday.getDate() - 1);
+  await write(page, 'actual', {
+    date: localDay(yesterday),
+    startTime: '21:00',
+    endTime: '22:00',
+    description: '前日跨夜前记录',
+  });
+  await refresh(page);
+  const before = (await snapshot(page)).entries;
+  let mutations = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && /api\/(records|content|move)/.test(request.url()))
+      mutations++;
+  });
   await nav(page, '回顾');
-  await page.getByRole('button', { name: '写周复盘', exact: true }).click();
-  const dialog = page.getByRole('dialog');
-  await dialog.getByLabel('本周进展', { exact: true }).fill('完成本周重点');
-  await dialog.getByText('再多写一点（可选）', { exact: true }).click();
-  await dialog.getByLabel('本周主线', { exact: true }).fill('论文研究');
-  await dialog.getByLabel('下周继续什么', { exact: true }).fill('验证结论');
-  await dialog.getByRole('button', { name: '保存到 Vault', exact: true }).click();
-  await expect(dialog).toHaveCount(0);
-  await page.locator('.review-note').click();
-  await expect(dialog.getByLabel('本周进展', { exact: true })).toHaveValue('完成本周重点');
-  await dialog.getByLabel('本周进展', { exact: true }).fill('补充本周结果');
-  await dialog.getByRole('button', { name: '保存到 Vault', exact: true }).click();
-  await expect(page.locator('.review-note')).toContainText('补充本周结果');
-  expect((await snapshot(page)).entries.filter((e) => e.data.type === 'review')).toHaveLength(1);
+  await expect(page.getByRole('region', { name: '本周概况', exact: true })).toContainText('2.0');
+  await expect(page.locator('.review-note')).toContainText('完成本周重点');
+  await expect(page.getByRole('button', { name: '写周复盘', exact: true })).toHaveCount(0);
+  const timeline = page.getByRole('region', { name: '计划与实际', exact: true });
+  await expect(timeline).toContainText('比较两种方案');
+  const records = page.getByRole('region', { name: '回顾实际记录', exact: true });
+  await expect(records).toContainText('比较两种方案');
+  await expect(timeline).toContainText('方案会议');
+  await expect(timeline.locator('[data-space-id]')).toHaveCount(0);
+  await expect(timeline.locator('.fc-event-resizer')).toHaveCount(0);
+  const event = timeline.locator('.actual-content');
+  await event.click();
+  await event.click({ button: 'right' });
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  const bounds = await event.boundingBox();
+  await page.mouse.move(bounds!.x + 10, bounds!.y + 15);
+  await page.mouse.down();
+  await page.mouse.move(bounds!.x + 10, bounds!.y + 85, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await records
+    .getByRole('button', { name: `${localDay(yesterday)} · 1.0 h`, exact: true })
+    .click();
+  await expect(records).toContainText('前日跨夜前记录');
+  await timeline.locator('.timeline-scroll').scrollIntoViewIfNeeded();
+  await expect(timeline.locator('.actual-content')).toBeInViewport();
+  await nav(page, '今日');
+  await expect(page.getByLabel('查看日期', { exact: true })).toHaveValue(localDay());
+  await expect(page.locator('.capture-date')).toContainText(localDay());
+  await nav(page, '回顾');
+  await expect(page.getByLabel('回顾日期', { exact: true })).toHaveValue(localDay(yesterday));
+  await page.getByLabel('回顾日期', { exact: true }).fill(localDay());
+  expect(mutations).toBe(0);
+  expect((await snapshot(page)).entries).toEqual(before);
+  await page.getByRole('heading', { name: '回顾', exact: true }).click();
+  await page.screenshot({ path: '.test-vault/review-visual-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 375, height: 900 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: '.test-vault/review-visual-mobile.png', fullPage: true });
 });

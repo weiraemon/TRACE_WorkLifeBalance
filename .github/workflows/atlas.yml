@@ -13,6 +13,8 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
+      - name: Business and adapter dependency boundaries
+        run: npm run check:architecture
       - name: Unit and integration tests
         run: npm test
       - name: Type check and build

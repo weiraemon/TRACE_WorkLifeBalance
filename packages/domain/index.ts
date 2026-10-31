@@ -1,5 +1,5 @@
 import { z } from 'zod';
-export const recordContract = 'atlas-lines-24';
+export const recordContract = 'atlas-lines-25';
 export const noteKinds = ['note', 'idea', 'meeting', 'draft'] as const;
 export const noteKindLabel = { note: '笔记', idea: '灵感', meeting: '纪要', draft: '待细化' };
 export const noteTagSchema = z

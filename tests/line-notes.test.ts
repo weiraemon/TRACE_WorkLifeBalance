@@ -392,3 +392,125 @@ it('同一服务重新连接可以恢复未完成操作；外部修改时停止�
   expect((await vault.scan()).issues).toEqual([]);
   expect((await vault.readContent(todo.data.id)).body).toContain('不能丢失的批注');
 });
+
+it('实际记录可明确完成无条目的会议，单纯关联不完成，编辑后仍保留一段时间', async () => {
+  const { vault, write, record, line, latest } = await setup();
+  const leaf = await write('milestone', {
+    title: '临时会议',
+    lineId: line.data.id,
+    dueDate: '2026-10-25',
+  });
+  const notes = (await vault.readContent(line.data.id)).body;
+  const actual = await vault.save(
+    record('actual', {
+      date: '2026-10-25',
+      startTime: '14:00',
+      endTime: '15:00',
+      description: '参加会议',
+      milestoneIds: [leaf.data.id],
+    }),
+  );
+  expect((await latest(leaf)).data).toHaveProperty('completedAt', null);
+  await vault.save(actual.data, actual.revision, { completeIds: [leaf.data.id] });
+  expect(isComplete((await latest(leaf)).data, (await vault.scan()).entries)).toBe(true);
+  expect((await vault.scan()).entries.filter((e) => e.data.type === 'actual')).toHaveLength(1);
+  expect((await vault.readContent(line.data.id)).body).toBe(notes);
+});
+
+it('实际中完成会议会完成全部 TODO/IDEA（含本次新增），保留已完成时间且不结束业务线', async () => {
+  const { vault, record, node, todo, idea, line, latest } = await setup();
+  await vault.save(todo.data, todo.revision, { completion: true });
+  const completedAt = ((await latest(todo)).data as Todo).completedAt;
+  const draft = record('todo', {
+    title: '新探索',
+    kind: 'idea',
+    milestoneId: node.data.id,
+  }) as Todo;
+  const notes = (await vault.readContent(line.data.id)).body;
+  await vault.save(
+    record('actual', {
+      date: '2026-10-25',
+      startTime: '14:00',
+      endTime: '15:00',
+      description: '收敛会议',
+      milestoneIds: [node.data.id],
+      itemIds: [draft.id],
+    }),
+    undefined,
+    { newItems: [draft], completeIds: [node.data.id, draft.id] },
+  );
+  const state = await vault.scan();
+  for (const id of [todo.data.id, idea.data.id, draft.id])
+    expect(state.entries.find((e) => e.data.id === id)?.data).toHaveProperty(
+      'completedAt',
+      expect.any(String),
+    );
+  expect((await latest(todo)).data).toHaveProperty('completedAt', completedAt);
+  expect((await latest(node)).data).toHaveProperty('completedAt', null);
+  expect(isComplete((await latest(node)).data, state.entries)).toBe(true);
+  expect((await latest(line)).data).toHaveProperty('completedAt', null);
+  expect(state.entries.find((e) => e.data.type === 'project')?.data).toHaveProperty(
+    'completedAt',
+    null,
+  );
+  expect((await vault.readContent(line.data.id)).body).toBe(notes);
+});
+
+it('未关联的完成对象、待办池及重叠实际记录均不发布任何完成或草稿', async () => {
+  const { vault, record, node, todo, line } = await setup();
+  const pool = (await vault.scan()).entries.find(
+    (e) => e.data.type === 'milestone' && e.data.pool && e.data.lineId === line.data.id,
+  )!;
+  const before = (await vault.scan()).entries;
+  await expect(
+    vault.save(
+      record('actual', {
+        date: '2026-10-25',
+        startTime: '14:00',
+        endTime: '15:00',
+        description: '非法完成',
+      }),
+      undefined,
+      { completeIds: [node.data.id] },
+    ),
+  ).rejects.toThrow('必须关联');
+  await expect(
+    vault.save(
+      record('actual', {
+        date: '2026-10-25',
+        startTime: '14:00',
+        endTime: '15:00',
+        description: '非法池完成',
+        milestoneIds: [pool.data.id],
+      }),
+      undefined,
+      { completeIds: [pool.data.id] },
+    ),
+  ).rejects.toThrow('待办池不完成');
+  expect((await vault.scan()).entries).toEqual(before);
+  await vault.save(
+    record('actual', {
+      date: '2026-10-25',
+      startTime: '14:00',
+      endTime: '15:00',
+      description: '已有记录',
+    }),
+  );
+  const saved = (await vault.scan()).entries;
+  const draft = record('todo', { title: '不应发布', milestoneId: node.data.id }) as Todo;
+  await expect(
+    vault.save(
+      record('actual', {
+        date: '2026-10-25',
+        startTime: '14:30',
+        endTime: '15:30',
+        description: '重叠记录',
+        milestoneIds: [node.data.id],
+        itemIds: [draft.id, todo.data.id],
+      }),
+      undefined,
+      { newItems: [draft], completeIds: [node.data.id] },
+    ),
+  ).rejects.toThrow('重叠');
+  expect((await vault.scan()).entries).toEqual(saved);
+});

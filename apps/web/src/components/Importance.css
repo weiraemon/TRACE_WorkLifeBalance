@@ -1,0 +1,45 @@
+.priority-1 {
+  --priority-color: #21864d;
+}
+.priority-2 {
+  --priority-color: #8ca338;
+}
+.priority-3 {
+  --priority-color: #d3a20c;
+}
+.priority-4 {
+  --priority-color: #e77732;
+}
+.priority-5 {
+  --priority-color: #d43a3a;
+}
+.importance-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--priority-color);
+  margin-right: 8px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.importance-picker {
+  display: flex;
+  gap: 12px;
+  padding: 3px;
+}
+.importance-picker button {
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--surface);
+  border-radius: 50%;
+  background: var(--priority-color);
+  padding: 0;
+}
+.importance-picker button[aria-pressed='true'] {
+  outline: 1.5px solid var(--priority-color);
+  outline-offset: 2px;
+}
+.importance-dot {
+  cursor: pointer;
+}

@@ -2,33 +2,33 @@ import { useCallback, useDeferredValue, useEffect, useState, useRef, lazy, Suspe
 import { MagnifyingGlassIcon, GearIcon, ReloadIcon } from '@radix-ui/react-icons';
 import {
   localDay,
-  weekStart,
   isSpaceItem,
   type Entry,
   type Snapshot,
   type DeleteResult,
 } from '../../../packages/domain/index';
-import { api, load, session, removeSpace } from './api';
-import { readLastVault } from './lastVault';
+import { load, session, removeSpace } from './api';
 import { spaceSubtree } from '../../../packages/domain/workspace';
 import { Button, Modal, EmptyState, ErrorMessage } from './components/ui';
-import { Connect, Backup, Appearance } from './features/VaultSettings';
-import { ReviewForm } from './features/ReviewForm';
-import type { Editor } from './features/editor';
-import { WorkItemForm } from './features/WorkItemForm';
-import { ActualRecordForm } from './features/ActualRecordForm';
-import { CommentForm } from './features/CommentForm';
-import { WorkspaceBoard } from './features/WorkspaceBoard';
-import { SpaceMenu } from './features/SpaceMenu';
-import { QuickEdit } from './features/QuickEdit';
-import { SpaceDetails } from './features/SpaceDetails';
-import { DeleteSpaceDialog } from './features/DeleteSpaceDialog';
+import { Connect, Backup, Appearance } from './features/settings/VaultSettings';
+import type { Editor } from './types/editor';
+import { WorkItemForm } from './features/workspace/WorkItemForm';
+import { ActualRecordForm } from './features/actual/ActualRecordForm';
+import { CommentForm } from './features/workspace/CommentForm';
+import { Workspace } from './pages/Workspace';
+import { SpaceMenu } from './features/workspace/SpaceMenu';
+import { QuickEdit } from './features/workspace/QuickEdit';
+import { SpaceDetails } from './features/workspace/SpaceDetails';
+import { DeleteSpaceDialog } from './features/workspace/DeleteSpaceDialog';
 import { Knowledge } from './pages/Knowledge';
 import { Review } from './pages/Review';
 import { Today } from './pages/Today';
-import { MessageInbox } from './features/sync/MessageInbox';
-import { WechatSync } from './features/sync/WechatSync';
-const Timeline = lazy(() => import('./features/Timeline').then((m) => ({ default: m.Timeline })));
+const MessageInbox = lazy(() =>
+  import('./features/sync/MessageInbox').then((module) => ({ default: module.MessageInbox })),
+);
+const WechatSync = lazy(() =>
+  import('./features/sync/WechatSync').then((module) => ({ default: module.WechatSync })),
+);
 const pages = [
   { id: 'today', name: '今日' },
   { id: 'workspace', name: '工作空间' },
@@ -40,17 +40,18 @@ export default function App() {
     [loading, setLoading] = useState(true),
     [syncing, setSyncing] = useState(false),
     [error, setError] = useState('');
+  const [defaultPath, setDefaultPath] = useState('');
   const [page, setPage] = useState('today'),
     [selected, setSelected] = useState<string | null>(null),
     [editor, setEditor] = useState<Editor | null>(null),
     [settings, setSettings] = useState(false);
   const [search, setSearch] = useState(''),
     [date, setDate] = useState(localDay()),
+    [reviewDate, setReviewDate] = useState(localDay()),
     [showArchived, setShowArchived] = useState(false);
   const query = useDeferredValue(search.toLowerCase());
   const [contentDirty, setContentDirty] = useState(false);
   const [syncPanel, setSyncPanel] = useState<'qq' | 'wechat' | null>(null);
-  const [pendingMessages, setPendingMessages] = useState(0);
   const [deleting, setDeleting] = useState<Entry | null>(null);
   const [deletion, setDeletion] = useState<DeleteResult | null>(null);
   const canLeaveContent = () => !contentDirty || window.confirm('正文尚未保存，确定放弃并离开？');
@@ -69,11 +70,9 @@ export default function App() {
   useEffect(() => {
     void session()
       .then(async (s) => {
+        setDefaultPath(s.root);
+        if (s.connectionError) setError(s.connectionError);
         if (s.connected) await reload();
-        else {
-          const root = readLastVault();
-          if (root) setSnapshot(await api<Snapshot>('connect', { path: root }));
-        }
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
@@ -92,27 +91,6 @@ export default function App() {
     }, 5000);
     return () => clearInterval(timer);
   }, [Boolean(snapshot), reload]);
-  useEffect(() => {
-    if (!snapshot) {
-      setPendingMessages(0);
-      return;
-    }
-    let cancelled = false;
-    const readCount = async () => {
-      try {
-        const view = await api<{ state: { candidates: unknown[] } }>('messages');
-        if (!cancelled) setPendingMessages(view.state.candidates.length);
-      } catch {
-        // Keep the previous count; the sync dialog reports its own errors.
-      }
-    };
-    void readCount();
-    const timer = setInterval(readCount, 10000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [snapshot?.vaultId]);
   const goWorkspace = (id?: string) => {
     if (!canLeaveContent()) return;
     setPage('workspace');
@@ -133,7 +111,8 @@ export default function App() {
         e.preventDefault();
         setPage('today');
         setSelected(null);
-        setEditor({ type: 'actual', defaults: { date } });
+        setDate(localDay());
+        setEditor({ type: 'actual', defaults: { date: localDay() } });
       }
     };
     window.addEventListener('keydown', listener);
@@ -153,6 +132,7 @@ export default function App() {
     selectedEntry = lastSelected.current.entry;
   const navigate = (id: string) => {
     if (!canLeaveContent()) return;
+    if (id === 'today' && page !== 'today') setDate(localDay());
     setPage(id);
     setSelected(null);
     setSearch('');
@@ -175,8 +155,7 @@ export default function App() {
       await handleDeleted(await removeSpace(entry));
     });
   };
-  const hasBusinessNavigation =
-    (page === 'workspace' || page === 'knowledge' || page === 'today') && Boolean(snapshot);
+  const hasBusinessNavigation = (page === 'workspace' || page === 'knowledge') && Boolean(snapshot);
   return (
     <div
       className={
@@ -185,7 +164,9 @@ export default function App() {
         (hasBusinessNavigation ? 'workspace-shell' : '')
       }
     >
-      <main className={`main${hasBusinessNavigation ? ' workspace-main' : ''}`}>
+      <main
+        className={`main${hasBusinessNavigation ? ' workspace-main' : ''}${page === 'today' && snapshot ? ' today-main' : ''}`}
+      >
         <header className="topbar">
           <span className="app-brand">CHAOS</span>
           <nav className="main-nav" aria-label="主导航">
@@ -229,37 +210,21 @@ export default function App() {
             备份
           </Button>
         </header>
-        <div className={`content${hasBusinessNavigation ? ' workspace-page' : ''}`}>
-          {snapshot && (
-            <div className="message-entry">
-              <Button
-                aria-label="QQ同步设置"
-                onClick={() => {
-                  if (canLeaveContent()) setSyncPanel('qq');
-                }}
-              >
-                QQ同步设置
-                {pendingMessages > 0 && (
-                  <span className="message-badge" aria-hidden="true">
-                    {pendingMessages}
-                  </span>
-                )}
-              </Button>
-              <Button
-                onClick={() => {
-                  if (canLeaveContent()) setSyncPanel('wechat');
-                }}
-              >
-                微信同步设置
-              </Button>
-            </div>
-          )}
+        <div
+          className={`content${hasBusinessNavigation ? ' workspace-page' : ''}${page === 'today' && snapshot ? ' today-content' : ''}`}
+        >
           <ErrorMessage message={error} />
           {error && <Button onClick={() => setError('')}>收起提示</Button>}
           {loading ? (
             <EmptyState>正在读取本地会话…</EmptyState>
           ) : !snapshot ? (
-            <Connect onConnected={(s) => setSnapshot(s)} />
+            <Connect
+              defaultPath={defaultPath}
+              onConnected={(s) => {
+                setSnapshot(s);
+                setError('');
+              }}
+            />
           ) : (
             <>
               {snapshot.issues.length > 0 && (
@@ -272,24 +237,6 @@ export default function App() {
                   ))}
                 </details>
               )}
-              {page === 'review' && (
-                <div className="page-heading">
-                  <div>
-                    <p className="eyebrow">PERSONAL RESEARCH & LIFE</p>
-                    <h1>{pages.find((p) => p.id === page)?.name}</h1>
-                  </div>
-                  <div className="actions">
-                    <Button
-                      className="primary"
-                      onClick={() =>
-                        setEditor({ type: 'review', defaults: { week: weekStart(date) } })
-                      }
-                    >
-                      写周复盘
-                    </Button>
-                  </div>
-                </div>
-              )}
               {page === 'today' && (
                 <Today
                   key={snapshot.vaultId}
@@ -301,18 +248,7 @@ export default function App() {
                   reload={reload}
                   run={run}
                   goWorkspace={goWorkspace}
-                  timeline={
-                    <Suspense fallback={<EmptyState>正在加载时间线…</EmptyState>}>
-                      <Timeline
-                        date={date}
-                        snapshot={snapshot}
-                        edit={setEditor}
-                        reload={reload}
-                        run={run}
-                        goWorkspace={goWorkspace}
-                      />
-                    </Suspense>
-                  }
+                  editActual={setEditor}
                 />
               )}
               {page === 'workspace' && (
@@ -322,7 +258,7 @@ export default function App() {
                       <span role="status">已删除 {deletion.deletedIds.length} 项内容</span>
                     </div>
                   )}
-                  <WorkspaceBoard
+                  <Workspace
                     snapshot={snapshot}
                     edit={setEditor}
                     select={(id) => {
@@ -348,10 +284,9 @@ export default function App() {
               {page === 'review' && (
                 <Review
                   snapshot={snapshot}
-                  week={weekStart(date)}
-                  setDate={setDate}
+                  date={reviewDate}
+                  setDate={setReviewDate}
                   edit={setEditor}
-                  select={(id) => goWorkspace(id)}
                 />
               )}
             </>
@@ -402,14 +337,7 @@ export default function App() {
               reload={reload}
             />
           ) : null
-        ) : (
-          <ReviewForm
-            key={editor.entry?.revision ?? JSON.stringify(editor)}
-            editor={editor}
-            close={() => setEditor(null)}
-            reload={reload}
-          />
-        ))}
+        ) : null)}
       {deleting && snapshot && (
         <DeleteSpaceDialog
           key={deleting.data.id}
@@ -426,26 +354,28 @@ export default function App() {
         <Modal
           title={syncPanel === 'qq' ? 'QQ同步设置' : '微信同步设置'}
           wide
+          className="sync-dialog"
           onClose={() => setSyncPanel(null)}
         >
-          {syncPanel === 'qq' ? (
-            <MessageInbox
-              key={snapshot.vaultId}
-              snapshot={snapshot}
-              reload={reload}
-              onPendingChange={setPendingMessages}
-            />
-          ) : (
-            <WechatSync />
-          )}
+          <div className="dialog-body">
+            <Suspense fallback={<EmptyState>正在加载消息设置…</EmptyState>}>
+              {syncPanel === 'qq' ? (
+                <MessageInbox key={snapshot.vaultId} snapshot={snapshot} reload={reload} />
+              ) : (
+                <WechatSync />
+              )}
+            </Suspense>
+          </div>
         </Modal>
       )}
       {settings && (
         <Modal title="Vault 与数据安全" onClose={() => setSettings(false)} wide>
           <Appearance />
           <Connect
+            defaultPath={snapshot?.root ?? defaultPath}
             onConnected={(s) => {
               setSnapshot(s);
+              setError('');
               setSelected(null);
               setEditor(null);
               setDeleting(null);
@@ -453,7 +383,28 @@ export default function App() {
               setSettings(false);
             }}
           />
-          {snapshot && <Backup snapshot={snapshot} reload={reload} />}
+          {snapshot && (
+            <>
+              <section className="sync-entry" aria-label="外部消息接入">
+                <h3>外部消息接入</h3>
+                <div className="actions">
+                  {(['qq', 'wechat'] as const).map((kind) => (
+                    <Button
+                      key={kind}
+                      onClick={() => {
+                        if (!canLeaveContent()) return;
+                        setSettings(false);
+                        setSyncPanel(kind);
+                      }}
+                    >
+                      {kind === 'qq' ? 'QQ同步设置' : '微信同步设置'}
+                    </Button>
+                  ))}
+                </div>
+              </section>
+              <Backup snapshot={snapshot} reload={reload} />
+            </>
+          )}
         </Modal>
       )}
     </div>

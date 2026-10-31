@@ -16,7 +16,7 @@ import {
 } from '../../../../../packages/domain/messages';
 import { api } from '../../api';
 import { Button, Field, ErrorMessage } from '../../components/ui';
-import { parseQuickCapture } from '../quickCaptureParser';
+import { parseQuickCapture } from '../capture/quickCaptureParser';
 
 function beijingInput(date: Date) {
   return date.toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).slice(0, 16).replace(' ', 'T');

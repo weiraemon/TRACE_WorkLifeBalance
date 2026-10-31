@@ -126,13 +126,15 @@ test('条目独立日期可提前安排，今日完成后保留划线，不改�
 });
 
 test('节点按截止点排序，池固定末端，改期立即重排，桌面与窄屏一致', async ({ page }) => {
+  const previousDay = new Date(localDay() + 'T12:00:00');
+  previousDay.setDate(previousDay.getDate() - 1);
   const project = await write(page, 'project', { title: '项目' });
   const line = await write(page, 'workline', { title: '排序线', projectId: project.data.id });
   await write(page, 'workline', { title: '空线', projectId: project.data.id });
   await write(page, 'milestone', {
     title: '下午',
     lineId: line.data.id,
-    dueDate: '2026-10-25',
+    dueDate: localDay(),
     dueTime: '18:00',
   });
   await write(page, 'milestone', {
@@ -143,7 +145,7 @@ test('节点按截止点排序，池固定末端，改期立即重排，桌面�
   await write(page, 'milestone', {
     title: '上午',
     lineId: line.data.id,
-    dueDate: '2026-10-25',
+    dueDate: localDay(),
     dueTime: '09:00',
   });
   const changed = await write(page, 'milestone', {
@@ -179,7 +181,7 @@ test('节点按截止点排序，池固定末端，改期立即重排，桌面�
   await page.getByRole('menuitem', { name: '编辑节点', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByText('可选设置', { exact: true }).click();
-  await dialog.getByLabel('截止日期', { exact: true }).fill('2026-10-24');
+  await dialog.getByLabel('截止日期', { exact: true }).fill(localDay(previousDay));
   await dialog.getByRole('button', { name: '保存', exact: true }).click();
   await expect(titles).toHaveText(['后来未定', '上午', '下午', '最早未定', '待办池']);
   await track.locator('.track-scroll').evaluate((el) => {

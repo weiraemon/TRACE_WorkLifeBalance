@@ -17,7 +17,11 @@ export default defineConfig({
   webServer: {
     command: 'npm run start',
     url: 'http://127.0.0.1:4318/api/session',
-    env: { ATLAS_PORT: '4318', CHAOS_CONFIG_DIR: '.test-vault/app-config' },
+    env: {
+      ATLAS_PORT: '4318',
+      ATLAS_CONFIG_PATH: '.test-vault/e2e-local.json',
+      CHAOS_CONFIG_DIR: '.test-vault/app-config',
+    },
     reuseExistingServer: false,
     timeout: 30000,
   },
