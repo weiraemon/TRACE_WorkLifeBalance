@@ -13,6 +13,7 @@ apps/web/src/
     capture/         快速新增和消息解析
     review/          汇总数据、周图表、实际记录、复盘、只读时间线
     settings/        工作目录、主题、备份
+    sync/            不改变主页面布局的附加消息与设置弹窗
   components/        通用表单、重要性、SlidingTabs
   types/             编辑入口类型
   styles/base.css    主题和全局基础样式
@@ -28,3 +29,5 @@ apps/web/src/
 回顾页面组织图表、每日实际记录及只读时间线；汇总计算放在 `reviewData.ts`。FullCalendar 仅在时间线需要时延迟加载，已移除交互插件。完整记录的修改通过共享实际表单完成，不在时间线上增加第二套编辑操作。
 
 各功能目录维护自己的 CSS，`styles.css` 只保留有序导入，通用控件样式随控件放置。领域规则仍由 `packages/domain` 提供，文件读写与跨文件一致性仍由本地服务负责；前端控件不直接操作 Markdown。
+
+QQ／微信设置从既有设置进入附加弹窗，专用样式限定在同步控件内，消息组件按需加载。原有四页布局、录入和编辑窗沿用 main 方案。业务接口与扩展方法见[标准业务 API](business-api.md)。

@@ -6,8 +6,8 @@
 | -------------------------------------- | -------------------------------------------------------------------- |
 | 新契约、日期、关联校验、计时去重       | packages/domain/index.ts                                             |
 | 层级、排序、当天清单、完成推导         | packages/domain/workspace.ts                                         |
-| 文件安全、跨文件发布与恢复、升线、删除 | apps/local-service/src/vault.ts                                      |
-| Notes 分层与受管段落                   | apps/local-service/src/line-notes.ts                                 |
+| 文件安全、跨文件发布与恢复、升线、删除 | apps/local-service/src/native/vault.ts                               |
+| Notes 分层与受管段落                   | apps/local-service/src/native/line-notes.ts                          |
 | HTTP 会话与本地打开                    | apps/local-service/src/server.ts                                     |
 | 本机工作目录配置                       | apps/local-service/src/local-config.ts、项目根目录 .chaos.local.json |
 | 页面组织与导航状态                     | apps/web/src/pages                                                   |
@@ -17,11 +17,12 @@
 | 业务线、节点、条目、拖动、右键和 Notes | apps/web/src/features/workspace                                      |
 | 回顾图表与只读时间线                   | apps/web/src/features/review                                         |
 | 通用控件与基础样式                     | apps/web/src/components、apps/web/src/styles                         |
+| 消息同步与模型配置                     | apps/local-service/src/sync、apps/web/src/features/sync              |
 | 固化的产品边界                         | AGENTS.md                                                            |
 
 开发模式为同一个本地服务挂载 Vite。默认端口 4317；E2E 用独立端口 4318。构建后运行生产服务，源码变更不会自动重启已有生产服务。
 
-[前端架构](../architecture/frontend.md)说明页面、控件、状态与样式的边界。实际录入现在支持在同一次保存中完成关联节点，前后端契约为 `atlas-lines-13`；存储结构不变。升级后需重启本地服务并刷新页面，已有记录无需迁移。
+[前端架构](../architecture/frontend.md)说明页面、控件、状态与样式的边界。实际录入现在支持在同一次保存中完成关联节点，前后端契约为 `atlas-lines-25`；存储结构不变。升级后需重启本地服务并刷新页面，已有记录无需迁移。
 
 ## 验证
 
@@ -44,3 +45,9 @@
 - 端口占用：检查已有服务或设置 ATLAS_PORT，不直接结束未知占用者。
 - 硬链接、原子替换失败：检查本地 NTFS 与权限，不退化为直接覆盖写入。
 - 无旧数据目录：仅使用新结构，仓库不保留迁移工具或旧契约分支。
+
+## QQ 接入与主线合并
+
+现有页面、记录录入、完成推导和日期规则沿用主线实现。QQ／微信入口放在齿轮“备份”的“外部消息接入”内，消息组件按需加载，专用弹窗样式限定在同步界面；现有编辑窗口继续使用原有控件与样式。工作目录仍由 `.chaos.local.json` 恢复，QQ／AI 配置独立存储。
+
+标准业务 API 与接入边界见[业务接口与扩展约定](../architecture/business-api.md)。网页与 QQ／AI 共用标准业务服务，依赖检查已纳入 npm run check。验证使用临时工作目录和本地模拟模型接口，不连接真实 QQ 账号或发送真实消息。

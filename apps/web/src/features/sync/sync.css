@@ -1,0 +1,173 @@
+.sync-dialog {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sync-dialog > .section-heading {
+  flex: none;
+}
+.sync-dialog .dialog-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+}
+.sync-entry {
+  border-top: 1px solid var(--line);
+  margin-top: 20px;
+  padding-top: 16px;
+}
+.sync-entry h3 {
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+.point-meta .node-location {
+  color: var(--muted);
+  font-size: 11px;
+  margin: 0;
+}
+.message-inbox {
+  display: grid;
+  gap: 16px;
+}
+.qq-group-matches {
+  display: grid;
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border, #d9dfda);
+  border-radius: 8px;
+  padding: 4px;
+  background: var(--surface);
+}
+.qq-group-match {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  padding: 7px 9px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.qq-group-match:hover {
+  background: var(--hover);
+}
+.qq-group-match small {
+  flex: none;
+  color: var(--muted);
+}
+.qq-group-clear {
+  border: 0;
+  background: none;
+  color: var(--accent-strong);
+  padding: 0 6px;
+  font: inherit;
+  cursor: pointer;
+}
+.message-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.message-bulk-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(20 30 25 / 28%);
+}
+.message-bulk-confirm {
+  display: grid;
+  gap: 10px;
+  width: min(440px, 100%);
+  border: 1px solid var(--border, #d9dfda);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 16px;
+  box-shadow: 0 16px 40px rgb(20 30 25 / 18%);
+}
+.message-bulk-confirm p {
+  margin: 0;
+}
+.message-inbox form,
+.message-rule,
+.message-candidate {
+  display: grid;
+  gap: 12px;
+}
+.message-rule,
+.message-candidate {
+  border: 0;
+  border-top: 1px solid var(--border, #d9dfda);
+  padding: 16px 0;
+  min-width: 0;
+}
+.message-conditions,
+.message-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.message-rule-toolbar {
+  margin-bottom: 14px;
+}
+.message-rule-kinds {
+  margin: 8px 0 12px;
+}
+.message-rule legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+.message-rule legend span {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+}
+.message-rule > .hint {
+  font-size: 13px;
+}
+.rule-toggle {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+.rule-toggle:hover {
+  color: var(--accent-strong);
+}
+.message-conditions label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.message-conditions input,
+.message-rule input[type='checkbox'] {
+  width: auto;
+}
+.message-notice {
+  padding: 10px 0;
+  font-size: 14px;
+}
+.message-candidate blockquote {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 12px 0;
+  padding-left: 12px;
+  border-left: 2px solid #bac9be;
+}

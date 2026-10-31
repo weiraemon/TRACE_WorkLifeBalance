@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useEffect, useState, useRef } from 'react';
+import { useCallback, useDeferredValue, useEffect, useState, useRef, lazy, Suspense } from 'react';
 import { MagnifyingGlassIcon, GearIcon, ReloadIcon } from '@radix-ui/react-icons';
 import {
   localDay,
@@ -23,6 +23,12 @@ import { DeleteSpaceDialog } from './features/workspace/DeleteSpaceDialog';
 import { Knowledge } from './pages/Knowledge';
 import { Review } from './pages/Review';
 import { Today } from './pages/Today';
+const MessageInbox = lazy(() =>
+  import('./features/sync/MessageInbox').then((module) => ({ default: module.MessageInbox })),
+);
+const WechatSync = lazy(() =>
+  import('./features/sync/WechatSync').then((module) => ({ default: module.WechatSync })),
+);
 const pages = [
   { id: 'today', name: '今日' },
   { id: 'workspace', name: '工作空间' },
@@ -45,6 +51,7 @@ export default function App() {
     [showArchived, setShowArchived] = useState(false);
   const query = useDeferredValue(search.toLowerCase());
   const [contentDirty, setContentDirty] = useState(false);
+  const [syncPanel, setSyncPanel] = useState<'qq' | 'wechat' | null>(null);
   const [deleting, setDeleting] = useState<Entry | null>(null);
   const [deletion, setDeletion] = useState<DeleteResult | null>(null);
   const canLeaveContent = () => !contentDirty || window.confirm('正文尚未保存，确定放弃并离开？');
@@ -343,6 +350,24 @@ export default function App() {
           deleted={handleDeleted}
         />
       )}
+      {syncPanel && snapshot && (
+        <Modal
+          title={syncPanel === 'qq' ? 'QQ同步设置' : '微信同步设置'}
+          wide
+          className="sync-dialog"
+          onClose={() => setSyncPanel(null)}
+        >
+          <div className="dialog-body">
+            <Suspense fallback={<EmptyState>正在加载消息设置…</EmptyState>}>
+              {syncPanel === 'qq' ? (
+                <MessageInbox key={snapshot.vaultId} snapshot={snapshot} reload={reload} />
+              ) : (
+                <WechatSync />
+              )}
+            </Suspense>
+          </div>
+        </Modal>
+      )}
       {settings && (
         <Modal title="Vault 与数据安全" onClose={() => setSettings(false)} wide>
           <Appearance />
@@ -358,7 +383,28 @@ export default function App() {
               setSettings(false);
             }}
           />
-          {snapshot && <Backup snapshot={snapshot} reload={reload} />}
+          {snapshot && (
+            <>
+              <section className="sync-entry" aria-label="外部消息接入">
+                <h3>外部消息接入</h3>
+                <div className="actions">
+                  {(['qq', 'wechat'] as const).map((kind) => (
+                    <Button
+                      key={kind}
+                      onClick={() => {
+                        if (!canLeaveContent()) return;
+                        setSettings(false);
+                        setSyncPanel(kind);
+                      }}
+                    >
+                      {kind === 'qq' ? 'QQ同步设置' : '微信同步设置'}
+                    </Button>
+                  ))}
+                </div>
+              </section>
+              <Backup snapshot={snapshot} reload={reload} />
+            </>
+          )}
         </Modal>
       )}
     </div>

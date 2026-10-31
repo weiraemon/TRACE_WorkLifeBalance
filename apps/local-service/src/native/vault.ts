@@ -23,8 +23,8 @@ import {
   type BusinessLine,
   type Milestone,
   type Todo,
-} from '../../../packages/domain/index';
-import { spaceSubtree, lineFor, spaceParentId } from '../../../packages/domain/workspace';
+} from '../../../../packages/domain/index';
+import { spaceSubtree, lineFor, spaceParentId } from '../../../../packages/domain/workspace';
 import {
   appendComment,
   section,
@@ -48,6 +48,7 @@ const lockSchema = z.object({
   pid: z.number().int().positive(),
   token: z.string().uuid(),
   host: z.string().optional(),
+  hostname: z.string().optional(),
   startedAt: z.string().nullable().optional(),
 });
 let ownProcessStart: Promise<string | null> | undefined;
@@ -105,8 +106,8 @@ const changesSchema = z
       .strict(),
   )
   .max(10000);
-type FileChange = z.infer<typeof changesSchema>[number];
-async function readText(filename: string) {
+export type FileChange = z.infer<typeof changesSchema>[number];
+export async function readText(filename: string) {
   const bytes = await fs.readFile(filename);
   try {
     return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
@@ -197,7 +198,8 @@ export class Vault {
         if (!parsed.success)
           throw new VaultError('进程锁内容无法识别，请核实 .atlas/service.lock；未自动删除', 409);
         const lock = parsed.data;
-        if (lock.host && lock.host !== hostname())
+        const lockHost = lock.host ?? lock.hostname;
+        if (lockHost && lockHost !== hostname())
           throw new VaultError('工作目录的锁来自另一台电脑，请先确认该服务已关闭', 409);
         if (processExists(lock.pid)) {
           const currentStart = lock.pid === process.pid ? startedAt : await processStart(lock.pid);
@@ -531,7 +533,12 @@ export class Vault {
     }
     return changes;
   }
-  async save(input: unknown, revision?: string, options: SaveOptions = {}): Promise<Entry> {
+  async save(
+    input: unknown,
+    revision?: string,
+    options: SaveOptions = {},
+    companions: FileChange[] = [],
+  ): Promise<Entry> {
     return this.serialized(async () => {
       let data = parseRecord(input);
       const settings = saveOptionsSchema.parse(options);
@@ -810,10 +817,46 @@ export class Vault {
         );
       }
       const changes = await this.prepareChanges(snapshot.entries, [...changed.values()], bodies);
-      await this.commitChanges(changes);
+      await this.commitChanges([...changes, ...companions]);
       const result = (await this.scan()).entries.find((e) => e.data.id === data.id);
       if (!result) throw new VaultError('记录已发布但无法读取，请检查诊断', 409);
       return result;
+    });
+  }
+
+  // Trusted application services may publish related metadata with a business operation.
+  async applyBatch<T>(
+    build: (context: {
+      snapshot: Snapshot;
+      createLineParts: (line: BusinessLine) => RecordData[];
+      notesBody: (line: BusinessLine, bodies: Map<string, string>) => Promise<string>;
+    }) => Promise<{
+      records: RecordData[];
+      bodies?: Map<string, string>;
+      files?: FileChange[];
+      result: T;
+    }>,
+  ): Promise<T> {
+    return this.serialized(async () => {
+      const snapshot = await this.scan();
+      if (snapshot.issues.length) throw new VaultError('工作目录存在诊断，请先处理后再写入', 409);
+      const batch = await build({
+        snapshot,
+        createLineParts: (line) => this.createLineParts(line),
+        notesBody: (line, bodies) => this.notesBody(line, snapshot.entries, bodies),
+      });
+      const changed = new Map(batch.records.map((record) => [record.id, record]));
+      if (changed.size !== batch.records.length) throw new VaultError('批次包含重复 ID', 409);
+      const virtual = [
+        ...snapshot.entries.filter((entry) => !changed.has(entry.data.id)),
+        ...batch.records.map((data) => ({ data, path: '', revision: '' })),
+      ];
+      for (const record of batch.records) validateChange(parseRecord(record), virtual);
+      await this.commitChanges([
+        ...(await this.prepareChanges(snapshot.entries, batch.records, batch.bodies)),
+        ...(batch.files ?? []),
+      ]);
+      return batch.result;
     });
   }
 

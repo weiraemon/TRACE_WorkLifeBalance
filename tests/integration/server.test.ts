@@ -27,6 +27,7 @@ it.each([true, false])(
             ...process.env,
             ATLAS_PORT: String(port),
             ATLAS_CONFIG_PATH: path.join(os.tmpdir(), `unused-${randomUUID()}.json`),
+            CHAOS_CONFIG_DIR: path.join(os.tmpdir(), `chaos-unused-app-${randomUUID()}`),
           },
           timeout: 10000,
           windowsHide: true,
@@ -70,7 +71,12 @@ async function start(config: string) {
   await new Promise<void>((resolve) => socket.close(() => resolve()));
   const child = spawn(process.execPath, ['--import', 'tsx', entry, '--production'], {
     windowsHide: true,
-    env: { ...process.env, ATLAS_PORT: String(port), ATLAS_CONFIG_PATH: config },
+    env: {
+      ...process.env,
+      ATLAS_PORT: String(port),
+      ATLAS_CONFIG_PATH: config,
+      CHAOS_CONFIG_DIR: config + '.app-config',
+    },
   });
   processes.push(child);
   let output = '';
@@ -170,3 +176,127 @@ it('成功连接才记住目录；强制终止后自动恢复，活跃锁和失�
   expect((await connect(unavailable.base, unavailable.session.token, first)).ok).toBe(true);
   expect(JSON.parse(await fs.readFile(config, 'utf8')).vaultPath).toBe(await fs.realpath(first));
 }, 40000);
+
+it('标准业务 API 与原网页路由共用状态、改期规则和 Notes，拒绝越权与过期版本', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'chaos-standard-api-'));
+  roots.push(root);
+  const work = path.join(root, 'work');
+  await fs.mkdir(work);
+  const started = await start(path.join(root, 'config.json'));
+  const response = await fetch(started.base + 'connect', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Atlas-Token': started.session.token },
+    body: JSON.stringify({ path: work }),
+  });
+  expect(response.ok).toBe(true);
+  const connected = await response.json();
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Atlas-Token': started.session.token,
+    'X-Atlas-Vault': connected.vaultId,
+  };
+  const post = (route: string, payload: unknown) =>
+    fetch(started.base + route, { method: 'POST', headers, body: JSON.stringify(payload) });
+  const command = async (payload: unknown) => {
+    const result = await post('business/v1/commands', payload);
+    expect(result.ok, await result.clone().text()).toBe(true);
+    const value = await result.json();
+    expect(value.version).toBe('1');
+    return value.result;
+  };
+  expect((await fetch(started.base + 'business/v1/workspace')).status).toBe(403);
+  expect((await fetch(started.base + 'business/v1/schema')).status).toBe(403);
+  const schema = await fetch(started.base + 'business/v1/schema', { headers }).then((result) =>
+    result.json(),
+  );
+  expect(schema.version).toBe('1');
+  expect(JSON.stringify(schema.schema)).toContain('work.complete');
+  const make = (type: string, fields: object) => ({
+    schemaVersion: 1,
+    id: randomUUID(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    type,
+    ...fields,
+  });
+  const project = await command({
+    type: 'record.save',
+    data: make('project', { title: 'API 项目' }),
+  });
+  const line = await command({
+    type: 'record.save',
+    data: make('workline', { title: 'API 业务', projectId: project.data.id }),
+  });
+  await command({
+    type: 'plan.create',
+    plan: {
+      kind: 'event',
+      title: '标准接口安排',
+      lineId: line.data.id,
+      dueDate: '2026-11-02',
+      actions: ['准备材料', '参加讨论'],
+      note: { id: randomUUID(), text: 'API 原文只保存一次', date: '2026-11-01' },
+    },
+  });
+  let snapshot = await fetch(started.base + 'snapshot', { headers }).then((result) =>
+    result.json(),
+  );
+  const todo = snapshot.entries.find((entry: any) => entry.data.type === 'todo');
+  const node = snapshot.entries.find(
+    (entry: any) => entry.data.type === 'milestone' && !entry.data.pool,
+  );
+  await command({
+    type: 'work.reschedule',
+    id: todo.data.id,
+    revision: todo.revision,
+    dueDate: '2026-11-03',
+  });
+  expect(
+    (
+      await post('business/v1/commands', {
+        type: 'work.complete',
+        id: todo.data.id,
+        revision: todo.revision,
+        completed: true,
+      })
+    ).status,
+  ).toBe(409);
+  snapshot = await fetch(started.base + 'snapshot', { headers }).then((result) => result.json());
+  const moved = snapshot.entries.find((entry: any) => entry.data.id === todo.data.id);
+  expect(
+    snapshot.entries.find((entry: any) => entry.data.id === moved.data.milestoneId).data.pool,
+  ).toBe(true);
+  const latestNode = snapshot.entries.find((entry: any) => entry.data.id === node.data.id);
+  await command({
+    type: 'work.complete',
+    id: node.data.id,
+    revision: latestNode.revision,
+    completed: true,
+  });
+  const oldNotes = await post('content', { action: 'read', id: line.data.id }).then((result) =>
+    result.json(),
+  );
+  const standardNotes = await command({ type: 'notes.read', id: line.data.id });
+  expect(standardNotes).toEqual(oldNotes);
+  expect(oldNotes.body.split('API 原文只保存一次')).toHaveLength(2);
+  const standard = await fetch(started.base + 'business/v1/workspace', { headers }).then((result) =>
+    result.json(),
+  );
+  expect(standard.version).toBe('1');
+  expect(standard.snapshot).toEqual(
+    await fetch(started.base + 'snapshot', { headers }).then((result) => result.json()),
+  );
+  const before = standard.snapshot.entries;
+  expect(
+    (
+      await post('business/v1/commands', {
+        type: 'plan.create',
+        plan: { kind: 'task', title: '不允许任意文件写入', lineId: line.data.id },
+        companions: [{ path: 'outside.md', content: 'bad', expected: null }],
+      })
+    ).status,
+  ).toBe(400);
+  expect(
+    (await fetch(started.base + 'snapshot', { headers }).then((result) => result.json())).entries,
+  ).toEqual(before);
+}, 30000);

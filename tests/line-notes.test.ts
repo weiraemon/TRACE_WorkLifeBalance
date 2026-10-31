@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { Vault, hash } from '../apps/local-service/src/vault';
+import { Vault, hash } from '../apps/local-service/src/native/vault';
 import {
   parseRecord,
   type Entry,

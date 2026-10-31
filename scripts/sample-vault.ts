@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { Vault } from '../apps/local-service/src/vault';
+import { Vault } from '../apps/local-service/src/native/vault';
 import { localDay, parseRecord, type RecordData } from '../packages/domain/index';
 const root = path.resolve(process.argv[2] ?? 'examples/workspace-vault');
 await fs.mkdir(root, { recursive: true });

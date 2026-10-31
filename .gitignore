@@ -10,3 +10,5 @@ examples/workspace-vault/.atlas/
 docs/screenshots/
 docs/development/test-report.md
 coverage/
+__pycache__/
+*.pyc

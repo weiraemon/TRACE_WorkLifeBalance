@@ -75,6 +75,7 @@ export function SpaceDetails({
       {item.type === 'milestone' && !item.pool && (
         <p>
           {item.dueDate ?? '未定日期'} {item.dueTime} {item.tags.join(' · ')}
+          {item.location ? `${item.tags.length ? ' · ' : ''}${item.location}` : ''}
         </p>
       )}
       {item.type === 'todo' && (

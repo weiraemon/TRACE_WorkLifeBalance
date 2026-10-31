@@ -5,7 +5,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { Vault } from '../apps/local-service/src/vault';
+import { Vault } from '../apps/local-service/src/native/vault';
 
 const roots: string[] = [];
 const vaults: Vault[] = [];
@@ -46,7 +46,7 @@ it('活跃服务的锁保持不变，正常关闭后可以重新打开', async (
 
 it('真实进程被强制终止后，自动回收旧锁并保留已保存内容', async () => {
   const root = await directory();
-  const moduleUrl = new URL('../apps/local-service/src/vault.ts', import.meta.url).href;
+  const moduleUrl = new URL('../apps/local-service/src/native/vault.ts', import.meta.url).href;
   const program = `import { Vault } from ${JSON.stringify(moduleUrl)};
     import { randomUUID } from 'node:crypto';
     const vault = await Vault.open(process.argv[1]);
@@ -108,6 +108,7 @@ it('旧格式仍保护活跃服务；权限不足、损坏内容和外机锁均�
     '{unfinished',
     JSON.stringify({ pid: -1, token: randomUUID() }),
     JSON.stringify({ pid: process.pid, token: randomUUID(), host: os.hostname() + '-other' }),
+    JSON.stringify({ pid: process.pid, token: randomUUID(), hostname: os.hostname() + '-other' }),
   ];
   for (const source of sources) {
     await fs.writeFile(filename, source);

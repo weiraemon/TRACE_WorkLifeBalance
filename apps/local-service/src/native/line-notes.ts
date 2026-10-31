@@ -1,4 +1,4 @@
-import type { Milestone, Todo } from '../../../packages/domain/index';
+import type { Milestone, Todo } from '../../../../packages/domain/index';
 
 type SectionKind = 'node' | 'item';
 const marker = (kind: SectionKind, id: string, end = false) =>
