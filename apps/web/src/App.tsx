@@ -80,7 +80,14 @@ export default function App() {
   useEffect(() => {
     if (!snapshot) return;
     let pending = false;
-    const timer = setInterval(() => {
+    let previousDay = localDay();
+    const synchronize = () => {
+      const today = localDay();
+      if (today !== previousDay) {
+        const yesterday = previousDay;
+        setDate((selectedDate) => (selectedDate === yesterday ? today : selectedDate));
+        previousDay = today;
+      }
       if (document.hidden || pending) return;
       pending = true;
       void reload()
@@ -88,8 +95,15 @@ export default function App() {
         .finally(() => {
           pending = false;
         });
-    }, 5000);
-    return () => clearInterval(timer);
+    };
+    const timer = setInterval(synchronize, 5000);
+    window.addEventListener('focus', synchronize);
+    document.addEventListener('visibilitychange', synchronize);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', synchronize);
+      document.removeEventListener('visibilitychange', synchronize);
+    };
   }, [Boolean(snapshot), reload]);
   const goWorkspace = (id?: string) => {
     if (!canLeaveContent()) return;

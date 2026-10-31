@@ -51,7 +51,7 @@ export function TodayCapture({
             panelRef: actualPanel,
             content: (
               <ActualRecordForm
-                key={`${date}:${version}:${JSON.stringify(editor ?? {})}`}
+                key={`${version}:${JSON.stringify(editor ?? {})}`}
                 embedded
                 source={source?.request === ignoredSource ? undefined : source}
                 editor={editor ?? { type: 'actual', defaults: { date } }}
@@ -70,7 +70,6 @@ export function TodayCapture({
             panelRef: quickPanel,
             content: (
               <QuickCapture
-                key={date}
                 snapshot={snapshot}
                 today={date}
                 onCreate={async (item, comment) => {

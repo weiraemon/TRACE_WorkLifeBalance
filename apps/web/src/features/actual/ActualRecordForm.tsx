@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { clock, localDay, type Snapshot } from '../../../../../packages/domain/index';
 import { createRecord, save } from '../../api';
 import { Modal, Field, Button, ErrorMessage, DatePicker } from '../../components/ui';
@@ -33,12 +33,33 @@ export function ActualRecordForm({
   );
   const [description, setDescription] = useState(old?.description ?? '');
   const [date, setDate] = useState(old?.date ?? String(editor.defaults?.date ?? localDay()));
+  const edited = useRef(false);
   const selection = useActualAssociations(snapshot, old, source);
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
+  const defaultDate = String(editor.defaults?.date ?? localDay());
+  useEffect(() => {
+    if (old || edited.current || selection.itemIds.length || selection.milestoneIds.length || busy)
+      return;
+    setDate(defaultDate);
+    setStart(String(editor.defaults?.startTime ?? clock(Math.max(0, minute - 30))));
+    setEnd(String(editor.defaults?.endTime ?? clock(minute || 1)));
+  }, [
+    old,
+    defaultDate,
+    minute,
+    editor.defaults?.startTime,
+    editor.defaults?.endTime,
+    selection.itemIds.length,
+    selection.milestoneIds.length,
+    busy,
+  ]);
   const form = (
     <form
       aria-label="实际工作录入"
+      onChangeCapture={() => {
+        edited.current = true;
+      }}
       onSubmit={async (e) => {
         e.preventDefault();
         setBusy(true);
@@ -97,7 +118,7 @@ export function ActualRecordForm({
         />
       </Field>
       <div className="actual-time-fields">
-        {!embedded && (
+        {(!embedded || date !== defaultDate) && (
           <Field label="记录日期">
             <DatePicker value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
           </Field>
