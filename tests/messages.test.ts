@@ -15,6 +15,7 @@ import {
   dropNoopChanges,
   mergeSameTitle,
   messageFingerprint,
+  messageKey,
   parseSuggestions,
 } from '../apps/local-service/src/sync/message-analysis';
 import { readInboxText, writeInboxText } from '../apps/local-service/src/sync/message-store';
@@ -134,6 +135,10 @@ describe('QQ 筛选与模型边界', () => {
     expect(messageFingerprint(message)).not.toBe(
       messageFingerprint({ ...message, remoteId: '123' }),
     );
+  });
+  it('同一 QQ 消息 ID 使用稳定去重键，空 ID 不参与', () => {
+    expect(messageKey({ ...message, remoteId: '123' })).toBe(`${message.ruleId}:123`);
+    expect(messageKey({ ...message, remoteId: null })).toBeNull();
   });
   it('同一消息中的同名建议合并为一项，保留行动和其他时间提示', () => {
     const merged = mergeSameTitle([

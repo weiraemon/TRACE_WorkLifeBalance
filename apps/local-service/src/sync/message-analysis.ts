@@ -239,6 +239,10 @@ export function mergeSameTitle(
   return merged;
 }
 
+export function messageKey(message: SourceMessage) {
+  return message.remoteId ? `${message.ruleId}:${message.remoteId}` : null;
+}
+
 export function messageFingerprint(message: SourceMessage) {
   return createHash('sha256')
     .update(

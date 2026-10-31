@@ -22,6 +22,7 @@ import {
   dropNoopChanges,
   mergeSameTitle,
   messageFingerprint,
+  messageKey,
   type ExistingMessageItem,
 } from './sync/message-analysis';
 import {
@@ -364,12 +365,18 @@ const server = http.createServer(async (req, res) => {
           if (!matchMessage(current.state.settings, input.message))
             return send(res, 200, { message: '未命中已启用的会话规则，没有发送给 AI 模型' });
           const fingerprint = messageFingerprint(input.message);
+          const sourceKey = messageKey(input.message);
           const cutoff = Date.now() - 7 * 86400000;
           current.state.seen = current.state.seen.filter((s) => Date.parse(s.at) >= cutoff);
-          if (
-            current.state.seen.some((s) => s.fingerprint === fingerprint) ||
-            current.state.candidates.some((c) => c.fingerprint === fingerprint)
-          )
+          const alreadySeen = current.state.seen.some(
+            (s) => s.fingerprint === fingerprint || Boolean(sourceKey && s.messageId === sourceKey),
+          );
+          const alreadyPending = current.state.candidates.some(
+            (c) =>
+              c.fingerprint === fingerprint ||
+              Boolean(sourceKey && messageKey(c.source) === sourceKey),
+          );
+          if (alreadySeen || alreadyPending)
             return send(res, 200, { message: '这条消息已处理或已在待确认列表中' });
           if (current.state.candidates.length >= 100)
             throw new VaultError('请先处理待确认消息（最多 100 条）');
@@ -504,7 +511,10 @@ const server = http.createServer(async (req, res) => {
               '本条通知包含多个事项，待确认列表空间不足；请先处理已有事项后重试，本次未保存',
             );
           const at = new Date().toISOString();
-          current.state.seen = [...current.state.seen, { fingerprint, at }].slice(-500);
+          current.state.seen = [
+            ...current.state.seen,
+            { fingerprint, at, messageId: sourceKey ?? undefined },
+          ].slice(-500);
           const added: { id: string; suggestion: (typeof actionable)[number] }[] = [];
           for (const suggestion of actionable) {
             const candidate = {

@@ -151,7 +151,17 @@ export const inboxSchema = z
     version: z.literal(1),
     settings: messageSettingsSchema,
     candidates: z.array(candidateSchema).max(100),
-    seen: z.array(z.object({ fingerprint: z.string(), at: z.iso.datetime() }).strict()).max(500),
+    seen: z
+      .array(
+        z
+          .object({
+            fingerprint: z.string(),
+            at: z.iso.datetime(),
+            messageId: z.string().max(120).optional(),
+          })
+          .strict(),
+      )
+      .max(500),
     sync: z
       .array(
         z

@@ -17,6 +17,7 @@ import {
   dropNoopChanges,
   mergeSameTitle,
   messageFingerprint,
+  messageKey,
   type ExistingMessageItem,
 } from './message-analysis';
 import { activeAi, activeQq, normalizeAiSettings, qqCacheDir, qqView } from './app-config';
@@ -262,8 +263,18 @@ export class QqSync {
   ): Promise<Candidate | null> {
     if (!matchMessage(settings, source)) return null;
     const fingerprint = messageFingerprint(source);
-    if (inbox.candidates.some((item) => item.fingerprint === fingerprint)) return null;
-    if (!resyncSeen && inbox.seen.some((item) => item.fingerprint === fingerprint)) return null;
+    const sourceKey = messageKey(source);
+    const alreadyPending = inbox.candidates.some(
+      (item) =>
+        item.fingerprint === fingerprint ||
+        Boolean(sourceKey && messageKey(item.source) === sourceKey),
+    );
+    if (alreadyPending) return null;
+    const alreadySeen = inbox.seen.some(
+      (item) =>
+        item.fingerprint === fingerprint || Boolean(sourceKey && item.messageId === sourceKey),
+    );
+    if (!resyncSeen && alreadySeen) return null;
     const title =
       source.text
         .replace(/^(?:\s*@\S+\s*)+/, '')
@@ -272,7 +283,9 @@ export class QqSync {
         .trim()
         .slice(0, 120) || '待整理消息';
     const at = new Date().toISOString();
-    inbox.seen = [...inbox.seen, { fingerprint, at }].slice(-500);
+    inbox.seen = [...inbox.seen, { fingerprint, at, messageId: sourceKey ?? undefined }].slice(
+      -500,
+    );
     const candidate: Candidate = {
       id: randomUUID(),
       fingerprint,
@@ -311,8 +324,18 @@ export class QqSync {
   ): Promise<Candidate[]> {
     if (!matchMessage(settings, source)) return [];
     const fingerprint = messageFingerprint(source);
-    if (inbox.candidates.some((item) => item.fingerprint === fingerprint)) return [];
-    if (!resyncSeen && inbox.seen.some((item) => item.fingerprint === fingerprint)) return [];
+    const sourceKey = messageKey(source);
+    const alreadyPending = inbox.candidates.some(
+      (item) =>
+        item.fingerprint === fingerprint ||
+        Boolean(sourceKey && messageKey(item.source) === sourceKey),
+    );
+    if (alreadyPending) return [];
+    const alreadySeen = inbox.seen.some(
+      (item) =>
+        item.fingerprint === fingerprint || Boolean(sourceKey && item.messageId === sourceKey),
+    );
+    if (!resyncSeen && alreadySeen) return [];
     if (inbox.candidates.length >= 100) throw new Error('待确认消息已满 100 条');
     const aiConfig = await activeAi();
     const ai = normalizeAiSettings({
@@ -350,7 +373,9 @@ export class QqSync {
     );
     if (!actionable.length) return [];
     const at = new Date().toISOString();
-    inbox.seen = [...inbox.seen, { fingerprint, at }].slice(-500);
+    inbox.seen = [...inbox.seen, { fingerprint, at, messageId: sourceKey ?? undefined }].slice(
+      -500,
+    );
     const added: Candidate[] = [];
     for (const suggestion of actionable) {
       const candidate: Candidate = {
