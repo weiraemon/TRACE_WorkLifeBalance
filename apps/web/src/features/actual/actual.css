@@ -1,0 +1,177 @@
+.linked-todos {
+  max-height: 180px;
+  overflow: auto;
+}
+.actual-todo-choice > label {
+  display: flex;
+  gap: 10px;
+  padding: 10px 2px;
+  font-size: 12px;
+}
+
+.actual-todo-choice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+}
+.actual-todo-choice > label {
+  border-bottom: 0;
+}
+.actual-item {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.actual-item .actual-todo-choice {
+  border: 0;
+}
+.actual-item label {
+  min-width: 0;
+}
+.association-completion {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px;
+}
+.actual-todo-choice > .association-completion {
+  grid-column: 1 / -1;
+  padding: 4px 0;
+}
+.association-completion input {
+  flex-shrink: 0;
+}
+.actual-selected .association-completion small {
+  display: inline;
+  margin: 0;
+}
+.actual-item .field {
+  margin: 8px 0 0;
+}
+.actual-pool,
+.actual-selected {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.actual-pool h3,
+.actual-selected h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+.actual-pool-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.actual-pool-header input {
+  width: min(100%, 280px);
+  min-width: 0;
+}
+.actual-pool .hint,
+.actual-selected > .hint {
+  margin: 0 0 10px;
+}
+.actual-pool-choices {
+  max-height: 220px;
+  overflow: auto;
+}
+.actual-pool-choice,
+.actual-selected-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.actual-pool-choice span,
+.actual-selected-heading span {
+  min-width: 0;
+}
+.actual-pool-choice small,
+.actual-selected small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.actual-selected .linked-todos {
+  max-height: none;
+}
+@media (max-width: 600px) {
+  .actual-todo-choice {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.actual-time-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.actual-time-fields input[type='date'] {
+  width: 100%;
+  min-width: 0;
+}
+[aria-label='实际工作录入'] {
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .actual-time-fields {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .actual-time-fields > .field:first-child {
+    grid-column: 1 / -1;
+  }
+}
+.association-disclosure > summary,
+.result-disclosure > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 8px 0;
+}
+.actual-selected h3 {
+  font-size: 12px;
+  color: var(--muted);
+}
+.result-disclosure {
+  margin-top: 6px;
+}
+.capture-date {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 16px;
+}
+.capture-date strong {
+  display: inline-block;
+  margin-left: 12px;
+  font-weight: 500;
+  color: var(--actual-text);
+}
+.historical-date {
+  border-left: 3px solid var(--accent-strong);
+  padding: 6px 10px;
+  background: var(--selected);
+}
+.editor-dialog .actual-time-fields input[type='date'] {
+  width: 100%;
+}
+.actual-record-list article {
+  position: relative;
+  padding-right: 42px;
+}
+.actual-record-list article > button {
+  position: absolute;
+  right: 0;
+  top: 16px;
+  border: 0;
+  background: none;
+  color: var(--accent-strong);
+  font-size: 12px;
+  padding: 4px 0;
+}

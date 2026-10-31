@@ -605,16 +605,37 @@ export class Vault {
       }
       for (const item of settings.newItems) changed.set(item.id, parseRecord(item));
       if (data.type === 'actual') {
-        const linkedIds = data.itemIds;
+        const itemIds = data.itemIds;
+        const linkedIds = [...itemIds, ...data.milestoneIds];
         if (
-          settings.newItems.some((r) => !linkedIds.includes(r.id)) ||
+          settings.newItems.some((r) => !itemIds.includes(r.id)) ||
           settings.completeIds.some((id) => !linkedIds.includes(id))
         )
           throw new VaultError('新条目和本次完成必须关联到这段实际工作');
-        for (const id of settings.completeIds) {
+        for (const id of new Set(settings.completeIds)) {
           const item = changed.get(id) ?? snapshot.entries.find((e) => e.data.id === id)?.data;
-          if (item?.type !== 'todo') throw new VaultError('完成条目不存在');
-          changed.set(id, { ...item, completedAt: item.completedAt ?? now, updatedAt: now });
+          if (item?.type === 'milestone') {
+            if (item.pool) throw new VaultError('待办池不完成');
+            const children = [
+              ...snapshot.entries.map((entry) => changed.get(entry.data.id) ?? entry.data),
+              ...settings.newItems,
+            ].filter(
+              (record): record is Todo => record.type === 'todo' && record.milestoneId === id,
+            );
+            for (const child of children)
+              changed.set(child.id, {
+                ...child,
+                completedAt: child.completedAt ?? now,
+                updatedAt: now,
+              });
+            changed.set(id, {
+              ...item,
+              completedAt: children.length ? null : (item.completedAt ?? now),
+              updatedAt: now,
+            });
+          } else if (item?.type === 'todo') {
+            changed.set(id, { ...item, completedAt: item.completedAt ?? now, updatedAt: now });
+          } else throw new VaultError('完成对象不存在');
         }
       } else if (settings.completeIds.length) throw new VaultError('本次完成只用于实际工作');
       if (

@@ -32,9 +32,13 @@ export async function api<T>(route: string, body?: unknown): Promise<T> {
   return value;
 }
 export async function session() {
-  const value = await api<{ token: string; connected: boolean; root: string; vaultId: string }>(
-    'session',
-  );
+  const value = await api<{
+    token: string;
+    connected: boolean;
+    root: string;
+    vaultId: string;
+    connectionError?: string;
+  }>('session');
   token = value.token;
   vaultId = value.vaultId;
   return value;

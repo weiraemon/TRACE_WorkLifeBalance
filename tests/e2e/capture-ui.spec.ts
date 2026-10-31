@@ -80,10 +80,44 @@ test('普通新增节点可以从微信消息识别时间、业务线、重要�
   });
 });
 
-test('今日左侧导航放待办与联系人，右侧直接录入实际并关联节点；快速想法仍不需要时间', async ({
-  page,
-}) => {
-  const { line, node, project } = await seed(page);
+test('今日优先显示定时节点，悬浮看全部条目，记一段保留草稿；移动端可点击预览', async ({ page }) => {
+  const { line, node, todo } = await seed(page);
+  await write(page, 'milestone', {
+    title: '早间实验',
+    lineId: line.data.id,
+    dueDate: localDay(),
+    dueTime: '08:00',
+  });
+  await write(page, 'milestone', {
+    title: '未定时节点',
+    lineId: line.data.id,
+    dueDate: localDay(),
+  });
+  const otherProject = await write(page, 'project', { title: '另一个项目', order: -10 });
+  const otherLine = await write(page, 'workline', {
+    title: '跨线安排',
+    projectId: otherProject.data.id,
+  });
+  await write(page, 'milestone', {
+    title: '跨线晨会',
+    lineId: otherLine.data.id,
+    dueDate: localDay(),
+    dueTime: '07:30',
+  });
+  const tomorrow = new Date(localDay() + 'T12:00:00');
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  await write(page, 'todo', {
+    title: '明日完成的所属条目',
+    kind: 'idea',
+    milestoneId: node.data.id,
+    dueDate: localDay(tomorrow),
+  });
+  await write(page, 'todo', {
+    title: '已完成的所属想法',
+    kind: 'idea',
+    milestoneId: node.data.id,
+    completedAt: new Date().toISOString(),
+  });
   await write(page, 'todo', {
     title: '确认材料进度',
     milestoneId: node.data.id,
@@ -92,105 +126,249 @@ test('今日左侧导航放待办与联系人，右侧直接录入实际并关�
   });
   await refresh(page);
   const agenda = page.getByRole('navigation', { name: '今日导航', exact: true });
-  await expect(agenda.getByRole('region', { name: '当天待办', exact: true })).toBeVisible();
-  await expect(agenda.getByRole('region', { name: '今天联系谁', exact: true })).toContainText(
+  const list = agenda.getByRole('region', { name: '当天待办', exact: true });
+  await expect(list.locator('.today-node .today-task > span')).toHaveText([
+    '跨线晨会',
+    '早间实验',
+    '方案会议',
+    '未定时节点',
+  ]);
+  await expect(list.locator('.today-node time')).toHaveText(['07:30', '08:00', '09:00']);
+  await expect(list.locator('.today-task')).not.toContainText(['明日完成的所属条目']);
+  const colors = await list
+    .locator('.today-node')
+    .first()
+    .evaluate((el) => ({
+      background: getComputedStyle(el).backgroundColor,
+      color: getComputedStyle(el.querySelector('.today-row')!).color,
+    }));
+  expect(colors.color).toBe('rgb(255, 255, 255)');
+  expect(colors.background).not.toBe('rgba(0, 0, 0, 0)');
+  const nodeButton = list.locator(`[data-space-id="${node.data.id}"] .today-row`);
+  await nodeButton.hover();
+  const preview = page.getByRole('region', { name: '方案会议的全部待办', exact: true });
+  await expect(preview).toContainText('明日完成的所属条目');
+  await expect(preview).toContainText('已完成的所属想法');
+  await preview.hover();
+  await expect(preview).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(preview).not.toBeVisible();
+  await nodeButton.focus();
+  await expect(preview).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('region', { name: '今天联系谁', exact: true })).toContainText(
     '等 小王',
   );
   const form = page.getByRole('form', { name: '实际工作录入', exact: true });
-  for (const name of ['具体事件', '开始时间', '结束时间', '项目', '业务线', '节点'])
-    await expect(form.getByLabel(name, { exact: true })).toBeVisible();
-  const layout = await page.locator('.today-layout').evaluate((el) => {
-    const timeline = el.querySelector('.timeline-scroll')!.getBoundingClientRect();
-    const controls = [...el.querySelectorAll('.actual-time-fields input, .form-grid select')].map(
-      (control) => ({
-        height: control.getBoundingClientRect().height,
-        background: getComputedStyle(control).backgroundColor,
-        border: getComputedStyle(control).borderLeftWidth,
-      }),
-    );
-    return {
-      bottom: el.getBoundingClientRect().bottom,
-      timelineBottom: timeline.bottom,
-      height: timeline.height,
-      controls,
-    };
-  });
-  expect(layout.bottom).toBeGreaterThan(950);
-  expect(Math.abs(layout.timelineBottom - layout.bottom)).toBeLessThan(2);
-  expect(layout.height).toBeGreaterThan(750);
-  expect(layout.controls).toHaveLength(6);
-  for (const control of layout.controls)
-    expect(control).toEqual({ height: 40, background: 'rgba(0, 0, 0, 0)', border: '0px' });
-  await expect(form.locator('details')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '记录实际', exact: true })).toHaveCount(0);
-  await form.getByRole('button', { name: '新建 TODO / IDEA', exact: true }).click();
+  await expect(form.getByRole('region', { name: '待选池', exact: true })).not.toBeVisible();
   await form.getByLabel('具体事件', { exact: true }).fill('直接推进会议节点');
   await form.getByLabel('开始时间', { exact: true }).fill('10:00');
   await form.getByLabel('结束时间', { exact: true }).fill('11:00');
-  const pool = form.getByRole('region', { name: '待选池', exact: true });
-  await pool.getByLabel('项目', { exact: true }).selectOption(project.data.id);
-  await pool.getByLabel('业务线', { exact: true }).selectOption(line.data.id);
-  await pool.getByLabel('节点', { exact: true }).selectOption(node.data.id);
-  await pool
-    .locator('.actual-pool-choice')
-    .filter({ hasText: '节点 · 方案会议' })
-    .getByRole('button', { name: '加入', exact: true })
-    .click();
-  await expect(form.getByRole('region', { name: '已选择', exact: true })).toContainText(
-    '节点 · 方案会议',
-  );
+  await list.getByRole('button', { name: '记一段 · 方案会议', exact: true }).click();
+  await list.getByRole('button', { name: '记一段 · 找人要材料', exact: true }).click();
+  await expect(form.getByLabel('具体事件', { exact: true })).toHaveValue('直接推进会议节点');
+  await expect(
+    form.getByRole('checkbox', { name: '本次完成 找人要材料', exact: true }),
+  ).not.toBeChecked();
+  await form.getByText('成果 / 下一步 · 方案会议', { exact: true }).click();
   await form.getByLabel('批注 · 方案会议', { exact: true }).fill('会议确定了下一步方案');
   await form.getByRole('button', { name: '保存实际工作', exact: true }).click();
   await expect(form.getByLabel('具体事件', { exact: true })).toHaveValue('');
-  let state = await snapshot(page);
+  await expect(form.getByRole('region', { name: '已选择', exact: true })).toHaveCount(0);
+  const state = await snapshot(page);
   expect(state.entries.find((e) => e.data.type === 'actual')?.data).toMatchObject({
     milestoneIds: [node.data.id],
-    itemIds: [],
+    itemIds: [todo.data.id],
     startTime: '10:00',
     endTime: '11:00',
   });
-  expect(state.entries.find((e) => e.data.id === node.data.id)?.data).toHaveProperty(
+  expect(state.entries.find((e) => e.data.id === todo.data.id)?.data).toHaveProperty(
     'completedAt',
     null,
   );
   expect(await notes(page, line.data.id)).toContain('会议确定了下一步方案');
   expect(await notes(page, line.data.id)).not.toContain('直接推进会议节点');
-  await page.getByRole('button', { name: 'TODO / IDEA', exact: true }).click();
-  const capture = page.getByRole('region', { name: '快速创建 TODO / IDEA', exact: true });
-  await expect(capture.getByRole('button', { name: '重要性：不急', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true',
+  await expect(page.getByRole('region', { name: '当天实际记录', exact: true })).toContainText(
+    '直接推进会议节点',
   );
-  await capture.getByLabel('要做什么', { exact: true }).fill('无时间的新想法');
+  await page.getByRole('button', { name: '编辑记录 · 直接推进会议节点', exact: true }).click();
+  const edit = page.getByRole('dialog');
+  await expect(edit.getByLabel('具体事件', { exact: true })).toHaveValue('直接推进会议节点');
+  await edit.getByRole('button', { name: '取消', exact: true }).click();
+  await page.getByRole('tab', { name: '待办 / 节点', exact: true }).click();
+  const capture = page.getByRole('region', { name: '快速创建 TODO / IDEA', exact: true });
+  await expect(
+    agenda.getByRole('region', { name: '快速创建 TODO / IDEA', exact: true }),
+  ).toHaveCount(0);
   await capture.getByLabel('业务线', { exact: true }).selectOption(line.data.id);
+  await capture.getByLabel('要做什么', { exact: true }).fill('当天快速待办');
   await capture.getByRole('button', { name: '添加', exact: true }).click();
-  await expect(capture.getByLabel('要做什么', { exact: true })).toHaveValue('');
-  state = await snapshot(page);
-  expect(state.entries.filter((e) => e.data.type === 'actual')).toHaveLength(1);
-  expect(
-    state.entries.find((e) => e.data.type === 'todo' && e.data.title === '无时间的新想法')?.data,
-  ).toHaveProperty('importance', 1);
-  await page.getByRole('button', { name: '实际工作', exact: true }).click();
-  await page.locator('.today-lists').evaluate((el) => {
-    el.scrollTop = 0;
-  });
+  await expect(list).toContainText('当天快速待办');
+  await expect(page.getByRole('region', { name: '计划与实际', exact: true })).toHaveCount(0);
   await page.screenshot({
     path: '.test-vault/today-navigation-capture-desktop.png',
     fullPage: true,
   });
-  await page.setViewportSize({ width: 600, height: 1000 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await expect(agenda).toBeVisible();
-  await page.screenshot({
-    path: '.test-vault/today-navigation-capture-mobile.png',
-    fullPage: true,
-  });
-  await page.setViewportSize({ width: 375, height: 900 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.screenshot({ path: '.test-vault/today-capture-375.png', fullPage: true });
+  for (const width of [600, 375]) {
+    await page.setViewportSize({ width, height: 1000 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await nodeButton.click();
+    await expect(preview).toBeVisible();
+    const rect = await preview.boundingBox();
+    expect(rect!.x).toBeGreaterThanOrEqual(0);
+    expect(rect!.x + rect!.width).toBeLessThanOrEqual(width);
+    await preview.getByRole('button', { name: '关闭预览', exact: true }).click();
+    await page.screenshot({ path: `.test-vault/today-capture-${width}.png`, fullPage: true });
+  }
   await nav(page, '工作空间');
   await page.keyboard.press('Control+k');
-  await expect(page.getByRole('navigation', { name: '今日导航', exact: true })).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(form.getByLabel('具体事件', { exact: true })).toBeFocused();
+});
+
+test('今日统一排序，完成的定时节点立即置底，保留原重要性；联络默认展开', async ({ page }) => {
+  const { line, node } = await seed(page);
+  await write(page, 'milestone', {
+    title: '同刻更急',
+    lineId: line.data.id,
+    dueDate: localDay(),
+    dueTime: '09:00',
+    importance: 5,
+  });
+  await write(page, 'milestone', {
+    title: '无时刻节点',
+    lineId: line.data.id,
+    dueDate: localDay(),
+    importance: 3,
+  });
+  await write(page, 'milestone', {
+    title: '七点已完成',
+    lineId: line.data.id,
+    dueDate: localDay(),
+    dueTime: '07:00',
+    importance: 5,
+    completedAt: new Date().toISOString(),
+  });
+  const pool = (await snapshot(page)).entries.find(
+    (e) => e.data.type === 'milestone' && e.data.lineId === line.data.id && e.data.pool,
+  )!;
+  await write(page, 'todo', {
+    title: '无时刻最急',
+    milestoneId: pool.data.id,
+    dueDate: localDay(),
+    importance: 5,
+  });
+  await write(page, 'todo', {
+    title: '需要找小王',
+    milestoneId: node.data.id,
+    direction: 'to',
+    person: '小王',
+  });
+  await refresh(page);
+  const agenda = page.getByRole('navigation', { name: '今日导航', exact: true });
+  const rows = agenda.locator('.today-todos > li .today-task > span');
+  const titles = await rows.allTextContents();
+  expect(titles.slice(0, 4).map((t) => t.trim())).toEqual([
+    '同刻更急',
+    '方案会议',
+    '无时刻最急',
+    '无时刻节点',
+  ]);
+  expect(titles.at(-1)?.trim()).toBe('七点已完成');
+  await expect(page.getByRole('region', { name: '今天联系谁', exact: true })).toContainText(
+    '找 小王',
+  );
+  await page.getByRole('checkbox', { name: '完成节点 同刻更急', exact: true }).click();
+  await expect
+    .poll(async () => (await rows.allTextContents()).slice(-2).map((text) => text.trim()))
+    .toEqual(['同刻更急', '七点已完成']);
+  const saved = (await snapshot(page)).entries.find(
+    (e) => e.data.type === 'milestone' && e.data.title === '同刻更急',
+  )!.data;
+  expect(saved).toMatchObject({ importance: 5, completedAt: expect.any(String) });
+});
+
+test('待办节点设置直接展开，顶部粘贴消息自动匹配后可修改并保存', async ({ page }) => {
+  const { line } = await seed(page);
+  await page.getByRole('tab', { name: '待办 / 节点', exact: true }).click();
+  const capture = page.getByRole('region', { name: '快速创建 TODO / IDEA', exact: true });
+  await expect(capture.locator('details')).toHaveCount(0);
+  await expect(capture.getByText('粘贴微信消息', { exact: true })).toHaveCount(0);
+  await expect(
+    capture.getByText('粘贴消息后自动识别日期、时刻、业务线、重要性和标签，结果可在下方修改。', {
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  for (const label of [
+    '粘贴微信消息',
+    '业务线',
+    '类型',
+    '要做什么',
+    '具体节点',
+    '条目日期',
+    '批注',
+  ])
+    await expect(capture.getByLabel(label, { exact: true })).toBeVisible();
+  await expect(capture.getByRole('button', { name: '重要性：不急', exact: true })).toBeVisible();
+  const source = capture.getByLabel('粘贴微信消息', { exact: true });
+  const order = await capture.evaluate((el) => ({
+    paste: el.querySelector('.quick-capture-paste')!.getBoundingClientRect().top,
+    line: el.querySelector('.quick-capture-controls')!.getBoundingClientRect().top,
+  }));
+  expect(order.paste).toBeLessThan(order.line);
+  await source.evaluate((el) => {
+    const data = new DataTransfer();
+    data.setData('text', '明天上午九点半论文研究讨论推进方案');
+    el.dispatchEvent(
+      new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }),
+    );
+  });
+  const tomorrow = new Date(localDay() + 'T12:00:00');
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  await expect(capture.getByLabel('业务线', { exact: true })).toHaveValue(line.data.id);
+  await expect(capture.getByLabel('类型', { exact: true })).toHaveValue('milestone');
+  await expect(capture.getByLabel('要做什么', { exact: true })).toHaveValue('论文研究讨论推进方案');
+  await expect(capture.getByLabel('截止日期', { exact: true })).toHaveValue(localDay(tomorrow));
+  await expect(capture.getByLabel('截止时刻', { exact: true })).toHaveValue('09:30');
+  await expect(capture.getByLabel('节点标签', { exact: true })).toHaveValue('会议');
+  await expect(capture.getByRole('button', { name: '重要性：一般', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(capture.getByLabel('条目日期', { exact: true })).toHaveCount(0);
+  await capture.getByLabel('要做什么', { exact: true }).fill('校正后的方案讨论');
+  await capture.getByLabel('截止时刻', { exact: true }).fill('10:00');
+  await capture.getByLabel('节点标签', { exact: true }).fill('讨论，报告');
+  await capture.getByLabel('批注', { exact: true }).fill('会前准备材料');
+  await capture.getByRole('button', { name: '添加', exact: true }).click();
+  await expect(capture.getByLabel('要做什么', { exact: true })).toHaveValue('');
+  const state = await snapshot(page);
+  expect(
+    state.entries.find((e) => e.data.type === 'milestone' && e.data.title === '校正后的方案讨论')
+      ?.data,
+  ).toMatchObject({
+    lineId: line.data.id,
+    dueDate: localDay(tomorrow),
+    dueTime: '10:00',
+    tags: ['讨论', '报告'],
+    importance: 3,
+  });
+  expect(await notes(page, line.data.id)).toContain('会前准备材料');
+  expect(state.entries.filter((e) => e.data.type === 'actual')).toHaveLength(0);
+  expect(
+    await page
+      .locator('.sliding-tabs-panel')
+      .last()
+      .evaluate((el) => el.scrollTop),
+  ).toBe(0);
+  await expect(
+    capture.getByRole('heading', { name: '自动匹配与识别', exact: true }),
+  ).toBeInViewport();
+  await capture.getByLabel('类型', { exact: true }).selectOption('todo');
+  await expect(capture.getByLabel('具体节点', { exact: true })).toBeVisible();
+  await expect(capture.getByLabel('条目日期', { exact: true })).toBeVisible();
+  await expect(capture.locator('details')).toHaveCount(0);
+  await page.screenshot({ path: '.test-vault/today-recognition-first.png', fullPage: true });
 });

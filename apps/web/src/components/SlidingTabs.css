@@ -1,0 +1,49 @@
+.sliding-tabs-list {
+  display: grid;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 16px;
+  border-radius: 6px;
+  background: var(--hover);
+  flex: 0 0 auto;
+}
+.sliding-tabs-list > button {
+  border: 0;
+  border-radius: 4px;
+  padding: 9px 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
+}
+.sliding-tabs-list > button[aria-selected='true'] {
+  background: var(--accent-strong);
+  color: white;
+}
+.sliding-tabs-viewport {
+  position: relative;
+  /* 避免切换动画中聚焦输入框时，浏览器额外横向滚动容器。 */
+  overflow: clip;
+  flex: 1;
+  min-height: 0;
+}
+.sliding-tabs-panel {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+  transition: transform 240ms ease;
+  padding: 2px 4px 16px 0;
+}
+
+.sliding-tabs {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}

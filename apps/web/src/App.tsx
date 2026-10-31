@@ -1,8 +1,7 @@
-import { useCallback, useDeferredValue, useEffect, useState, useRef, lazy, Suspense } from 'react';
+import { useCallback, useDeferredValue, useEffect, useState, useRef } from 'react';
 import { MagnifyingGlassIcon, GearIcon, ReloadIcon } from '@radix-ui/react-icons';
 import {
   localDay,
-  weekStart,
   isSpaceItem,
   type Entry,
   type Snapshot,
@@ -11,21 +10,19 @@ import {
 import { load, session, removeSpace } from './api';
 import { spaceSubtree } from '../../../packages/domain/workspace';
 import { Button, Modal, EmptyState, ErrorMessage } from './components/ui';
-import { Connect, Backup, Appearance } from './features/VaultSettings';
-import { ReviewForm } from './features/ReviewForm';
-import type { Editor } from './features/editor';
-import { WorkItemForm } from './features/WorkItemForm';
-import { ActualRecordForm } from './features/ActualRecordForm';
-import { CommentForm } from './features/CommentForm';
-import { WorkspaceBoard } from './features/WorkspaceBoard';
-import { SpaceMenu } from './features/SpaceMenu';
-import { QuickEdit } from './features/QuickEdit';
-import { SpaceDetails } from './features/SpaceDetails';
-import { DeleteSpaceDialog } from './features/DeleteSpaceDialog';
+import { Connect, Backup, Appearance } from './features/settings/VaultSettings';
+import type { Editor } from './types/editor';
+import { WorkItemForm } from './features/workspace/WorkItemForm';
+import { ActualRecordForm } from './features/actual/ActualRecordForm';
+import { CommentForm } from './features/workspace/CommentForm';
+import { Workspace } from './pages/Workspace';
+import { SpaceMenu } from './features/workspace/SpaceMenu';
+import { QuickEdit } from './features/workspace/QuickEdit';
+import { SpaceDetails } from './features/workspace/SpaceDetails';
+import { DeleteSpaceDialog } from './features/workspace/DeleteSpaceDialog';
 import { Knowledge } from './pages/Knowledge';
 import { Review } from './pages/Review';
 import { Today } from './pages/Today';
-const Timeline = lazy(() => import('./features/Timeline').then((m) => ({ default: m.Timeline })));
 const pages = [
   { id: 'today', name: '今日' },
   { id: 'workspace', name: '工作空间' },
@@ -37,12 +34,14 @@ export default function App() {
     [loading, setLoading] = useState(true),
     [syncing, setSyncing] = useState(false),
     [error, setError] = useState('');
+  const [defaultPath, setDefaultPath] = useState('');
   const [page, setPage] = useState('today'),
     [selected, setSelected] = useState<string | null>(null),
     [editor, setEditor] = useState<Editor | null>(null),
     [settings, setSettings] = useState(false);
   const [search, setSearch] = useState(''),
     [date, setDate] = useState(localDay()),
+    [reviewDate, setReviewDate] = useState(localDay()),
     [showArchived, setShowArchived] = useState(false);
   const query = useDeferredValue(search.toLowerCase());
   const [contentDirty, setContentDirty] = useState(false);
@@ -64,6 +63,8 @@ export default function App() {
   useEffect(() => {
     void session()
       .then(async (s) => {
+        setDefaultPath(s.root);
+        if (s.connectionError) setError(s.connectionError);
         if (s.connected) await reload();
       })
       .catch((e) => setError(String(e)))
@@ -103,7 +104,8 @@ export default function App() {
         e.preventDefault();
         setPage('today');
         setSelected(null);
-        setEditor({ type: 'actual', defaults: { date } });
+        setDate(localDay());
+        setEditor({ type: 'actual', defaults: { date: localDay() } });
       }
     };
     window.addEventListener('keydown', listener);
@@ -123,6 +125,7 @@ export default function App() {
     selectedEntry = lastSelected.current.entry;
   const navigate = (id: string) => {
     if (!canLeaveContent()) return;
+    if (id === 'today' && page !== 'today') setDate(localDay());
     setPage(id);
     setSelected(null);
     setSearch('');
@@ -145,8 +148,7 @@ export default function App() {
       await handleDeleted(await removeSpace(entry));
     });
   };
-  const hasBusinessNavigation =
-    (page === 'workspace' || page === 'knowledge' || page === 'today') && Boolean(snapshot);
+  const hasBusinessNavigation = (page === 'workspace' || page === 'knowledge') && Boolean(snapshot);
   return (
     <div
       className={
@@ -155,7 +157,9 @@ export default function App() {
         (hasBusinessNavigation ? 'workspace-shell' : '')
       }
     >
-      <main className={`main${hasBusinessNavigation ? ' workspace-main' : ''}`}>
+      <main
+        className={`main${hasBusinessNavigation ? ' workspace-main' : ''}${page === 'today' && snapshot ? ' today-main' : ''}`}
+      >
         <header className="topbar">
           <span className="app-brand">CHAOS</span>
           <nav className="main-nav" aria-label="主导航">
@@ -199,13 +203,21 @@ export default function App() {
             备份
           </Button>
         </header>
-        <div className={`content${hasBusinessNavigation ? ' workspace-page' : ''}`}>
+        <div
+          className={`content${hasBusinessNavigation ? ' workspace-page' : ''}${page === 'today' && snapshot ? ' today-content' : ''}`}
+        >
           <ErrorMessage message={error} />
           {error && <Button onClick={() => setError('')}>收起提示</Button>}
           {loading ? (
             <EmptyState>正在读取本地会话…</EmptyState>
           ) : !snapshot ? (
-            <Connect onConnected={(s) => setSnapshot(s)} />
+            <Connect
+              defaultPath={defaultPath}
+              onConnected={(s) => {
+                setSnapshot(s);
+                setError('');
+              }}
+            />
           ) : (
             <>
               {snapshot.issues.length > 0 && (
@@ -218,24 +230,6 @@ export default function App() {
                   ))}
                 </details>
               )}
-              {page === 'review' && (
-                <div className="page-heading">
-                  <div>
-                    <p className="eyebrow">PERSONAL RESEARCH & LIFE</p>
-                    <h1>{pages.find((p) => p.id === page)?.name}</h1>
-                  </div>
-                  <div className="actions">
-                    <Button
-                      className="primary"
-                      onClick={() =>
-                        setEditor({ type: 'review', defaults: { week: weekStart(date) } })
-                      }
-                    >
-                      写周复盘
-                    </Button>
-                  </div>
-                </div>
-              )}
               {page === 'today' && (
                 <Today
                   key={snapshot.vaultId}
@@ -247,18 +241,7 @@ export default function App() {
                   reload={reload}
                   run={run}
                   goWorkspace={goWorkspace}
-                  timeline={
-                    <Suspense fallback={<EmptyState>正在加载时间线…</EmptyState>}>
-                      <Timeline
-                        date={date}
-                        snapshot={snapshot}
-                        edit={setEditor}
-                        reload={reload}
-                        run={run}
-                        goWorkspace={goWorkspace}
-                      />
-                    </Suspense>
-                  }
+                  editActual={setEditor}
                 />
               )}
               {page === 'workspace' && (
@@ -268,7 +251,7 @@ export default function App() {
                       <span role="status">已删除 {deletion.deletedIds.length} 项内容</span>
                     </div>
                   )}
-                  <WorkspaceBoard
+                  <Workspace
                     snapshot={snapshot}
                     edit={setEditor}
                     select={(id) => {
@@ -294,10 +277,9 @@ export default function App() {
               {page === 'review' && (
                 <Review
                   snapshot={snapshot}
-                  week={weekStart(date)}
-                  setDate={setDate}
+                  date={reviewDate}
+                  setDate={setReviewDate}
                   edit={setEditor}
-                  select={(id) => goWorkspace(id)}
                 />
               )}
             </>
@@ -348,14 +330,7 @@ export default function App() {
               reload={reload}
             />
           ) : null
-        ) : (
-          <ReviewForm
-            key={editor.entry?.revision ?? JSON.stringify(editor)}
-            editor={editor}
-            close={() => setEditor(null)}
-            reload={reload}
-          />
-        ))}
+        ) : null)}
       {deleting && snapshot && (
         <DeleteSpaceDialog
           key={deleting.data.id}
@@ -372,8 +347,10 @@ export default function App() {
         <Modal title="Vault 与数据安全" onClose={() => setSettings(false)} wide>
           <Appearance />
           <Connect
+            defaultPath={snapshot?.root ?? defaultPath}
             onConnected={(s) => {
               setSnapshot(s);
+              setError('');
               setSelected(null);
               setEditor(null);
               setDeleting(null);

@@ -17,11 +17,13 @@ export function Modal({
   children,
   onClose,
   wide = false,
+  className = '',
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   wide?: boolean;
+  className?: string;
 }) {
   useEffect(() => {
     const closePicker = (event: KeyboardEvent) => {
@@ -45,7 +47,7 @@ export function Modal({
       <Dialog.Portal>
         <Dialog.Overlay className="overlay" />
         <Dialog.Content
-          className={'dialog ' + (wide ? 'wide' : '')}
+          className={`dialog ${wide ? 'wide' : ''} ${className}`}
           onInteractOutside={(event) => event.preventDefault()}
         >
           <div className="section-heading">

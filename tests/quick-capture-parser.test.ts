@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { parseRecord, type Entry } from '../packages/domain';
-import { parseQuickCapture } from '../apps/web/src/features/quickCaptureParser';
+import { parseQuickCapture } from '../apps/web/src/features/capture/quickCaptureParser';
 
 const now = '2026-10-26T08:00:00.000Z';
 function entry(data: object): Entry {

@@ -1,0 +1,60 @@
+.backup-trigger {
+  border: 0;
+  flex-shrink: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  padding: 7px 8px;
+}
+.connect {
+  max-width: 610px;
+  margin: 38px auto;
+}
+.connect h2 {
+  font-size: 24px;
+  margin-bottom: 18px;
+}
+.connect > p {
+  color: var(--muted);
+  font-size: 13px;
+}
+.connect .button {
+  margin-bottom: 15px;
+}
+.dialog .connect {
+  margin: 0 0 25px;
+}
+.dialog .connect h2 {
+  font-size: 15px;
+}
+.backup-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0;
+}
+.backup {
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.appearance {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--line);
+}
+.backup h2 {
+  margin-bottom: 10px;
+}
+.backup-row {
+  font-size: 11px;
+}
+@media (max-width: 760px) {
+  .backup-trigger {
+    padding-inline: 4px;
+  }
+}

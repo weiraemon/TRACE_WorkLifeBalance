@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import type { Snapshot } from '../../../../packages/domain/index';
 import { EmptyState } from '../components/ui';
-import { NotesContent } from '../features/NotesContent';
-import { WorkspaceNavigation, workspaceGroups } from '../features/WorkspaceNavigation';
+import { NotesContent } from '../features/workspace/NotesContent';
+import { WorkspaceNavigation } from '../features/workspace/WorkspaceNavigation';
+import { workspaceGroups } from '../features/workspace/workspaceGroups';
 
 export function Knowledge({
   snapshot,
