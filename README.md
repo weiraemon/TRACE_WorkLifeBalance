@@ -232,6 +232,7 @@ Python 3.10–3.12 最稳妥，推荐 3.12；3.13+ 如果没有 `sqlcipher3` 预
 开发运行 `npm run dev`；验证使用 `npm test`、`npm run build`、`npm run test:e2e`。Windows 首次接入 QQ 的完整步骤见上文[接入 QQ 与 AI](#接入-qq-与-ai)。文件测试需要 NTFS 硬链接与 Junction 权限。
 
 - [开发与故障处理](docs/development/guide.md)
+- [Android 开发原则与实施方法](docs/development/android-development.md)
 - [仓库分工与跨端复用](docs/architecture/repository.md)
 - [演示录制指南](docs/development/recording.md)
 - [一周试用场景](docs/product/one-week-trial.md)

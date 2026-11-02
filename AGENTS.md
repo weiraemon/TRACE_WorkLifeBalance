@@ -1,5 +1,7 @@
 # CHAOS 产品与架构原则
 
+涉及 Android、移动端或跨端适配时，必须先阅读并遵守 [Android 开发原则与实施方法](docs/development/android-development.md)。默认只增加平台接入与必要适配，保持现有业务规则和 Windows 界面不变，不复制业务实现。
+
 ## 设计目的
 
 CHAOS 来自 weichao 与 chaos（混乱）的双重含义。它帮助用户从混乱中明确下一步，推进并结束工作，而非建立完整的工作历史档案。外部要求与内部探索统一归入业务线，真实经验通过 Notes 沉淀。
