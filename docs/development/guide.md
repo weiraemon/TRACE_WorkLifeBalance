@@ -24,6 +24,8 @@
 
 Windows x64 桌面发布使用 `npm run package:desktop`：前端与统一服务由 esbuild/Vite 构建到 `.desktop/`，Electron Packager 生成 `CHAOS.exe` 并压缩到 `releases/`。`apps/desktop` 只负责窗口、目录选择、QQ 初始化工具、单实例与子进程生命周期，不实现业务写入。每次新建发布目录，不复制本机配置或用户数据。`project-root.ts` 统一定位静态资源和 QQ 脚本，服务包保留 `apps/local-service/src/` 层级。
 
+品牌图标以 `apps/web/public/chaos.svg` 为唯一矢量源：完整、平滑的 C 形轮廓与金色端点，沿用系统森林绿与暖白。网页直接引用同一 SVG；桌面构建通过 Electron 离屏渲染生成 512 px PNG 及包含 16／24／32／48／64／128／256 px 的 ICO，不依赖系统 Chrome 或图形软件。
+
 `npm run desktop` 构建后启动开发用桌面窗口；`npm run test:desktop` 检查已构建的 `.desktop/`。内置 Python 3.12.10 与 SQLCipher 0.6.4，下载地址及 SHA-256 锁定在 `scripts/desktop-runtimes.json`，构建时实测原生数据库能力。桌面服务优先使用 `CHAOS_BUNDLED_PYTHON`，网页版继续尊重原 Python 配置。QQ 初始化工具复用原脚本并自动识别内置环境，不再安装 Node/Python。
 
 渲染器启用 sandbox、contextIsolation，关闭 Node 集成；preload 仅暴露目录选择和固定 QQ 初始化入口，并校验调用来自主窗口同源页面。外部 HTTP/HTTPS 链接交给默认浏览器。配置保存在 `%APPDATA%\CHAOS\workspace.json`，浏览器外观缓存位于其 `desktop/` 子目录。关闭窗口先通过进程 IPC 让统一服务退出，服务收到父进程断开也会关闭，释放工作目录锁。桌面默认仍使用 4317 端口，启动前需退出源码服务。

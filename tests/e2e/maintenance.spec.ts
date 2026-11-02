@@ -243,6 +243,7 @@ test('回顾可视化展示投入与计划实际，时间线点击拖动和右�
   await refresh(page);
   const yesterday = new Date(localDay() + 'T12:00:00');
   yesterday.setDate(yesterday.getDate() - 1);
+  const sameWeek = weekStart(localDay(yesterday)) === weekStart(localDay());
   await write(page, 'actual', {
     date: localDay(yesterday),
     startTime: '21:00',
@@ -257,7 +258,9 @@ test('回顾可视化展示投入与计划实际，时间线点击拖动和右�
       mutations++;
   });
   await nav(page, '回顾');
-  await expect(page.getByRole('region', { name: '本周概况', exact: true })).toContainText('2.0');
+  await expect(page.getByRole('region', { name: '本周概况', exact: true })).toContainText(
+    sameWeek ? '2.0' : '1.0',
+  );
   await expect(page.locator('.review-note')).toContainText('完成本周重点');
   await expect(page.getByRole('button', { name: '写周复盘', exact: true })).toHaveCount(0);
   const timeline = page.getByRole('region', { name: '计划与实际', exact: true });
@@ -278,9 +281,11 @@ test('回顾可视化展示投入与计划实际，时间线点击拖动和右�
   await page.mouse.move(bounds!.x + 10, bounds!.y + 85, { steps: 8 });
   await page.mouse.up();
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await records
-    .getByRole('button', { name: `${localDay(yesterday)} · 1.0 h`, exact: true })
-    .click();
+  if (sameWeek)
+    await records
+      .getByRole('button', { name: `${localDay(yesterday)} · 1.0 h`, exact: true })
+      .click();
+  else await page.getByLabel('回顾日期', { exact: true }).fill(localDay(yesterday));
   await expect(records).toContainText('前日跨夜前记录');
   await timeline.locator('.timeline-scroll').scrollIntoViewIfNeeded();
   await expect(timeline.locator('.actual-content')).toBeInViewport();

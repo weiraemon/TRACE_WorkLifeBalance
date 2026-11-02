@@ -1,12 +1,14 @@
 <div align="center">
 
+<img src="apps/web/public/chaos.svg" width="88" height="88" alt="CHAOS 图标：开放的 C 形研究轨迹与金色下一步节点" />
+
 # CHAOS
 
 **从混乱中，明确下一步。**
 
 以业务线组织工作，让计划、行动与真实投入各归其位。
 
-[界面预览](#界面预览) · [快速开始](#快速开始) · [跟着做一次](#跟着做一次) · [使用指南](docs/product/usage.md)
+[下载 Windows 桌面版](https://github.com/weiraemon/TRACE_WorkLifeBalance/releases/latest) · [界面预览](#界面预览) · [快速开始](#快速开始) · [跟着做一次](#跟着做一次) · [使用指南](docs/product/usage.md)
 
 </div>
 

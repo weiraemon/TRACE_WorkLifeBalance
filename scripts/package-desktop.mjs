@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { packager } from '@electron/packager';
 
 assert.equal(process.platform, 'win32', 'Build the Windows desktop package on Windows.');
@@ -10,12 +11,23 @@ const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 process.chdir(project);
 await fs.mkdir('releases', { recursive: true });
 const release = await fs.mkdtemp(path.join(project, 'releases', 'CHAOS-desktop-'));
+const require = createRequire(import.meta.url);
+const runtimeCache = path.join(project, '.test-vault', 'desktop-runtimes');
+const cachedElectron = path.join(
+  runtimeCache,
+  `electron-v${require('electron/package.json').version}-win32-x64.zip`,
+);
+const electronZipDir = await fs.access(cachedElectron).then(
+  () => runtimeCache,
+  () => undefined,
+);
 const [output] = await packager({
   dir: '.desktop',
   out: release,
   name: 'CHAOS',
   platform: 'win32',
   arch: 'x64',
+  electronZipDir,
   icon: '.desktop/icon.ico',
   asar: false,
   executableName: 'CHAOS',

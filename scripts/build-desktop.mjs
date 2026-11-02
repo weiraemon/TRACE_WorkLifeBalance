@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { build } from 'esbuild';
 
 assert.ok(
@@ -123,27 +124,11 @@ for (const entry of ['main', 'preload']) {
     external: ['electron'],
   });
 }
+const require = createRequire(import.meta.url);
+const { ELECTRON_RUN_AS_NODE: _nodeMode, ...iconEnvironment } = process.env;
 execFileSync(
-  'powershell.exe',
-  [
-    '-NoProfile',
-    '-NonInteractive',
-    '-ExecutionPolicy',
-    'Bypass',
-    '-File',
-    'scripts/create-desktop-icon.ps1',
-    '-OutputPath',
-    path.join(output, 'icon.png'),
-  ],
-  { windowsHide: true },
+  require('electron'),
+  ['scripts/create-desktop-icon.cjs', 'apps/web/public/chaos.svg', output],
+  { windowsHide: true, env: iconEnvironment, timeout: 30000 },
 );
-const png = await fs.readFile(path.join(output, 'icon.png'));
-const header = Buffer.alloc(22);
-header.writeUInt16LE(1, 2);
-header.writeUInt16LE(1, 4);
-header.writeUInt16LE(1, 10);
-header.writeUInt16LE(32, 12);
-header.writeUInt32LE(png.length, 14);
-header.writeUInt32LE(22, 18);
-await fs.writeFile(path.join(output, 'icon.ico'), Buffer.concat([header, png]));
 console.log('Desktop build ready: .desktop (includes Python and SQLCipher).');
