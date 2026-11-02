@@ -56,7 +56,75 @@ it('allows only one concurrent recovery to own the directory', async () => {
     if (pid === 123456) throw Object.assign(new Error('gone'), { code: 'ESRCH' });
     return realKill(pid, signal);
   });
-  const results = await Promise.allSettled([Vault.open(root), Vault.open(root)]);
-  for (const result of results) if (result.status === 'fulfilled') opened.push(result.value);
-  expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+  let release!: () => void;
+  let paused!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const publishing = new Promise<void>((resolve) => {
+    paused = resolve;
+  });
+  const unlink = fs.unlink.bind(fs);
+  let held = false;
+  vi.spyOn(fs, 'unlink').mockImplementation(async (filename) => {
+    if (!held && filename === path.join(await fs.realpath(root), '.atlas/service.lock')) {
+      held = true;
+      paused();
+      await gate;
+    }
+    return unlink(filename);
+  });
+  const first = Vault.open(root);
+  try {
+    await Promise.race([
+      publishing,
+      first.then(() => {
+        throw new Error('recovery was not paused');
+      }),
+    ]);
+    const second = await Promise.allSettled([Vault.open(root)]);
+    for (const result of second) if (result.status === 'fulfilled') opened.push(result.value);
+    release();
+    const result = await first;
+    opened.push(result);
+    expect(second[0].status).toBe('rejected');
+    await expect(fs.access(path.join(root, '.atlas/service-connecting'))).rejects.toHaveProperty(
+      'code',
+      'ENOENT',
+    );
+  } finally {
+    release();
+    await first.catch(() => {});
+  }
 });
+
+it.each(['abandoned', 'empty', 'alive'])(
+  'handles an interrupted connection guard: %s',
+  async (kind) => {
+    const root = await fixture(JSON.stringify({ pid: 123456, token: oldToken }));
+    const realKill = process.kill.bind(process);
+    vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+      if (pid === 123456) throw Object.assign(new Error('gone'), { code: 'ESRCH' });
+      return realKill(pid, signal);
+    });
+    const guard = path.join(root, '.atlas/service-connecting');
+    await fs.mkdir(guard);
+    const owner = path.join(guard, `${oldToken}.json`);
+    if (kind !== 'empty')
+      await fs.writeFile(
+        owner,
+        JSON.stringify({ pid: kind === 'alive' ? process.pid : 123456, token: oldToken }),
+      );
+    if (kind === 'alive') {
+      await expect(Vault.open(root)).rejects.toThrow('已由');
+      expect(JSON.parse(await fs.readFile(owner, 'utf8')).token).toBe(oldToken);
+    } else {
+      const vault = await Vault.open(root);
+      opened.push(vault);
+      await expect(fs.access(guard)).rejects.toHaveProperty('code', 'ENOENT');
+    }
+    expect(await fs.readFile(path.join(root, 'personal.md'), 'utf8')).toBe(
+      'User notes stay untouched.',
+    );
+  },
+);

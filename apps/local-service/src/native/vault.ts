@@ -55,6 +55,32 @@ function processExists(pid: number) {
     return (error as NodeJS.ErrnoException).code !== 'ESRCH';
   }
 }
+async function abandonedLock(source: string, startedAt: string | null, filename: string) {
+  let parsed;
+  try {
+    parsed = lockSchema.safeParse(JSON.parse(source));
+  } catch {
+    throw new VaultError('进程锁内容损坏，请核实 .atlas 中的锁文件；未自动删除', 409);
+  }
+  if (!parsed.success)
+    throw new VaultError('进程锁内容无法识别，请核实 .atlas 中的锁文件；未自动删除', 409);
+  const lock = parsed.data;
+  const lockHost = lock.host ?? lock.hostname;
+  if (lockHost && lockHost !== hostname())
+    throw new VaultError('工作目录的锁来自另一台电脑，请先确认该服务已关闭', 409);
+  if (processExists(lock.pid)) {
+    const currentStart = lock.pid === process.pid ? startedAt : await processStart(lock.pid);
+    const reusedPid = lock.startedAt && currentStart && lock.startedAt !== currentStart;
+    const oldLock =
+      !lock.startedAt &&
+      currentStart &&
+      process.platform === 'win32' &&
+      Date.parse(currentStart) > (await fs.stat(filename)).mtimeMs + 1000;
+    if (!reusedPid && !oldLock && processExists(lock.pid))
+      throw new VaultError('Vault 已由一个 ATLAS 服务打开，请关闭该服务后重试', 409);
+  }
+  return lock;
+}
 const slash = (value: string) => value.split(path.sep).join('/');
 const ignored = new Set(['.git', '.obsidian', '.atlas', 'node_modules']);
 const backupSchema = z.object({
@@ -80,6 +106,62 @@ export class Vault extends Workspace {
   private constructor(public root: string) {
     super();
   }
+  private async connectionGuard(owner: string, startedAt: string | null) {
+    const relative = '.atlas/service-connecting';
+    const guard = await this.safe(relative, true);
+    const candidate = await this.safe(`${relative}-${this.lockToken}`, true);
+    const filename = `${this.lockToken}.json`;
+    await fs.mkdir(candidate);
+    let acquired = false;
+    try {
+      await fs.writeFile(path.join(candidate, filename), owner, { flag: 'wx' });
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          // Publish a nonempty directory atomically: a late rmdir cannot remove its new owner.
+          await fs.rename(candidate, guard);
+          acquired = true;
+          break;
+        } catch (error) {
+          if (
+            !['EEXIST', 'ENOTEMPTY', 'EPERM'].includes((error as NodeJS.ErrnoException).code ?? '')
+          )
+            throw error;
+        }
+        try {
+          const names = await fs.readdir(await this.safe(relative));
+          if (names.length) {
+            if (names.length !== 1 || !/^[a-f0-9-]{36}\.json$/.test(names[0]))
+              throw new VaultError('连接锁内容损坏，请核实 .atlas/service-connecting', 409);
+            const file = await this.safe(`${relative}/${names[0]}`);
+            const lock = await abandonedLock(await fs.readFile(file, 'utf8'), startedAt, file);
+            if (`${lock.token}.json` !== names[0])
+              throw new VaultError('连接锁令牌不一致，未自动删除', 409);
+            await fs.unlink(file);
+          }
+          await fs.rmdir(guard);
+        } catch (error) {
+          if (
+            !['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes((error as NodeJS.ErrnoException).code ?? '')
+          )
+            throw error;
+        }
+      }
+      if (!acquired) throw new VaultError('工作目录正在被其他服务连接，请稍后重试', 409);
+    } finally {
+      if (!acquired) {
+        await fs.unlink(path.join(candidate, filename)).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== 'ENOENT') throw error;
+        });
+        await fs.rmdir(candidate);
+      }
+    }
+    return async () => {
+      await fs.unlink(await this.safe(`${relative}/${filename}`));
+      await fs.rmdir(guard).catch((error: NodeJS.ErrnoException) => {
+        if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(error.code ?? '')) throw error;
+      });
+    };
+  }
   static async open(input: string) {
     if (!path.isAbsolute(input)) throw new VaultError('Vault 需要绝对路径');
     const root = await fs.realpath(input);
@@ -96,44 +178,32 @@ export class Vault extends Workspace {
       startedAt,
     });
     let acquired = false;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        await fs.writeFile(lockPath, owner, { flag: 'wx' });
-        acquired = true;
-        break;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      }
-      try {
-        const source = await fs.readFile(await vault.safe('.atlas/service.lock'), 'utf8');
-        const parsed = lockSchema.safeParse(JSON.parse(source));
-        if (!parsed.success)
-          throw new VaultError('进程锁内容无法识别，请核实 .atlas/service.lock；未自动删除', 409);
-        const lock = parsed.data;
-        const lockHost = lock.host ?? lock.hostname;
-        if (lockHost && lockHost !== hostname())
-          throw new VaultError('工作目录的锁来自另一台电脑，请先确认该服务已关闭', 409);
-        if (processExists(lock.pid)) {
-          const currentStart = lock.pid === process.pid ? startedAt : await processStart(lock.pid);
-          const reusedPid = lock.startedAt && currentStart && lock.startedAt !== currentStart;
-          const oldLock =
-            !lock.startedAt &&
-            currentStart &&
-            process.platform === 'win32' &&
-            Date.parse(currentStart) > (await fs.stat(lockPath)).mtimeMs + 1000;
-          if (!reusedPid && !oldLock && processExists(lock.pid))
-            throw new VaultError('Vault 已由一个 ATLAS 服务打开，请关闭该服务后重试', 409);
+    const releaseGuard = await vault.connectionGuard(owner, startedAt);
+    try {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await fs.writeFile(lockPath, owner, { flag: 'wx' });
+          acquired = true;
+          break;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
         }
-        // 回收前再次核对，避免移除检查期间其他服务换上的锁。
-        if ((await fs.readFile(await vault.safe('.atlas/service.lock'), 'utf8')) !== source)
-          continue;
-        await fs.unlink(lockPath);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
-        if (error instanceof SyntaxError)
-          throw new VaultError('进程锁内容损坏，请核实 .atlas/service.lock；未自动删除', 409);
-        throw error;
+        try {
+          const source = await fs.readFile(await vault.safe('.atlas/service.lock'), 'utf8');
+          await abandonedLock(source, startedAt, lockPath);
+          // 回收前再次核对，避免移除检查期间其他服务换上的锁。
+          if ((await fs.readFile(await vault.safe('.atlas/service.lock'), 'utf8')) !== source)
+            continue;
+          await fs.unlink(lockPath);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+          if (error instanceof SyntaxError)
+            throw new VaultError('进程锁内容损坏，请核实 .atlas/service.lock；未自动删除', 409);
+          throw error;
+        }
       }
+    } finally {
+      await releaseGuard();
     }
     if (!acquired) throw new VaultError('工作目录正在被其他服务连接，请稍后重试', 409);
     try {
