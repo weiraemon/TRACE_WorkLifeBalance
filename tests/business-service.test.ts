@@ -46,7 +46,7 @@ async function setup() {
 }
 
 it('工作快照等待整个实际、完成与 Notes 批次发布，不读取半成品', async () => {
-  const { root, business, line } = await setup();
+  const { business, line } = await setup();
   await business.createPlan({
     kind: 'event',
     title: '例会',
@@ -66,7 +66,7 @@ it('工作快照等待整个实际、完成与 Notes 批次发布，不读取半
   });
   const rename = fs.rename.bind(fs);
   const spy = vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
-    if (to === path.join(root, todo.path)) {
+    if (to === path.join(before.root, todo.path)) {
       paused();
       await gate;
     }
@@ -92,7 +92,12 @@ it('工作快照等待整个实际、完成与 Notes 批次发布，不读取半
     },
   );
   try {
-    await publishing;
+    await Promise.race([
+      publishing,
+      save.then(() => {
+        throw new Error('写入未触发预期的发布暂停点');
+      }),
+    ]);
     let delivered = false;
     const reading = business.snapshot().then((value) => {
       delivered = true;
@@ -115,8 +120,11 @@ it('工作快照等待整个实际、完成与 Notes 批次发布，不读取半
     );
   } finally {
     release();
-    await save;
-    spy.mockRestore();
+    try {
+      await save;
+    } finally {
+      spy.mockRestore();
+    }
   }
 });
 it('标准命令创建计划、改期和完成复用 main 的待办池、Notes 与完成推导', async () => {
