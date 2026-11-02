@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { day, saveOptionsSchema } from './index';
+import { day, noteInputSchema, saveOptionsSchema, type Entry } from './index';
 export const businessApiVersion = '1' as const;
 export const planDestinationSchema = z.discriminatedUnion('kind', [
   z
@@ -32,6 +32,24 @@ export type BusinessCatalog = {
   title: string;
   lines: { id: string; title: string }[];
 }[];
+
+export function businessCatalog(entries: Entry[]): BusinessCatalog {
+  return entries.flatMap(({ data: project }) =>
+    project.type === 'project' && !project.completedAt
+      ? [
+          {
+            id: project.id,
+            title: project.title,
+            lines: entries.flatMap(({ data: line }) =>
+              line.type === 'workline' && line.projectId === project.id && !line.completedAt
+                ? [{ id: line.id, title: line.title }]
+                : [],
+            ),
+          },
+        ]
+      : [],
+  );
+}
 
 export function resolvePlanDestination(
   title: string,
@@ -133,7 +151,8 @@ export const businessCommandSchema = z.discriminatedUnion('type', [
       expectations: z.record(z.string().uuid(), revision),
     })
     .strict(),
+  z.object({ type: z.literal('notes.create'), note: noteInputSchema }).strict(),
   z.object({ type: z.literal('notes.read'), id: z.string().uuid() }).strict(),
   z.object({ type: z.literal('notes.save'), ...target, body: z.string().max(500000) }).strict(),
 ]);
-export type BusinessCommand = z.infer<typeof businessCommandSchema>;
+export type BusinessCommand = z.input<typeof businessCommandSchema>;

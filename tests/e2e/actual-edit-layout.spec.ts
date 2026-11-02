@@ -84,9 +84,10 @@ test('实际记录修改保留冲突草稿，不覆盖外部修改，也拒绝�
   await dialog.getByLabel('开始时间', { exact: true }).fill('09:00');
   await dialog.getByLabel('结束时间', { exact: true }).fill('10:00');
   await dialog.getByLabel('具体事件', { exact: true }).fill('网页里的未保存修改');
-  const response = await page.request.post('/api/records', {
+  const response = await page.request.post('/api/business/v1/commands', {
     headers: await headers(page),
     data: {
+      type: 'record.save',
       data: { ...original.data, description: '外部已保存修改' },
       revision: original.revision,
     },

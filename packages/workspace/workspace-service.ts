@@ -1,8 +1,7 @@
 import {
   isSpaceItem,
-  parseRecord,
+  createRecord,
   localDay,
-  validateChange,
   type BusinessLine,
   type Milestone,
   type Todo,
@@ -11,6 +10,7 @@ import {
 } from '../domain/index';
 import {
   businessCommandSchema,
+  businessCatalog,
   planSchema,
   resolvePlanDestination,
   type PlanDestination,
@@ -81,32 +81,10 @@ export class WorkspaceService {
     return this.vault.applyBatch(async (tx) => {
       const snapshot = tx.snapshot;
       const now = new Date().toISOString();
-      const make = (type: string, fields: object) =>
-        parseRecord({
-          schemaVersion: 1,
-          id: crypto.randomUUID(),
-          createdAt: now,
-          updatedAt: now,
-          type,
-          ...fields,
-        });
+      const make = (type: RecordData['type'], fields: object) => createRecord(type, fields, now);
       const records: RecordData[] = [];
       const bodies = new Map<string, string>();
-      const catalog = snapshot.entries.flatMap(({ data: p }) =>
-        p.type === 'project' && !p.completedAt
-          ? [
-              {
-                id: p.id,
-                title: p.title,
-                lines: snapshot.entries.flatMap(({ data: l }) =>
-                  l.type === 'workline' && l.projectId === p.id && !l.completedAt
-                    ? [{ id: l.id, title: l.title }]
-                    : [],
-                ),
-              },
-            ]
-          : [],
-      );
+      const catalog = businessCatalog(snapshot.entries);
       let target: PlanDestination | null = plan.destination ?? null;
       const scopedId = plan.projectId;
       const scopedProject = scopedId ? catalog.find((p) => p.id === scopedId) : undefined;
@@ -120,19 +98,9 @@ export class WorkspaceService {
           lineTitle: target.lineTitle,
           reason: target.reason,
         };
-      const lineAvailable = (id: string) => {
-        const entry = snapshot.entries.find((e) => e.data.id === id && e.data.type === 'workline');
-        if (!entry) return false;
-        const data = entry.data;
-        if (data.type !== 'workline' || data.completedAt) return false;
-        const parent = snapshot.entries.find((e) => e.data.id === data.projectId);
-        return Boolean(parent && parent.data.type === 'project' && !parent.data.completedAt);
-      };
-      if (lineId && !lineAvailable(lineId)) lineId = '';
       if (
         lineId &&
-        scopedProject &&
-        !scopeCatalog.some((p) => p.lines.some((l) => l.id === lineId))
+        !scopeCatalog.some((project) => project.lines.some((line) => line.id === lineId))
       )
         lineId = '';
       if (!lineId) {
@@ -241,12 +209,6 @@ export class WorkspaceService {
             dueDate: node.pool ? plan.dueDate : null,
           }),
         );
-      const virtual = [
-        ...snapshot.entries,
-        ...records.map((data) => ({ data, path: '', revision: '' })),
-      ];
-      for (const record of records) validateChange(record, virtual);
-
       if (plan.note) {
         const original = await tx.notesBody(line, bodies);
         bodies.set(
@@ -303,6 +265,8 @@ export class WorkspaceService {
         return this.vault.deletePreview(command.id);
       case 'work.delete':
         return this.vault.deleteSpace(command.id, command.expectations);
+      case 'notes.create':
+        return this.vault.createMarkdown(command.note);
       case 'notes.read':
         return this.vault.readContent(command.id);
       case 'notes.save':

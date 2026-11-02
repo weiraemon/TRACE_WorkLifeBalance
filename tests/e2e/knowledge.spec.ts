@@ -15,9 +15,10 @@ test('知识页复用业务导航，可编辑并预览业务线 Notes 的节点�
     [todo, '已联系实验室，等待提供材料。'],
     [idea, '排除测量误差后再验证替代解释。'],
   ] as const) {
-    const response = await page.request.post('/api/records', {
+    const response = await page.request.post('/api/business/v1/commands', {
       headers: await headers(page),
       data: {
+        type: 'record.save',
         data: entry.data,
         revision: entry.revision,
         options: { comments: [{ id: randomUUID(), targetId: entry.data.id, text }] },
@@ -103,9 +104,10 @@ test('快速切换业务线不混入迟到的 Notes，搜索和无匹配提示�
   const other = await write(page, 'workline', { title: '另一条线', projectId: project.data.id });
   await refresh(page);
   await nav(page, '知识');
-  await page.route('**/api/content', async (route) => {
+  await page.route('**/api/business/v1/commands', async (route) => {
     const input = route.request().postDataJSON();
-    if (input.id === line.data.id) await new Promise((resolve) => setTimeout(resolve, 350));
+    if (input.type === 'notes.read' && input.id === line.data.id)
+      await new Promise((resolve) => setTimeout(resolve, 350));
     await route.continue();
   });
   const explorer = page.getByRole('navigation', { name: '业务导航', exact: true });

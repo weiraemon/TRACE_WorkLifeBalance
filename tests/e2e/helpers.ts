@@ -33,9 +33,11 @@ export async function headers(page: Page) {
   return { 'X-Atlas-Token': s.token, 'X-Atlas-Vault': s.vaultId };
 }
 export async function snapshot(page: Page): Promise<Snapshot> {
-  const response = await page.request.get('/api/snapshot', { headers: await headers(page) });
+  const response = await page.request.get('/api/business/v1/workspace', {
+    headers: await headers(page),
+  });
   expect(response.ok(), await response.text()).toBe(true);
-  return response.json();
+  return (await response.json()).snapshot;
 }
 export async function write(
   page: Page,
@@ -44,9 +46,10 @@ export async function write(
   options?: SaveOptions,
 ): Promise<Entry> {
   const now = new Date().toISOString();
-  const response = await page.request.post('/api/records', {
+  const response = await page.request.post('/api/business/v1/commands', {
     headers: await headers(page),
     data: {
+      type: 'record.save',
       data: parseRecord({
         schemaVersion: 1,
         id: randomUUID(),
@@ -59,13 +62,13 @@ export async function write(
     },
   });
   expect(response.ok(), await response.text()).toBe(true);
-  return response.json();
+  return (await response.json()).result;
 }
 export async function refresh(page: Page) {
   const button = page.getByRole('button', { name: '重新加载 Vault', exact: true });
   await expect(button).toBeEnabled();
   await Promise.all([
-    page.waitForResponse((r) => r.url().endsWith('/api/snapshot')),
+    page.waitForResponse((r) => r.url().endsWith('/api/business/v1/workspace')),
     button.click(),
   ]);
   await expect(button).toBeEnabled();

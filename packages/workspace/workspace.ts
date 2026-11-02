@@ -1,5 +1,6 @@
 import {
   parseRecord,
+  createRecord,
   validateChange,
   noteInputSchema,
   saveOptionsSchema,
@@ -47,28 +48,27 @@ export abstract class Workspace {
     const now = new Date().toISOString(),
       notesId = crypto.randomUUID();
     const relative = `ATLAS/knowledge/业务线/${notesId}.md`;
-    const notes = parseRecord({
-      schemaVersion: 1,
-      id: notesId,
-      createdAt: now,
-      updatedAt: now,
-      type: 'resource',
-      title: line.title + ' · Notes',
-      target: relative,
-      location: 'vault',
-      noteId: notesId,
-      tag: '业务线',
-    });
-    const pool = parseRecord({
-      schemaVersion: 1,
-      id: crypto.randomUUID(),
-      createdAt: now,
-      updatedAt: now,
-      type: 'milestone',
-      title: '待办池',
-      lineId: line.id,
-      pool: true,
-    });
+    const notes = createRecord(
+      'resource',
+      {
+        id: notesId,
+        title: line.title + ' · Notes',
+        target: relative,
+        location: 'vault',
+        noteId: notesId,
+        tag: '业务线',
+      },
+      now,
+    );
+    const pool = createRecord(
+      'milestone',
+      {
+        title: '待办池',
+        lineId: line.id,
+        pool: true,
+      },
+      now,
+    );
     return [{ ...line, notesId }, notes, pool];
   }
   private async notesBody(line: BusinessLine, entries: Entry[], bodies: Map<string, string>) {
@@ -462,17 +462,17 @@ export abstract class Workspace {
           .replace(/[. ]+$/g, '')
           .slice(0, 60) || '笔记';
       const relative = `ATLAS/knowledge/${fields.tag || '未分类'}/${name}-${id}.md`;
-      const data = parseRecord({
-        schemaVersion: 1,
-        id,
-        createdAt: now,
-        updatedAt: now,
-        type: 'resource',
-        ...fields,
-        target: relative,
-        location: 'vault',
-        noteId: id,
-      });
+      const data = createRecord(
+        'resource',
+        {
+          id,
+          ...fields,
+          target: relative,
+          location: 'vault',
+          noteId: id,
+        },
+        now,
+      );
       const source = newNote(data);
       await this.atomic(relative, source, null);
       return { data, path: relative, revision: await this.contentHash(source) };
@@ -537,17 +537,18 @@ export abstract class Workspace {
         throw new VaultError('只有节点、TODO、IDEA可升为业务线');
       if (item.type === 'milestone' && item.pool) throw new VaultError('待办池不能升级');
       const oldLine = lineFor(item, snapshot.entries)!;
-      const line = parseRecord({
-        schemaVersion: 1,
-        id: item.id,
-        createdAt: item.createdAt,
-        updatedAt: new Date().toISOString(),
-        type: 'workline',
-        title: item.title,
-        importance: item.importance,
-        projectId: oldLine.projectId,
-        resourceIds: item.resourceIds,
-      }) as BusinessLine;
+      const line = createRecord(
+        'workline',
+        {
+          id: item.id,
+          createdAt: item.createdAt,
+          title: item.title,
+          importance: item.importance,
+          projectId: oldLine.projectId,
+          resourceIds: item.resourceIds,
+        },
+        new Date().toISOString(),
+      ) as BusinessLine;
       const parts = this.createLineParts(line);
       const newLine = parts[0] as BusinessLine,
         pool = parts.find((r) => r.type === 'milestone') as Milestone;

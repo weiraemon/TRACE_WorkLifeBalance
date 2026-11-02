@@ -193,9 +193,10 @@ for (const kind of ['todo', 'idea', 'node'])
   test(`${kind} 一步升为平级业务线，移动 Notes，不保留来源关联`, async ({ page }) => {
     const { line, node, todo, idea } = await seed(page);
     const target = kind === 'todo' ? todo : kind === 'idea' ? idea : node;
-    const response = await page.request.post('/api/records', {
+    const response = await page.request.post('/api/business/v1/commands', {
       headers: await headers(page),
       data: {
+        type: 'record.save',
         data: target.data,
         revision: target.revision,
         options: {
@@ -211,7 +212,9 @@ for (const kind of ['todo', 'idea', 'node'])
     await page.locator(`[data-space-id="${target.data.id}"]`).first().click({ button: 'right' });
     await Promise.all([
       page.waitForResponse(
-        (r) => r.url().endsWith('/api/promote') && r.request().method() === 'POST',
+        (r) =>
+          r.url().endsWith('/api/business/v1/commands') &&
+          r.request().postDataJSON()?.type === 'work.promote',
       ),
       page.getByRole('menuitem', { name: '升级为业务线', exact: true }).click(),
     ]);
@@ -292,7 +295,8 @@ test('业务线手动完成后收起，下属未完成条目不被连带划掉�
   await Promise.all([
     page.waitForResponse(
       (response) =>
-        response.url().endsWith('/api/records') && response.request().method() === 'POST',
+        response.url().endsWith('/api/business/v1/commands') &&
+        response.request().postDataJSON()?.type === 'record.save',
     ),
     page.getByRole('menuitem', { name: '重新打开业务线', exact: true }).click(),
   ]);
@@ -356,17 +360,17 @@ test('Notes 保存外部修改冲突保留草稿，界面窄屏不横向溢出',
 });
 
 test('API 仍拒绝无会话、跨目录会话、非法路径与未定义接口', async ({ page }) => {
-  expect((await page.request.get('/api/snapshot')).status()).toBe(403);
+  expect((await page.request.get('/api/business/v1/workspace')).status()).toBe(403);
   expect(
     (
-      await page.request.get('/api/snapshot', {
+      await page.request.get('/api/business/v1/workspace', {
         headers: { ...(await headers(page)), 'X-Atlas-Vault': 'other-session' },
       })
     ).status(),
   ).toBe(409);
-  const response = await page.request.post('/api/records', {
+  const response = await page.request.post('/api/business/v1/commands', {
     headers: await headers(page),
-    data: { data: { type: 'project', status: 'Ready' } },
+    data: { type: 'record.save', data: { type: 'project', status: 'Ready' } },
   });
   expect(response.status()).toBe(400);
   expect(

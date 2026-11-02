@@ -124,7 +124,7 @@ it('成功连接才记住目录；强制终止后自动恢复，活跃锁和失�
   expect(connected.root).toBe(await fs.realpath(second));
   expect(JSON.parse(await fs.readFile(config, 'utf8')).vaultPath).toBe(connected.root);
   const now = new Date().toISOString();
-  const saved = await fetch(initial.base + 'records', {
+  const saved = await fetch(initial.base + 'business/v1/commands', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -132,6 +132,7 @@ it('成功连接才记住目录；强制终止后自动恢复，活跃锁和失�
       'X-Atlas-Vault': connected.vaultId,
     },
     body: JSON.stringify({
+      type: 'record.save',
       data: {
         schemaVersion: 1,
         id: randomUUID(),
@@ -154,13 +155,13 @@ it('成功连接才记住目录；强制终止后自动恢复，活跃锁和失�
     root: connected.root,
     connectionError: '',
   });
-  const state = await fetch(restored.base + 'snapshot', {
+  const state = await fetch(restored.base + 'business/v1/workspace', {
     headers: {
       'X-Atlas-Token': restored.session.token,
       'X-Atlas-Vault': restored.session.vaultId,
     },
   }).then((r) => r.json());
-  expect(state.entries[0].data).toMatchObject({ title: '重启后仍保留' });
+  expect(state.snapshot.entries[0].data).toMatchObject({ title: '重启后仍保留' });
   const before = await fs.readFile(path.join(second, '.atlas/service.lock'), 'utf8');
   const contender = await start(config);
   expect(contender.session).toMatchObject({ connected: false, root: connected.root });
@@ -177,7 +178,7 @@ it('成功连接才记住目录；强制终止后自动恢复，活跃锁和失�
   expect(JSON.parse(await fs.readFile(config, 'utf8')).vaultPath).toBe(await fs.realpath(first));
 }, 40000);
 
-it('标准业务 API 与原网页路由共用状态、改期规则和 Notes，拒绝越权与过期版本', async () => {
+it('标准业务 API 是唯一工作入口，保留改期、Notes 与校验并移除旧路由', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'chaos-standard-api-'));
   roots.push(root);
   const work = path.join(root, 'work');
@@ -238,9 +239,13 @@ it('标准业务 API 与原网页路由共用状态、改期规则和 Notes，�
       note: { id: randomUUID(), text: 'API 原文只保存一次', date: '2026-11-01' },
     },
   });
-  let snapshot = await fetch(started.base + 'snapshot', { headers }).then((result) =>
-    result.json(),
-  );
+  const readWorkspace = async () =>
+    (
+      await fetch(started.base + 'business/v1/workspace', { headers }).then((result) =>
+        result.json(),
+      )
+    ).snapshot;
+  let snapshot = await readWorkspace();
   const todo = snapshot.entries.find((entry: any) => entry.data.type === 'todo');
   const node = snapshot.entries.find(
     (entry: any) => entry.data.type === 'milestone' && !entry.data.pool,
@@ -261,7 +266,7 @@ it('标准业务 API 与原网页路由共用状态、改期规则和 Notes，�
       })
     ).status,
   ).toBe(409);
-  snapshot = await fetch(started.base + 'snapshot', { headers }).then((result) => result.json());
+  snapshot = await readWorkspace();
   const moved = snapshot.entries.find((entry: any) => entry.data.id === todo.data.id);
   expect(
     snapshot.entries.find((entry: any) => entry.data.id === moved.data.milestoneId).data.pool,
@@ -273,19 +278,23 @@ it('标准业务 API 与原网页路由共用状态、改期规则和 Notes，�
     revision: latestNode.revision,
     completed: true,
   });
-  const oldNotes = await post('content', { action: 'read', id: line.data.id }).then((result) =>
-    result.json(),
-  );
   const standardNotes = await command({ type: 'notes.read', id: line.data.id });
-  expect(standardNotes).toEqual(oldNotes);
-  expect(oldNotes.body.split('API 原文只保存一次')).toHaveLength(2);
+  expect(standardNotes.body.split('API 原文只保存一次')).toHaveLength(2);
+  const createdNote = await command({
+    type: 'notes.create',
+    note: { title: '通用笔记', tag: '资料' },
+  });
+  expect(await fs.readFile(path.join(work, createdNote.path), 'utf8')).toContain('# 通用笔记');
   const standard = await fetch(started.base + 'business/v1/workspace', { headers }).then((result) =>
     result.json(),
   );
   expect(standard.version).toBe('1');
-  expect(standard.snapshot).toEqual(
-    await fetch(started.base + 'snapshot', { headers }).then((result) => result.json()),
-  );
+  expect(
+    standard.snapshot.entries.some((entry: any) => entry.data.id === createdNote.data.id),
+  ).toBe(true);
+  for (const route of ['records', 'content', 'notes', 'promote', 'delete-preview', 'delete-space'])
+    expect((await post(route, {})).status).toBe(404);
+  expect((await fetch(started.base + 'snapshot', { headers })).status).toBe(404);
   const before = standard.snapshot.entries;
   expect(
     (
@@ -296,7 +305,5 @@ it('标准业务 API 与原网页路由共用状态、改期规则和 Notes，�
       })
     ).status,
   ).toBe(400);
-  expect(
-    (await fetch(started.base + 'snapshot', { headers }).then((result) => result.json())).entries,
-  ).toEqual(before);
+  expect((await readWorkspace()).entries).toEqual(before);
 }, 30000);

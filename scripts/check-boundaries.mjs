@@ -5,6 +5,15 @@ import { builtinModules } from 'node:module';
 import ts from 'typescript';
 
 const builtins = new Set(builtinModules.map((name) => name.replace(/^node:/, '')));
+const retiredRoutes = new Set([
+  'snapshot',
+  'records',
+  'content',
+  'notes',
+  'promote',
+  'delete-preview',
+  'delete-space',
+]);
 function files(dir) {
   return fs
     .readdirSync(dir, { withFileTypes: true })
@@ -49,6 +58,22 @@ function check(file, text) {
       fail('QQ may only import native storage types');
   }
   function visit(node) {
+    if (
+      ts.isStringLiteral(node) &&
+      node.text.startsWith('/api/') &&
+      retiredRoutes.has(node.text.slice(5))
+    )
+      fail('retired work routes must not be restored; use /api/business/v1');
+    if (
+      web &&
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'api' &&
+      node.arguments[0] &&
+      ts.isStringLiteral(node.arguments[0]) &&
+      retiredRoutes.has(node.arguments[0].text)
+    )
+      fail('UI work operations must use the standard business API');
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
       if (node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier))
         dependency(
@@ -104,6 +129,8 @@ assert.equal(
   0,
 );
 assert.ok(check('apps/web/src/pages/probe.tsx', 'window.chaosDesktop;').length);
+assert.ok(check('apps/web/src/probe.ts', "api('records', {});").length);
+assert.ok(check('apps/local-service/src/server.ts', "const route = '/api/records';").length);
 assert.ok(
   check('apps/desktop/probe.ts', "import { Workspace } from '../../packages/workspace/workspace';")
     .length,

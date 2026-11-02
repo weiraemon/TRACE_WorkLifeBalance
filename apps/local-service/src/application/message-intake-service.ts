@@ -1,3 +1,4 @@
+import { businessCatalog, type BusinessCatalog } from '../../../../packages/domain/business';
 import { VaultError } from '../../../../packages/workspace/errors';
 import { randomUUID } from 'node:crypto';
 import {
@@ -5,7 +6,6 @@ import {
   sourceMessageSchema,
   type Candidate,
   type Inbox,
-  type MessageCatalog,
   type MessageRule,
   type MessageSettings,
   type SourceMessage,
@@ -26,23 +26,9 @@ import { messageServiceFor } from './message-inbox-service';
 export class MessageIntakeService {
   private processing = false;
   constructor(private readonly vault: Vault) {}
-  async catalog(vault: Vault): Promise<MessageCatalog> {
+  async catalog(vault: Vault): Promise<BusinessCatalog> {
     const workspace = await workspaceServiceFor(vault).snapshot();
-    return workspace.entries.flatMap(({ data: p }) =>
-      p.type === 'project' && !p.completedAt
-        ? [
-            {
-              id: p.id,
-              title: p.title,
-              lines: workspace.entries.flatMap(({ data: l }) =>
-                l.type === 'workline' && l.projectId === p.id && !l.completedAt
-                  ? [{ id: l.id, title: l.title }]
-                  : [],
-              ),
-            },
-          ]
-        : [],
-    );
+    return businessCatalog(workspace.entries);
   }
 
   async existingItems(vault: Vault): Promise<ExistingMessageItem[]> {
@@ -89,13 +75,12 @@ export class MessageIntakeService {
       .slice(0, 120);
   }
 
-  async queueRaw(
+  private sourceIdentity(
     inbox: Inbox,
-    rule: MessageRule,
     source: SourceMessage,
-    settings: MessageSettings = inbox.settings,
-    resyncSeen = false,
-  ): Promise<Candidate | null> {
+    settings: MessageSettings,
+    resyncSeen: boolean,
+  ) {
     if (!matchMessage(settings, source)) return null;
     const fingerprint = messageFingerprint(source);
     const sourceKey = messageKey(source);
@@ -110,6 +95,19 @@ export class MessageIntakeService {
         item.fingerprint === fingerprint || Boolean(sourceKey && item.messageId === sourceKey),
     );
     if (!resyncSeen && alreadySeen) return null;
+    return { fingerprint, sourceKey };
+  }
+
+  async queueRaw(
+    inbox: Inbox,
+    rule: MessageRule,
+    source: SourceMessage,
+    settings: MessageSettings = inbox.settings,
+    resyncSeen = false,
+  ): Promise<Candidate | null> {
+    const identity = this.sourceIdentity(inbox, source, settings, resyncSeen);
+    if (!identity) return null;
+    const { fingerprint, sourceKey } = identity;
     const title =
       source.text
         .replace(/^(?:\s*@\S+\s*)+/, '')
@@ -157,20 +155,9 @@ export class MessageIntakeService {
     settings: MessageSettings = inbox.settings,
     resyncSeen = false,
   ): Promise<Candidate[]> {
-    if (!matchMessage(settings, source)) return [];
-    const fingerprint = messageFingerprint(source);
-    const sourceKey = messageKey(source);
-    const alreadyPending = inbox.candidates.some(
-      (item) =>
-        item.fingerprint === fingerprint ||
-        Boolean(sourceKey && messageKey(item.source) === sourceKey),
-    );
-    if (alreadyPending) return [];
-    const alreadySeen = inbox.seen.some(
-      (item) =>
-        item.fingerprint === fingerprint || Boolean(sourceKey && item.messageId === sourceKey),
-    );
-    if (!resyncSeen && alreadySeen) return [];
+    const identity = this.sourceIdentity(inbox, source, settings, resyncSeen);
+    if (!identity) return [];
+    const { fingerprint, sourceKey } = identity;
     if (inbox.candidates.length >= 100) throw new Error('待确认消息已满 100 条');
     const aiConfig = await activeAi();
     const ai = normalizeAiSettings({

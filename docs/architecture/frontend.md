@@ -31,6 +31,6 @@ apps/web/src/
 
 各功能目录维护自己的 CSS，`styles.css` 只保留有序导入，通用控件样式随控件放置。领域契约与纯查询由 `packages/domain` 提供，工作业务编排、Markdown 和 Notes 规则由 `packages/workspace` 提供，具体文件访问、锁与可恢复发布由本地服务的 Node Vault 实现；前端控件不直接操作 Markdown 或导入这些存储实现。
 
-`api.ts` 保留原有界面调用入口，HTTP 请求、会话 token、工作目录会话和契约头校验已分离到 `platform/http.ts`。Electron 目录对话框与 QQ 初始化通过 `platform/desktop.ts` 取得受限桥接，功能组件不再直接读取 `window.chaosDesktop`。本轮不改变按钮、文案、布局或样式；尚未接入 Android 运行时。目录与依赖边界见[仓库分工与跨端复用](repository.md)。
+`api.ts` 保留界面的记录、Notes 与删除调用入口，内部统一发送标准业务命令；HTTP 请求、会话 token、工作目录会话、契约头和业务响应版本校验位于 `platform/http.ts`，不再调用旧网页工作路由。记录初始化复用 `domain/index.ts` 的 `createRecord`。Electron 目录对话框与 QQ 初始化通过 `platform/desktop.ts` 取得受限桥接，功能组件不再直接读取 `window.chaosDesktop`。按钮、文案、布局或样式保持不变；尚未接入 Android 运行时。目录与依赖边界见[仓库分工与跨端复用](repository.md)。
 
 QQ／微信设置从既有设置进入附加弹窗，专用样式限定在同步控件内，消息组件按需加载。原有四页布局、录入和编辑窗沿用 main 方案。业务接口与扩展方法见[标准业务 API](business-api.md)。

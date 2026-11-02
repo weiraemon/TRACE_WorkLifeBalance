@@ -1,6 +1,6 @@
 # 仓库分工与跨端复用
 
-当前交付仍是 Windows Electron 桌面版和连接本地服务的网页版。本轮整理提取跨端业务核心，不增加 Android 工程、同步协议、运行时依赖，也不修改四页布局、样式、业务契约或 Markdown 格式。
+当前交付仍是 Windows Electron 桌面版和连接本地服务的网页版。仓库已提取跨端业务核心，并将网页工作读写统一到标准业务 API。没有增加 Android 工程、同步协议或运行时依赖，四页布局、样式、业务行为与 Markdown 格式保持不变。
 
 ## 目录地图
 
@@ -63,6 +63,17 @@ flowchart TD
 
 共享代码使用标准 `crypto.randomUUID()`，哈希边界允许同步或异步实现。Windows 继续使用原有 Node SHA-256；不改变既有 revision 的计算方式。
 
+## 主干入口与重复逻辑整合
+
+- 网页的保存、Notes、升线和删除统一使用 `/api/business/v1/commands`，快照统一使用 `/api/business/v1/workspace`；旧网页工作路由已删除。命令 Schema、服务分派和实际写入均只有一条实现路线。
+- 普通 Markdown 创建通过标准 `notes.create` 命令提供，原有业务能力保留；平台的目录连接、备份和本机打开不混入工作命令。
+- `domain/business.ts` 的 `businessCatalog` 是有效项目／业务线目录的唯一生成函数，网页归属选择、消息识别和计划创建共用它。通用归属类型直接从业务契约导入，不再从消息契约转发另一组名称。
+- `domain/index.ts` 的 `createRecord` 统一 UUID、时间和默认字段初始化；网页与计划批次共用，不改变现有字段覆盖与 Schema 校验。
+- 原文收集与 AI 识别共用消息来源去重，保留“待确认不能重复、已处理可明确重新分析”的规则。AI 输出容错仍仅在模型输入边界处理，不写进持久化数据契约。
+- 计划批次的最终跨对象校验统一由 `Workspace.applyBatch` 执行，移除上层重复校验；输入 Schema、归属检查与文件版本检查仍各自在对应边界执行。
+
+`X-Atlas-Contract` 已升级为 `atlas-lines-26`，以阻止旧网页静默调用已移除路由；标准业务 API 版本仍为 1，命令增加是兼容扩展，Markdown schemaVersion 未变化。具体迁移与命令列表见[标准业务 API](business-api.md)。
+
 ## 持久化边界必须保证什么
 
 `Workspace` 声明七个由具体平台提供的操作：
@@ -93,7 +104,7 @@ flowchart TD
 
 ## 验证与约束
 
-`npm run check:architecture` 现在检查全部 `apps` 和 `packages`，包括静态导入、导出、字面量动态导入和 require；共享核心禁止 Node／Electron、反向应用依赖和消息接入依赖，UI 的 Electron 访问集中在平台入口。检查脚本内置允许／拒绝用例，防止规则失效。它不是运行时代码沙箱，不解析计算生成的动态模块名。
+`npm run check:architecture` 现在检查全部 `apps` 和 `packages`，包括静态导入、导出、字面量动态导入和 require；共享核心禁止 Node／Electron、反向应用依赖和消息接入依赖，UI 的 Electron 访问集中在平台入口，并禁止恢复旧网页工作路由。检查脚本内置允许／拒绝用例，防止规则失效。它不是运行时代码沙箱，不解析计算生成的动态模块名。
 
 `tests/portable-workspace.test.ts` 将共享业务打包为浏览器代码，在仅提供 Web Crypto 和编码 API、没有 Node／DOM 的上下文中运行；另用异步哈希的内存适配器验证 Notes、改期、升线、删除、版本冲突及伴随状态冲突。内存适配器只用于测试，不代表安卓文件安全已经验收。
 

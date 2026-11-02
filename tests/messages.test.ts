@@ -1,8 +1,8 @@
+import { resolvePlanDestination } from '../packages/domain/business';
 import { describe, it, expect, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import {
   emptyInbox,
-  fallbackDestination,
   inboxSchema,
   matchMessage,
   messageSettingsSchema,
@@ -614,29 +614,29 @@ describe('自动命名归属', () => {
     lines: [{ id: randomUUID(), title: '课程' }],
   };
   it('优先复用业务线，其次在相关项目下新建，否则新建项目', () => {
-    expect(fallbackDestination('提交课程作业', '学业课程作业', [project])).toMatchObject({
+    expect(resolvePlanDestination('提交课程作业', '学业课程作业', [project])).toMatchObject({
       kind: 'existing',
       lineId: project.lines[0].id,
     });
-    expect(fallbackDestination('提交作业', '学业安排', [project])).toMatchObject({
+    expect(resolvePlanDestination('提交作业', '学业安排', [project])).toMatchObject({
       kind: 'newLine',
       projectId: project.id,
       lineTitle: '提交作业',
     });
-    expect(fallbackDestination('寒期项目报名', '示例学院寒期项目', [project])).toMatchObject({
+    expect(resolvePlanDestination('寒期项目报名', '示例学院寒期项目', [project])).toMatchObject({
       kind: 'newProject',
       projectTitle: '寒期项目报名',
       lineTitle: '寒期项目报名',
     });
   });
   it('从建议标题安全命名，空标题与换行有兜底', () => {
-    expect(fallbackDestination('  ', '', [])).toMatchObject({
+    expect(resolvePlanDestination('  ', '', [])).toMatchObject({
       kind: 'newProject',
       projectTitle: '待整理',
       lineTitle: '待整理',
     });
-    expect(fallbackDestination('报名\n截止', '', [])).toMatchObject({ lineTitle: '报名 截止' });
-    expect(fallbackDestination('寒期报名', '', [project], project.id)).toMatchObject({
+    expect(resolvePlanDestination('报名\n截止', '', [])).toMatchObject({ lineTitle: '报名 截止' });
+    expect(resolvePlanDestination('寒期报名', '', [project], project.id)).toMatchObject({
       kind: 'newLine',
       projectId: project.id,
     });

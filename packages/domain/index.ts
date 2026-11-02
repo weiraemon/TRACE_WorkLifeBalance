@@ -1,5 +1,5 @@
 import { z } from 'zod';
-export const recordContract = 'atlas-lines-25';
+export const recordContract = 'atlas-lines-26';
 export const noteKinds = ['note', 'idea', 'meeting', 'draft'] as const;
 export const noteKindLabel = { note: '笔记', idea: '灵感', meeting: '纪要', draft: '待细化' };
 export const noteTagSchema = z
@@ -320,4 +320,19 @@ export function timeTotals(entries: Entry[], from: string, to: string) {
     total += duration;
   }
   return { total, projects };
+}
+
+export function createRecord(
+  type: RecordData['type'],
+  fields: object,
+  now = new Date().toISOString(),
+): RecordData {
+  return parseRecord({
+    schemaVersion: 1,
+    id: crypto.randomUUID(),
+    createdAt: now,
+    updatedAt: now,
+    type,
+    ...fields,
+  });
 }

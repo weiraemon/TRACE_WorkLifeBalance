@@ -73,9 +73,9 @@ test('逾期待办先提示，顺延保留原节点；越过节点日期进入�
   expect(body.match(/保留这段推进批注/g)).toHaveLength(1);
   expect(
     (
-      await page.request.post('/api/content', {
+      await page.request.post('/api/business/v1/commands', {
         headers: await headers(page),
-        data: { action: 'read', id: pool.data.id },
+        data: { type: 'notes.read', id: pool.data.id },
       })
     ).ok(),
   ).toBe(true);
@@ -137,8 +137,8 @@ test('批量顺延部分失败后刷新剩余项，可重试且不覆盖更改',
     await write(page, 'todo', { title, milestoneId: node.data.id });
   await refresh(page);
   let attempts = 0;
-  await page.route('**/api/records', async (route) => {
-    if (++attempts === 2)
+  await page.route('**/api/business/v1/commands', async (route) => {
+    if (route.request().postDataJSON().type === 'record.save' && ++attempts === 2)
       await route.fulfill({
         status: 409,
         contentType: 'application/json',
@@ -152,7 +152,7 @@ test('批量顺延部分失败后刷新剩余项，可重试且不覆盖更改',
   await dialog.getByRole('button', { name: '全部挪到今天', exact: true }).click();
   await expect(dialog.getByRole('alert')).toContainText('已处理 1 项');
   await expect(dialog.locator('.overdue-list li')).toHaveCount(1);
-  await page.unroute('**/api/records');
+  await page.unroute('**/api/business/v1/commands');
   await dialog.getByRole('button', { name: '全部挪到今天', exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.getByRole('status').filter({ hasText: '项待办已过期' })).toHaveCount(0);
@@ -168,10 +168,16 @@ test('删除前待办被其他窗口完成时停止，不删除更新后的内�
   const todo = await write(page, 'todo', { title: '正在其他窗口完成', milestoneId: node.data.id });
   await refresh(page);
   await page.locator('.overdue-prompt').getByRole('button', { name: '处理', exact: true }).click();
-  await page.route('**/api/delete-preview', async (route) => {
-    const response = await page.request.post('/api/records', {
+  await page.route('**/api/business/v1/commands', async (route) => {
+    if (route.request().postDataJSON().type !== 'work.deletePreview') return route.continue();
+    const response = await page.request.post('/api/business/v1/commands', {
       headers: await headers(page),
-      data: { data: todo.data, revision: todo.revision, options: { completion: true } },
+      data: {
+        type: 'record.save',
+        data: todo.data,
+        revision: todo.revision,
+        options: { completion: true },
+      },
     });
     expect(response.ok()).toBe(true);
     await route.continue();

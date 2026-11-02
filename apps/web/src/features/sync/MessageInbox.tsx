@@ -1,3 +1,8 @@
+import {
+  businessCatalog,
+  resolvePlanDestination,
+  type PlanDestination,
+} from '../../../../../packages/domain/business';
 import { desktopBridge } from '../../platform/desktop';
 import { useEffect, useState } from 'react';
 import type { Snapshot } from '../../../../../packages/domain/index';
@@ -5,11 +10,9 @@ import {
   aiDefaults,
   aiProviders,
   conditionLabels,
-  fallbackDestination,
   type AiProvider,
   type AiSettings,
   type InboxView,
-  type MessageDestination,
   type MessageSettings,
   type MessageRule,
   type Candidate,
@@ -28,23 +31,6 @@ function beijingEpoch(value: string) {
   return Math.floor(new Date(`${normalized}+08:00`).getTime() / 1000);
 }
 
-const catalogOf = (snapshot: Snapshot) =>
-  snapshot.entries.flatMap(({ data: p }) =>
-    p.type === 'project' && !p.completedAt
-      ? [
-          {
-            id: p.id,
-            title: p.title,
-            lines: snapshot.entries.flatMap(({ data: l }) =>
-              l.type === 'workline' && l.projectId === p.id && !l.completedAt
-                ? [{ id: l.id, title: l.title }]
-                : [],
-            ),
-          },
-        ]
-      : [],
-  );
-
 type DestinationDraft =
   | { kind: 'none'; lineId: string }
   | { kind: 'newLine'; projectId: string; projectTitle: string; lineTitle: string }
@@ -52,12 +38,12 @@ type DestinationDraft =
 
 function destinationDraft(
   candidate: Candidate,
-  usable: MessageDestination | null,
+  usable: PlanDestination | null,
   snapshot: Snapshot,
 ): DestinationDraft {
   if (candidate.lineId) return { kind: 'none', lineId: candidate.lineId };
   if (usable?.kind === 'existing') return { kind: 'none', lineId: usable.lineId };
-  const catalog = catalogOf(snapshot);
+  const catalog = businessCatalog(snapshot.entries);
   const scoped = candidate.projectId
     ? catalog.find((project) => project.id === candidate.projectId)
     : undefined;
@@ -84,7 +70,7 @@ function destinationDraft(
       projectTitle: usable.projectTitle,
       lineTitle: usable.lineTitle,
     };
-  const fallback = fallbackDestination(
+  const fallback = resolvePlanDestination(
     candidate.suggestion.title,
     candidate.source.text,
     catalog,
@@ -444,7 +430,7 @@ function CandidateCard({
       : draft.kind === 'newLine'
         ? `AI 推荐在「${draft.projectTitle}」下新建业务线，可修改名称。`
         : 'AI 推荐新建项目与业务线，可修改名称。';
-  const destination: MessageDestination | null =
+  const destination: PlanDestination | null =
     draft.kind === 'newLine'
       ? {
           kind: 'newLine',

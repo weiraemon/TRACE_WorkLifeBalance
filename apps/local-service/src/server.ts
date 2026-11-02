@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process';
 import { z } from 'zod';
 import { Vault } from './native/vault';
 import { VaultError } from '../../../packages/workspace/errors';
-import { recordContract, saveOptionsSchema } from '../../../packages/domain/index';
+import { recordContract } from '../../../packages/domain/index';
 import { readLocalConfig, rememberVault } from './local-config';
 
 import {
@@ -177,8 +177,6 @@ const server = http.createServer(async (req, res) => {
           version: businessApiVersion,
           result: await workspaceServiceFor(active).execute(await body(req)),
         });
-      if (url.pathname === '/api/snapshot' && req.method === 'GET')
-        return send(res, 200, await active.scan());
       if (url.pathname === '/api/messages' && req.method === 'GET') {
         const { state, revision } = await messageServiceFor(active).messageInbox();
         return send(res, 200, {
@@ -389,76 +387,6 @@ const server = http.createServer(async (req, res) => {
           .strict()
           .parse(await body(req));
         return send(res, 200, await messageServiceFor(active).bulk(input.action, input.revision));
-      }
-      if (url.pathname === '/api/delete-preview' && req.method === 'POST') {
-        const input = z
-          .object({ id: z.string().uuid() })
-          .strict()
-          .parse(await body(req));
-        return send(res, 200, await active.deletePreview(input.id));
-      }
-      if (url.pathname === '/api/delete-space' && req.method === 'POST') {
-        const input = z
-          .object({
-            id: z.string().uuid(),
-            expectations: z.record(z.string().uuid(), z.string().regex(/^[a-f0-9]{64}$/)),
-          })
-          .strict()
-          .parse(await body(req));
-        return send(res, 200, await active.deleteSpace(input.id, input.expectations));
-      }
-      if (url.pathname === '/api/notes' && req.method === 'POST')
-        return send(res, 200, await active.createMarkdown(await body(req)));
-      if (url.pathname === '/api/promote' && req.method === 'POST') {
-        const input = z
-          .object({ id: z.string().uuid(), revision: z.string().regex(/^[a-f0-9]{64}$/) })
-          .strict()
-          .parse(await body(req));
-        return send(res, 200, await active.promote(input.id, input.revision));
-      }
-      if (url.pathname === '/api/content' && req.method === 'POST') {
-        const input = z
-          .discriminatedUnion('action', [
-            z
-              .object({
-                action: z.literal('read'),
-                id: z.string().uuid(),
-              })
-              .strict(),
-            z
-              .object({
-                action: z.literal('save'),
-                id: z.string().uuid(),
-                body: z.string().max(500000),
-                revision: z.string().regex(/^[a-f0-9]{64}$/),
-              })
-              .strict(),
-          ])
-          .parse(await body(req));
-        return send(
-          res,
-          200,
-          input.action === 'read'
-            ? await active.readContent(input.id)
-            : await active.saveContent(input.id, input.body, input.revision),
-        );
-      }
-      if (url.pathname === '/api/records' && req.method === 'POST') {
-        const input = z
-          .object({
-            data: z.unknown(),
-            options: saveOptionsSchema.optional(),
-            revision: z
-              .string()
-              .regex(/^[a-f0-9]{64}$/)
-              .optional(),
-          })
-          .parse(await body(req));
-        return send(
-          res,
-          200,
-          await workspaceServiceFor(active).saveRecord(input.data, input.revision, input.options),
-        );
       }
       if (url.pathname === '/api/backups' && req.method === 'GET')
         return send(res, 200, await active.backups());

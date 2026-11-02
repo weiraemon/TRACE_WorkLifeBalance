@@ -1,3 +1,4 @@
+import { businessApiVersion, type BusinessCommand } from '../../../../packages/domain/business';
 import { recordContract } from '../../../../packages/domain/index';
 
 let token = '';
@@ -33,4 +34,11 @@ export async function session() {
   token = value.token;
   vaultId = value.vaultId;
   return value;
+}
+
+export async function businessRequest<T>(route: 'workspace' | 'commands', input?: BusinessCommand) {
+  const response = await api<T & { version: string }>('business/v1/' + route, input);
+  if (response.version !== businessApiVersion)
+    throw new Error('业务接口版本不一致，请更新应用并刷新页面');
+  return response;
 }

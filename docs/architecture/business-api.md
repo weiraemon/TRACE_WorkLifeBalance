@@ -25,7 +25,7 @@ flowchart LR
 - packages/workspace/markdown.ts 与 line-notes.ts：Markdown 保真处理、Notes 正文组织与迁移，不依赖操作系统。
 - native/：Node 文件读写、索引诊断、路径安全、锁、原子发布与恢复；Vault 继承共享 Workspace 实现，不再维护完成、改期和 Notes 业务副本。不得依赖消息模型、QQ 或 AI 接入。
 
-完整目录职责、持久化约束与后续移动端接入方式见[仓库分工与跨端复用](repository.md)。本轮不修改 HTTP API、业务版本或 Markdown 契约。
+完整目录职责、持久化约束与后续移动端接入方式见[仓库分工与跨端复用](repository.md)。网页和后续客户端统一使用以下标准业务 API，Markdown 数据格式保持不变。
 
 原生保存仅增加供可信服务使用的事务伴随文件；HTTP 命令不能提供文件路径或伴随文件。确认入库时，工作对象、Notes 与待确认状态一起发布，冲突时不部分保存。改期仍遵守 TODO 独立日期超过节点日期时进入待办池的规则；节点完成仍由下属条目推导，关联实际记录不等于完成。
 
@@ -42,7 +42,7 @@ flowchart LR
 
 除 session 外需要 X-Atlas-Token、X-Atlas-Vault；POST 使用 application/json。客户端必须读取最新快照中的 revision，修改前传回该版本。版本过期返回 409，输入不合法返回 400，会话不合法返回 403。JSON Schema 负责描述输入结构，跨对象关系和完成规则仍由服务端校验。
 
-业务接口版本是字符串 1；X-Atlas-Contract 继续负责整套网页／服务兼容校验。升级本轮代码后需重启服务并刷新网页。旧 /api/records 等网页路由保留原有返回格式，内部共用 WorkspaceService 与原生业务实现。
+业务接口版本是字符串 1；X-Atlas-Contract 继续负责整套网页／服务兼容校验，当前为 atlas-lines-26。升级后需重启服务并刷新网页。旧的 snapshot、records、content、notes、promote、delete-preview、delete-space 网页路由已移除，不保留兼容转发；读取工作快照和执行工作命令统一走 /api/business/v1。新增 notes.create 承接原有普通 Markdown 笔记创建能力。会话、连接目录、备份、本机打开与消息接入仍使用各自的应用／平台接口。
 
 | 命令 type          | 关键输入                                       | 用途                                                                 |
 | ------------------ | ---------------------------------------------- | -------------------------------------------------------------------- |
@@ -54,6 +54,7 @@ flowchart LR
 | work.promote       | id、revision                                   | 升为独立业务线                                                       |
 | work.deletePreview | id                                             | 查看删除范围                                                         |
 | work.delete        | id、expectations                               | 按确认过的版本删除                                                   |
+| notes.create       | note（title、可选 kind / tag）                 | 创建普通 Markdown 笔记，保留原有文件名与标签校验                     |
 | notes.read         | id                                             | 读取同一份 Notes 正文                                                |
 | notes.save         | id、revision、body                             | 保存业务线 Notes 全文                                                |
 

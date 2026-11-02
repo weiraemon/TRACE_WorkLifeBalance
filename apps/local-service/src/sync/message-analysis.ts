@@ -1,12 +1,14 @@
+import {
+  planDestinationSchema,
+  resolvePlanDestination,
+  type BusinessCatalog,
+} from '../../../../packages/domain/business';
 import { createHash } from 'node:crypto';
 import { day, milestoneTags } from '../../../../packages/domain/index';
 import {
   aiDefaults,
-  destinationSchema,
-  fallbackDestination,
   suggestionSchema,
   type AiSettings,
-  type MessageCatalog,
   type MessageSettings,
   type SourceMessage,
   type Suggestion,
@@ -97,7 +99,7 @@ export function parseSuggestions(content: string) {
         object(rawDestination) && typeof rawDestination.reason !== 'string'
           ? { ...rawDestination, reason: '' }
           : rawDestination;
-      const parsed = destinationSchema.nullable().safeParse(candidate);
+      const parsed = planDestinationSchema.nullable().safeParse(candidate);
       if (parsed.success) result.destination = parsed.data;
       else {
         result.destination = null;
@@ -263,7 +265,7 @@ export async function analyzeMessage(
   key: string,
   request = fetch,
   options: {
-    catalog?: MessageCatalog;
+    catalog?: BusinessCatalog;
     defaultLine?: { title: string } | null;
     projectScope?: { id: string; title: string } | null;
     existing?: ExistingMessageItem[];
@@ -386,7 +388,7 @@ export async function analyzeMessage(
             : true;
     if (known) return { ...s, destination: target };
     // The user should never have to pick a project/line just to file one item.
-    const destination = fallbackDestination(
+    const destination = resolvePlanDestination(
       s.title,
       `${message.text}\n${message.context}`,
       catalog,

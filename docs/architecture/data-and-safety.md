@@ -4,7 +4,7 @@
 
 普通 Markdown 工作目录是唯一权威数据源，Obsidian 不是运行依赖。ATLAS 管理字段保存在顶层 `atlas.managed: true` 和 `atlas.record`，稳定 UUID 不随路径变化。YAML AST 只替换 ATLAS 字段，保留其他字段、注释及自由正文。
 
-业务写入、Notes 与 Markdown 保真处理已提取到 `packages/workspace`；Windows 的 `native/Vault` 提供原有文件安全、锁和可恢复发布。此拆分不修改数据格式、HTTP 契约、备份策略或用户目录，详见[仓库分工与跨端复用](repository.md)。
+业务写入、Notes 与 Markdown 保真处理已提取到 `packages/workspace`；Windows 的 `native/Vault` 提供原有文件安全、锁和可恢复发布。网页工作读写已统一到标准业务 API，旧网页工作路由移除；数据格式、备份策略和用户目录保持不变，详见[仓库分工与跨端复用](repository.md)。
 
 本机 `.chaos.local.json` 只保存上次成功连接的 `vaultPath`，不保存工作内容；文件及其临时文件被 Git 忽略。成功连接后以临时文件原子替换配置，失败连接不改写上次路径；启动恢复失败时保留默认路径供用户修正。测试使用独立配置文件。
 

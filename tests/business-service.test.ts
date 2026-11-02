@@ -10,7 +10,11 @@ import { intakeServiceFor } from '../apps/local-service/src/application/message-
 import { saveAiConfig } from '../apps/local-service/src/sync/app-config';
 import { parseRecord } from '../packages/domain/index';
 import { isComplete } from '../packages/domain/workspace';
-import { emptyInbox, messageSettingsSchema } from '../packages/domain/messages';
+import {
+  emptyInbox,
+  messageSettingsSchema,
+  sourceMessageSchema,
+} from '../packages/domain/messages';
 const roots: string[] = [];
 const opened: Vault[] = [];
 afterEach(async () => {
@@ -222,4 +226,51 @@ it('AI 判断无需安排的消息也记住去重，第二次接收不再发送�
   expect((await business.snapshot()).entries.some((entry) => entry.data.type === 'todo')).toBe(
     false,
   );
+});
+
+it('原文和 AI 入口共用来源去重，重新分析允许已处理消息但不能重复加入待确认', async () => {
+  const { vault, line } = await setup();
+  const state = emptyInbox();
+  state.settings = messageSettingsSchema.parse({
+    names: [],
+    classes: [],
+    rules: [
+      {
+        id: randomUUID(),
+        name: '同一来源',
+        kind: 'group',
+        enabled: true,
+        mode: 'all',
+        conditions: [],
+        senders: [],
+        keywords: [],
+        aliases: [],
+        lineId: line.data.id,
+      },
+    ],
+  });
+  const rule = state.settings.rules[0];
+  const source = sourceMessageSchema.parse({
+    ruleId: rule.id,
+    sender: '测试',
+    sentAt: new Date().toISOString(),
+    text: '原文',
+    atAll: false,
+    atMe: false,
+    remoteId: 'stable-message-id',
+  });
+  const intake = intakeServiceFor(vault);
+  expect(await intake.queueRaw(state, rule, source)).not.toBeNull();
+  const updated = { ...source, text: '同一消息更新了正文' };
+  // Dedupe happens before AI configuration or network access.
+  await expect(intake.analyze(vault, state, rule, updated)).resolves.toEqual([]);
+  await expect(intake.queueRaw(state, rule, updated)).resolves.toBeNull();
+  state.candidates = [];
+  await expect(intake.analyze(vault, state, rule, updated)).resolves.toEqual([]);
+  expect(await intake.queueRaw(state, rule, updated, state.settings, true)).not.toBeNull();
+  await expect(intake.analyze(vault, state, rule, updated, state.settings, true)).resolves.toEqual(
+    [],
+  );
+  expect(state.candidates).toHaveLength(1);
+  expect(state.seen).toHaveLength(2);
 });

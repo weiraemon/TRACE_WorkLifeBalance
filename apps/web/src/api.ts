@@ -1,5 +1,4 @@
 import {
-  parseRecord,
   type RecordData,
   type Entry,
   type Snapshot,
@@ -8,18 +7,26 @@ import {
   type DeleteResult,
   type SaveOptions,
 } from '../../../packages/domain/index';
-import { api } from './platform/http';
+import { api, businessRequest } from './platform/http';
+import type { BusinessCommand } from '../../../packages/domain/business';
+export { createRecord } from '../../../packages/domain/index';
 export { api, session } from './platform/http';
 
-export const load = () => api<Snapshot>('snapshot');
-export const deletePreview = (id: string) => api<DeletePreview>('delete-preview', { id });
+export async function command<T>(input: BusinessCommand): Promise<T> {
+  return (await businessRequest<{ result: T }>('commands', input)).result;
+}
+export const load = async () =>
+  (await businessRequest<{ snapshot: Snapshot }>('workspace')).snapshot;
+export const deletePreview = (id: string) =>
+  command<DeletePreview>({ type: 'work.deletePreview', id });
 export const deleteSpace = (id: string, entries: Entry[]) =>
-  api<DeleteResult>('delete-space', {
+  command<DeleteResult>({
+    type: 'work.delete',
     id,
     expectations: Object.fromEntries(entries.map((e) => [e.data.id, e.revision])),
   });
 export const save = (data: RecordData, entry?: Entry, options?: SaveOptions) =>
-  api<Entry>('records', { data, revision: entry?.revision, options });
+  command<Entry>({ type: 'record.save', data, revision: entry?.revision, options });
 export async function removeSpace(entry: Entry) {
   const id = entry.data.id;
   const preview = await deletePreview(id);
@@ -29,23 +36,12 @@ export async function removeSpace(entry: Entry) {
   return deleteSpace(id, preview.entries);
 }
 export const promote = (entry: Entry) =>
-  api<Entry>('promote', { id: entry.data.id, revision: entry.revision });
-export function createRecord(type: RecordData['type'], fields: object): RecordData {
-  const now = new Date().toISOString();
-  return parseRecord({
-    schemaVersion: 1,
-    id: crypto.randomUUID(),
-    createdAt: now,
-    updatedAt: now,
-    type,
-    ...fields,
-  });
-}
+  command<Entry>({ type: 'work.promote', id: entry.data.id, revision: entry.revision });
 export async function openResource(id: string, native = true) {
   const result = await api<{ url?: string }>('open', { id, native });
   if (result.url?.startsWith('obsidian://')) window.location.href = result.url;
   else if (result.url) window.open(result.url, '_blank', 'noopener,noreferrer');
 }
-export const readContent = (id: string) => api<NoteContent>('content', { action: 'read', id });
+export const readContent = (id: string) => command<NoteContent>({ type: 'notes.read', id });
 export const saveContent = (id: string, body: string, revision: string) =>
-  api<NoteContent>('content', { action: 'save', id, body, revision });
+  command<NoteContent>({ type: 'notes.save', id, body, revision });

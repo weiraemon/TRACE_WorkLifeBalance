@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { day } from './index';
-import { planDestinationSchema as destinationSchema } from './business';
+import { planDestinationSchema } from './business';
 
 const terms = z.array(z.string().trim().min(1).max(100)).max(30);
 export const aiProviders = ['deepseek', 'openai', 'custom'] as const;
@@ -83,14 +83,6 @@ export const sourceMessageSchema = z
     fromSelf: z.boolean().default(false),
   })
   .strict();
-export {
-  planDestinationSchema as destinationSchema,
-  resolvePlanDestination as fallbackDestination,
-} from './business';
-export type {
-  PlanDestination as MessageDestination,
-  BusinessCatalog as MessageCatalog,
-} from './business';
 export const suggestionSchema = z
   .object({
     kind: z.enum(['task', 'event', 'change', 'cancel', 'ignore']),
@@ -107,7 +99,7 @@ export const suggestionSchema = z
     completed: z.boolean().default(false),
     tags: z.array(z.string().trim().min(1).max(60)).max(20).default([]),
     location: z.string().trim().max(300).nullable().default(null),
-    destination: destinationSchema.nullable().optional(),
+    destination: planDestinationSchema.nullable().optional(),
   })
   .strict()
   .refine((s) => !s.dueTime || !!s.dueDate, '有时刻时必须有日期');

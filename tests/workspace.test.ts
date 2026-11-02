@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { businessCatalog } from '../packages/domain/business';
 import {
   parseRecord,
   validateChange,
@@ -37,6 +38,32 @@ function setup() {
   });
   return { project, line, node, entries: [project, line, node].map(entry) };
 }
+
+it('所有入口共用有效业务目录，排除已结束项目、业务线和孤立业务线并保持原顺序', () => {
+  const { project, line, entries } = setup();
+  const ended = make('project', { title: '已结束项目', completedAt: '2026-10-25T01:00:00Z' });
+  const empty = make('project', { title: '暂无业务线' });
+  const all = [
+    ...entries,
+    ...[
+      ended,
+      empty,
+      make('workline', {
+        title: '已结束线',
+        projectId: project.id,
+        completedAt: '2026-10-25T01:00:00Z',
+      }),
+      make('workline', { title: '上级已结束', projectId: ended.id }),
+      make('workline', { title: '上级不存在', projectId: randomUUID() }),
+    ].map(entry),
+  ];
+  const before = structuredClone(all);
+  expect(businessCatalog(all)).toEqual([
+    { id: project.id, title: '项目', lines: [{ id: line.id, title: '论文' }] },
+    { id: empty.id, title: '暂无业务线', lines: [] },
+  ]);
+  expect(all).toEqual(before);
+});
 it('TODO 与 IDEA 同属任意具体节点，逐层推导归属且不能跨层挂载', () => {
   const { project, line, node, entries } = setup();
   const todo = make('todo', { title: '要材料', milestoneId: node.id });
