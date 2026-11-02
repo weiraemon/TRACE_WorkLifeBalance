@@ -58,7 +58,7 @@ CHAOS 是一个本地运行的个人工作台。把外部要求与自己的探�
 
 桌面版保留工作空间、今日、知识、回顾、Notes、备份、资源打开、QQ 和 AI 全部现有能力。QQ 初始化入口在“备份 → QQ同步设置 → QQ自动同步全局设置”；运行环境已内置，仍需安装并登录本人的 QQ、配置数据库密钥及 AI API 密钥。微信数据源继续保留现有占位入口。
 
-维护者在 Windows x64 上运行 `npm ci`、`npm run package:desktop`，即可在 `releases/` 得到桌面 ZIP。首次构建联网下载 Electron 及经过 SHA-256 校验的 Python／SQLCipher。包不带个人工作目录、目录配置或 QQ／AI 密钥。升级前退出旧服务，再解压新版运行；桌面配置保存在 `%APPDATA%\CHAOS`，升级不必重配。
+维护者在 Windows x64 上运行 `npm ci`、`npm run package:desktop`，即可在 `releases/` 得到桌面 ZIP 和 SHA-256 校验文件。打包成功后自动清理旧产物，本地只保留最新一份；该目录由 Git 忽略。发布时推送与 `package.json` 版本一致的 `v版本号` tag，GitHub Actions 验证后将 ZIP 和校验文件上传到对应 GitHub Release。首次构建联网下载 Electron 及经过 SHA-256 校验的 Python／SQLCipher。包不带个人工作目录、目录配置或 QQ／AI 密钥。升级前退出旧服务，再解压新版运行；桌面配置保存在 `%APPDATA%\CHAOS`，升级不必重配。
 
 源码网页版需要 **Node.js ≥ 22.12 · Chrome / Edge**。可双击项目根目录的 `start-chaos.cmd`，或使用下方命令。脚本在缺少依赖时安装，构建当前代码后打开页面；首次安装需要联网。源码启动期间保留终端，按 `Ctrl+C` 停止服务。
 

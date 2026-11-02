@@ -4,40 +4,71 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { createHash } from 'node:crypto';
 import { packager } from '@electron/packager';
 
-assert.equal(process.platform, 'win32', 'Build the Windows desktop package on Windows.');
-const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-process.chdir(project);
-await fs.mkdir('releases', { recursive: true });
-const release = await fs.mkdtemp(path.join(project, 'releases', 'CHAOS-desktop-'));
-const require = createRequire(import.meta.url);
-const runtimeCache = path.join(project, '.test-vault', 'desktop-runtimes');
-const cachedElectron = path.join(
-  runtimeCache,
-  `electron-v${require('electron/package.json').version}-win32-x64.zip`,
-);
-const electronZipDir = await fs.access(cachedElectron).then(
-  () => runtimeCache,
-  () => undefined,
-);
-const [output] = await packager({
-  dir: '.desktop',
-  out: release,
-  name: 'CHAOS',
-  platform: 'win32',
-  arch: 'x64',
-  electronZipDir,
-  icon: '.desktop/icon.ico',
-  asar: false,
-  executableName: 'CHAOS',
-  appBundleId: 'cn.chaos.workbench',
-  prune: false,
-  win32metadata: { CompanyName: 'CHAOS', FileDescription: 'CHAOS 工作台', ProductName: 'CHAOS' },
-});
-await fs.writeFile(
-  path.join(output, '使用说明.txt'),
-  `CHAOS Windows 桌面版
+const releaseName =
+  /^CHAOS-(?:desktop(?:-[A-Za-z0-9]+)?|Windows-v\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?)$/;
+
+export async function pruneDesktopReleases(directory, keepDirectory) {
+  const info = await fs.lstat(directory);
+  assert.ok(info.isDirectory() && !info.isSymbolicLink(), 'Release root must be a real directory.');
+  const root = await fs.realpath(directory);
+  const keep = await fs.realpath(keepDirectory);
+  assert.ok(
+    path.dirname(keep) === root && releaseName.test(path.basename(keep)),
+    'Keep directory must be a generated release directly inside releases.',
+  );
+  const archive = await fs.lstat(path.join(keep, 'CHAOS-Windows-x64.zip'));
+  assert.ok(
+    archive.isFile() && !archive.isSymbolicLink() && archive.size > 0,
+    'Keep the previous release until the new ZIP is complete.',
+  );
+  const removed = [];
+  for (const child of await fs.readdir(root, { withFileTypes: true })) {
+    if (!child.isDirectory() || !releaseName.test(child.name)) continue;
+    const target = await fs.realpath(path.join(root, child.name));
+    if (target === keep) continue;
+    assert.equal(path.dirname(target), root, 'Refuse cleanup outside the release directory.');
+    await fs.rm(target, { recursive: true, force: true });
+    removed.push(child.name);
+  }
+  return removed;
+}
+
+async function main() {
+  assert.equal(process.platform, 'win32', 'Build the Windows desktop package on Windows.');
+  const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  process.chdir(project);
+  await fs.mkdir('releases', { recursive: true });
+  const release = await fs.mkdtemp(path.join(project, 'releases', 'CHAOS-desktop-'));
+  const require = createRequire(import.meta.url);
+  const runtimeCache = path.join(project, '.test-vault', 'desktop-runtimes');
+  const cachedElectron = path.join(
+    runtimeCache,
+    `electron-v${require('electron/package.json').version}-win32-x64.zip`,
+  );
+  const electronZipDir = await fs.access(cachedElectron).then(
+    () => runtimeCache,
+    () => undefined,
+  );
+  const [output] = await packager({
+    dir: '.desktop',
+    out: release,
+    name: 'CHAOS',
+    platform: 'win32',
+    arch: 'x64',
+    electronZipDir,
+    icon: '.desktop/icon.ico',
+    asar: false,
+    executableName: 'CHAOS',
+    appBundleId: 'cn.chaos.workbench',
+    prune: false,
+    win32metadata: { CompanyName: 'CHAOS', FileDescription: 'CHAOS 工作台', ProductName: 'CHAOS' },
+  });
+  await fs.writeFile(
+    path.join(output, '使用说明.txt'),
+    `CHAOS Windows 桌面版
 
 解压整个文件夹到本机可写目录，双击 CHAOS.exe。可右键发送桌面快捷方式。
 无需安装 Node.js、Python 或浏览器，无需保留命令行窗口。
@@ -51,23 +82,34 @@ Python 与 SQLCipher 已内置；QQ 软件、本人账号登录、数据库密�
 微信数据源沿用当前占位入口。密钥与目录配置保存在本机用户配置目录，不随程序分发。
 升级前退出旧版，解压新版后直接打开；程序不会迁移或批量改写用户 Markdown。
 `,
-);
-execFileSync(
-  'powershell.exe',
-  [
-    '-NoProfile',
-    '-NonInteractive',
-    '-Command',
-    'Compress-Archive -LiteralPath $env:CHAOS_PACKAGE_SOURCE -DestinationPath $env:CHAOS_PACKAGE_ZIP',
-  ],
-  {
-    windowsHide: true,
-    env: {
-      ...process.env,
-      CHAOS_PACKAGE_SOURCE: output,
-      CHAOS_PACKAGE_ZIP: path.join(release, 'CHAOS-Windows-x64.zip'),
+  );
+  execFileSync(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      'Compress-Archive -LiteralPath $env:CHAOS_PACKAGE_SOURCE -DestinationPath $env:CHAOS_PACKAGE_ZIP',
+    ],
+    {
+      windowsHide: true,
+      env: {
+        ...process.env,
+        CHAOS_PACKAGE_SOURCE: output,
+        CHAOS_PACKAGE_ZIP: path.join(release, 'CHAOS-Windows-x64.zip'),
+      },
     },
-  },
-);
-console.log(`Desktop executable: ${path.join(output, 'CHAOS.exe')}`);
-console.log(`Desktop package: ${path.join(release, 'CHAOS-Windows-x64.zip')}`);
+  );
+  const zip = path.join(release, 'CHAOS-Windows-x64.zip');
+  const digest = createHash('sha256')
+    .update(await fs.readFile(zip))
+    .digest('hex');
+  await fs.writeFile(path.join(release, 'SHA256SUMS.txt'), digest + '  CHAOS-Windows-x64.zip\n');
+  const removed = await pruneDesktopReleases(path.join(project, 'releases'), release);
+  if (removed.length) console.log('Removed older local packages: ' + removed.join(', '));
+  console.log(`Desktop executable: ${path.join(output, 'CHAOS.exe')}`);
+  console.log(`Desktop package: ${path.join(release, 'CHAOS-Windows-x64.zip')}`);
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+  await main();

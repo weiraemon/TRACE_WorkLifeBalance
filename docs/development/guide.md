@@ -27,7 +27,9 @@
 
 完整目录职责、依赖方向、共享业务与后续手机端持久化约束见[仓库分工与跨端复用](../architecture/repository.md)。共享核心不引用 Node、Electron 或消息接入；界面和 Windows 桌面继续使用现有四页及标准服务，不复制业务规则。
 
-Windows x64 桌面发布使用 `npm run package:desktop`：前端与统一服务由 esbuild/Vite 构建到 `.desktop/`，Electron Packager 生成 `CHAOS.exe` 并压缩到 `releases/`。`apps/desktop` 只负责窗口、目录选择、QQ 初始化工具、单实例与子进程生命周期，不实现业务写入。每次新建发布目录，不复制本机配置或用户数据。`project-root.ts` 统一定位静态资源和 QQ 脚本，服务包保留 `apps/local-service/src/` 层级。
+Windows x64 桌面发布使用 `npm run package:desktop`：前端与统一服务由 esbuild/Vite 构建到 `.desktop/`，Electron Packager 生成 `CHAOS.exe` 并压缩到 `releases/`，同时生成 `SHA256SUMS.txt`。新包和校验文件写完后才清理旧的 CHAOS 打包目录，本地保留最新一份；打包失败保留上次可用产物，无关目录不参与清理。`releases/` 由 Git 忽略，不提交 ZIP 或解压文件。`apps/desktop` 只负责窗口、目录选择、QQ 初始化工具、单实例与子进程生命周期，不实现业务写入。打包不复制本机配置或用户数据。`project-root.ts` 统一定位静态资源和 QQ 脚本，服务包保留 `apps/local-service/src/` 层级。
+
+发布时先更新 `package.json` 和 lockfile 的版本，提交源码，再创建并推送同名版本 tag（例如版本为 0.1.1 时使用 `git tag v0.1.1`、`git push origin v0.1.1`）。现有 GitHub Actions 在完整检查通过后，校验 tag 与 package.json 一致，构建 Windows 包、运行 Electron 测试，再把 ZIP 与校验文件上传到该 tag 的 GitHub Release。普通分支推送不发布；已有发布版本不覆盖，后续更新使用新版本 tag。本地清理不删除线上历史 Release。
 
 品牌图标以 `apps/web/public/chaos.svg` 为唯一矢量源：完整、平滑的 C 形轮廓与金色端点，沿用系统森林绿与暖白。网页直接引用同一 SVG；桌面构建通过 Electron 离屏渲染生成 512 px PNG 及包含 16／24／32／48／64／128／256 px 的 ICO，不依赖系统 Chrome 或图形软件。
 

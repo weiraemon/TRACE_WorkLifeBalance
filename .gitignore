@@ -1,5 +1,6 @@
 node_modules/
 dist/
+# Local packages stay out of Git; version tags publish GitHub Release assets.
 releases/
 .desktop/
 test-results/

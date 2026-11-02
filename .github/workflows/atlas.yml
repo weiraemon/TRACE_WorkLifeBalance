@@ -1,5 +1,7 @@
 name: ATLAS R0
 on: [push, pull_request]
+permissions:
+  contents: read
 jobs:
   verify:
     runs-on: windows-latest
@@ -26,3 +28,43 @@ jobs:
         with:
           name: playwright-failures
           path: test-results
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Match the version tag to package.json
+        shell: pwsh
+        run: |
+          $expected = 'v' + (Get-Content package.json | ConvertFrom-Json).version
+          if ($env:RELEASE_TAG -ne $expected) { throw "Tag must match package.json: $expected" }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - name: Package Windows desktop
+        shell: pwsh
+        run: |
+          npm run package:desktop
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $packages = @(Get-ChildItem -Path 'releases/CHAOS-desktop-*' -Directory)
+          if ($packages.Count -ne 1) { throw 'Expected exactly one completed desktop package' }
+          $executable = Join-Path $packages[0].FullName 'CHAOS-win32-x64/CHAOS.exe'
+          "CHAOS_DESKTOP_EXECUTABLE=$executable" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "CHAOS_RELEASE_DIRECTORY=$($packages[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - run: npm run test:desktop
+      - name: Publish the ZIP and checksum to the version tag
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $archive = Join-Path $env:CHAOS_RELEASE_DIRECTORY 'CHAOS-Windows-x64.zip'
+          $checksums = Join-Path $env:CHAOS_RELEASE_DIRECTORY 'SHA256SUMS.txt'
+          gh release create $env:RELEASE_TAG $archive $checksums --verify-tag --generate-notes --title "CHAOS $env:RELEASE_TAG" --repo $env:GITHUB_REPOSITORY
