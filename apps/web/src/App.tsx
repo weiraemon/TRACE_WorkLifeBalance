@@ -55,12 +55,22 @@ export default function App() {
   const [deleting, setDeleting] = useState<Entry | null>(null);
   const [deletion, setDeletion] = useState<DeleteResult | null>(null);
   const canLeaveContent = () => !contentDirty || window.confirm('正文尚未保存，确定放弃并离开？');
+  const snapshotRequest = useRef(0);
+  const acceptConnection = useCallback((next: Snapshot) => {
+    snapshotRequest.current++;
+    setSnapshot(next);
+    setSyncing(false);
+  }, []);
   const reload = useCallback(async () => {
+    const request = ++snapshotRequest.current;
     setSyncing(true);
     try {
-      setSnapshot(await load());
+      const next = await load();
+      if (request === snapshotRequest.current) setSnapshot(next);
+    } catch (error) {
+      if (request === snapshotRequest.current) throw error;
     } finally {
-      setSyncing(false);
+      if (request === snapshotRequest.current) setSyncing(false);
     }
   }, []);
   const run = useCallback((fn: () => Promise<unknown>) => {
@@ -235,7 +245,7 @@ export default function App() {
             <Connect
               defaultPath={defaultPath}
               onConnected={(s) => {
-                setSnapshot(s);
+                acceptConnection(s);
                 setError('');
               }}
             />
@@ -388,7 +398,7 @@ export default function App() {
           <Connect
             defaultPath={snapshot?.root ?? defaultPath}
             onConnected={(s) => {
-              setSnapshot(s);
+              acceptConnection(s);
               setError('');
               setSelected(null);
               setEditor(null);

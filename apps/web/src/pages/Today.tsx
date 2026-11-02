@@ -8,7 +8,7 @@ import {
 } from '../../../../packages/domain/index';
 import { isComplete } from '../../../../packages/domain/workspace';
 import { DatePicker } from '../components/ui';
-import { save } from '../api';
+import { complete } from '../api';
 import type { Editor } from '../types/editor';
 import type { RecordSource } from '../features/actual/types';
 import { TodaySidebar } from '../features/today/TodaySidebar';
@@ -39,11 +39,8 @@ export function Today({
   const [source, setSource] = useState<RecordSource>();
   const toggle = (item: SpaceItem) =>
     run(async () => {
-      await save(
-        item,
-        snapshot.entries.find((e) => e.data.id === item.id),
-        { completion: !isComplete(item, snapshot.entries) },
-      );
+      const entry = snapshot.entries.find((e) => e.data.id === item.id)!;
+      await complete(entry, !isComplete(item, snapshot.entries));
       await reload();
     });
   const record = (item: Todo | Milestone) =>

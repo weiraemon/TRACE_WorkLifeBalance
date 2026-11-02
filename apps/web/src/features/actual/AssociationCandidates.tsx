@@ -1,3 +1,4 @@
+import { isComplete } from '../../../../../packages/domain/workspace';
 import { useState } from 'react';
 import type { Snapshot } from '../../../../../packages/domain/index';
 import { activeLines, compareMilestones } from '../../../../../packages/domain/workspace';
@@ -36,9 +37,9 @@ export function AssociationCandidates({
   const todos = selection.contexts
     .filter(
       (context) =>
-        !context.todo.completedAt &&
-        !context.line.completedAt &&
-        !context.project.completedAt &&
+        !isComplete(context.todo, snapshot.entries) &&
+        !isComplete(context.line, snapshot.entries) &&
+        !isComplete(context.project, snapshot.entries) &&
         (!lineId || context.line.id === lineId) &&
         !selection.itemIds.includes(context.todo.id) &&
         matches(

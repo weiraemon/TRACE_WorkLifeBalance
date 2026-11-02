@@ -44,6 +44,81 @@ async function setup() {
   );
   return { root, vault, business, project, line };
 }
+
+it('工作快照等待整个实际、完成与 Notes 批次发布，不读取半成品', async () => {
+  const { root, business, line } = await setup();
+  await business.createPlan({
+    kind: 'event',
+    title: '例会',
+    lineId: line.data.id,
+    dueDate: '2026-11-02',
+    actions: ['会议事项'],
+  });
+  const before = await business.snapshot();
+  const todo = before.entries.find((entry) => entry.data.type === 'todo')!;
+  let release!: () => void;
+  let paused!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const publishing = new Promise<void>((resolve) => {
+    paused = resolve;
+  });
+  const rename = fs.rename.bind(fs);
+  const spy = vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+    if (to === path.join(root, todo.path)) {
+      paused();
+      await gate;
+    }
+    return rename(from, to);
+  });
+  const save = business.saveRecord(
+    parseRecord({
+      schemaVersion: 1,
+      id: randomUUID(),
+      type: 'actual',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      date: '2026-11-02',
+      startTime: '10:00',
+      endTime: '11:00',
+      description: '完成会议事项',
+      itemIds: [todo.data.id],
+    }),
+    undefined,
+    {
+      completeIds: [todo.data.id],
+      comments: [{ id: randomUUID(), targetId: todo.data.id, text: '同一批会议结论' }],
+    },
+  );
+  try {
+    await publishing;
+    let delivered = false;
+    const reading = business.snapshot().then((value) => {
+      delivered = true;
+      return value;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(delivered).toBe(false);
+    release();
+    await save;
+    const after = await reading;
+    expect(after.issues).toEqual([]);
+    expect(after.entries.find((entry) => entry.data.id === todo.data.id)?.data).toHaveProperty(
+      'completedAt',
+      expect.any(String),
+    );
+    expect(after.entries.filter((entry) => entry.data.type === 'actual')).toHaveLength(1);
+    expect(await business.execute({ type: 'notes.read', id: line.data.id })).toHaveProperty(
+      'body',
+      expect.stringContaining('同一批会议结论'),
+    );
+  } finally {
+    release();
+    await save;
+    spy.mockRestore();
+  }
+});
 it('标准命令创建计划、改期和完成复用 main 的待办池、Notes 与完成推导', async () => {
   const { vault, business, project, line } = await setup();
   await business.execute({

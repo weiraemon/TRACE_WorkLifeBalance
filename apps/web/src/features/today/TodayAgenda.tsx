@@ -59,6 +59,7 @@ export function TodayAgenda({
                 <TodayNodeRow
                   key={item.id}
                   context={{ ...context, milestone: item }}
+                  done={done}
                   snapshot={snapshot}
                   toggle={toggle}
                   record={() => record(item)}

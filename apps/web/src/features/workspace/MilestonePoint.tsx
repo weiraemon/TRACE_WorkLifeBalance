@@ -13,8 +13,7 @@ export type MilestonePointProps = {
   todos: Todo[];
   select: (id: string) => void;
   edit: (editor: Editor) => void;
-  toggle: (todo: Todo) => void;
-  change: (point: Milestone, fields: object) => void;
+  toggle: (item: Todo | Milestone) => void;
   drag: ReturnType<typeof useWorkspaceDrag>;
 };
 export function MilestonePoint({
@@ -24,7 +23,6 @@ export function MilestonePoint({
   select,
   edit,
   toggle,
-  change,
   drag,
 }: MilestonePointProps) {
   const done = isComplete(point, snapshot.entries);
@@ -56,11 +54,7 @@ export function MilestonePoint({
               aria-checked={done}
               aria-label={`完成节点 ${point.title}`}
               title={`${point.title} · ${point.tags.join(' · ')} · ${importanceLabel(point.importance)}`}
-              onClick={() =>
-                change(point, {
-                  completedAt: done ? null : new Date().toISOString(),
-                })
-              }
+              onClick={() => toggle(point)}
             >
               {point.tags[0] ? <NodeTagIcon tag={point.tags[0]} /> : done ? <CheckIcon /> : null}
               {done && point.tags[0] && <CheckIcon className="node-completion-mark" />}

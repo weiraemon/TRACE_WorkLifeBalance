@@ -35,6 +35,11 @@ test('桌面版目录选择、四页、记录保存、完整 QQ 入口与安全�
   const vault = path.join(root, '中文工作目录 with spaces');
   await fs.mkdir(vault);
   let page = await launch(root);
+  const firstSession = await page.request
+    .get(new URL('/api/session', page.url()).href)
+    .then((response) => response.json());
+  expect(firstSession).toMatchObject({ connected: false, root: '' });
+  await expect(page.getByLabel('工作目录绝对路径')).toHaveValue('');
   await desktop!.evaluate(({ dialog }, directory) => {
     dialog.showOpenDialog = (async () => ({
       canceled: false,

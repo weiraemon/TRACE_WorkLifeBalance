@@ -6,7 +6,7 @@ import {
   type Entry,
   type Snapshot,
 } from '../../../../../packages/domain/index';
-import { createRecord, save, promote } from '../../api';
+import { createRecord, save, promote, complete } from '../../api';
 import { isComplete } from '../../../../../packages/domain/workspace';
 import type { Editor } from '../../types/editor';
 import { spaceLabel } from './WorkItemForm';
@@ -189,9 +189,9 @@ export function SpaceMenu({
               role="menuitem"
               className="button"
               onClick={() => {
-                const complete = !isComplete(item, snapshot.entries);
+                const completed = !isComplete(item, snapshot.entries);
                 run(async () => {
-                  await save(createRecord(item.type, item), menu.entry, { completion: complete });
+                  await complete(menu.entry, completed);
                   await reload();
                 });
                 setMenu(null);

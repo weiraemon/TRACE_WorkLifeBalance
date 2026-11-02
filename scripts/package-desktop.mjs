@@ -10,6 +10,23 @@ import { packager } from '@electron/packager';
 const releaseName =
   /^CHAOS-(?:desktop(?:-[A-Za-z0-9]+)?|Windows-v\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?)$/;
 
+export function validateReleasePaths(names) {
+  const privateDirectories = new Set(['.git', '.atlas', '.obsidian', '.test-vault', 'atlas']);
+  const privateFiles = new Set(['workspace.json', 'settings.json']);
+  for (const name of names) {
+    const parts = name.replaceAll('\\', '/').toLowerCase().split('/');
+    const filename = parts.at(-1);
+    assert.ok(
+      !parts.includes('..') &&
+        !parts.some((part) => privateDirectories.has(part)) &&
+        !privateFiles.has(filename) &&
+        !filename.startsWith('.chaos.local.json') &&
+        (!filename.endsWith('.md') || filename === 'third_party_notices.md'),
+      'Release contains user data or local configuration: ' + name,
+    );
+  }
+}
+
 export function zipDirectory(source, destination, includeRoot = false) {
   execFileSync(
     'powershell.exe',
@@ -128,6 +145,10 @@ Python 与 SQLCipher 已内置；QQ 软件、本人账号登录、数据库密�
 `,
   );
   const zip = path.join(release, 'CHAOS-Windows-x64.zip');
+  const files = await fs.readdir(output, { recursive: true, withFileTypes: true });
+  validateReleasePaths(
+    files.map((file) => path.relative(path.dirname(output), path.join(file.parentPath, file.name))),
+  );
   // ZipFile includes hidden files that Compress-Archive can omit.
   zipDirectory(output, zip, true);
   const digest = createHash('sha256')

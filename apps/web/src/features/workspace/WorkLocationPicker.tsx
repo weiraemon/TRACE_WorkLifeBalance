@@ -1,3 +1,4 @@
+import { isComplete } from '../../../../../packages/domain/workspace';
 import type { Entry, SpaceItem } from '../../../../../packages/domain/index';
 import { Field } from '../../components/ui';
 export type WorkLocation = { projectId: string; lineId: string; milestoneId: string };
@@ -13,15 +14,21 @@ export function initialLocation(
     item?.type === 'milestone'
       ? item.lineId
       : String(defaults.lineId ?? (point?.type === 'milestone' ? point.lineId : ''));
-  if (!lineId && records.filter((r) => r.type === 'workline' && !r.completedAt).length === 1)
-    lineId = records.find((r) => r.type === 'workline' && !r.completedAt)!.id;
+  if (
+    !lineId &&
+    records.filter((r) => r.type === 'workline' && !isComplete(r, entries)).length === 1
+  )
+    lineId = records.find((r) => r.type === 'workline' && !isComplete(r, entries))!.id;
   const line = records.find((r) => r.id === lineId);
   let projectId =
     item?.type === 'workline'
       ? item.projectId
       : String(defaults.projectId ?? (line?.type === 'workline' ? line.projectId : ''));
-  if (!projectId && records.filter((r) => r.type === 'project' && !r.completedAt).length === 1)
-    projectId = records.find((r) => r.type === 'project' && !r.completedAt)!.id;
+  if (
+    !projectId &&
+    records.filter((r) => r.type === 'project' && !isComplete(r, entries)).length === 1
+  )
+    projectId = records.find((r) => r.type === 'project' && !isComplete(r, entries))!.id;
   if (line?.type === 'workline' && line.projectId !== projectId) lineId = '';
   if (!milestoneId)
     milestoneId =
@@ -60,7 +67,8 @@ export function WorkLocationPicker({
           value={value.projectId}
           onChange={(e) => {
             const lines = records.filter(
-              (r) => r.type === 'workline' && r.projectId === e.target.value && !r.completedAt,
+              (r) =>
+                r.type === 'workline' && r.projectId === e.target.value && !isComplete(r, entries),
             );
             const lineId = lines.length === 1 ? lines[0].id : '';
             onChange({ projectId: e.target.value, lineId, milestoneId: poolId(lineId) });
@@ -68,7 +76,7 @@ export function WorkLocationPicker({
         >
           {options(
             records.filter(
-              (r) => r.type === 'project' && (!r.completedAt || r.id === value.projectId),
+              (r) => r.type === 'project' && (!isComplete(r, entries) || r.id === value.projectId),
             ),
           )}
         </select>
@@ -87,7 +95,7 @@ export function WorkLocationPicker({
                 (r) =>
                   r.type === 'workline' &&
                   r.projectId === value.projectId &&
-                  (!r.completedAt || r.id === value.lineId),
+                  (!isComplete(r, entries) || r.id === value.lineId),
               ),
             )}
           </select>

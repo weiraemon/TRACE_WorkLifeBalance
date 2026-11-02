@@ -23,7 +23,7 @@ import { appendComment } from './line-notes';
 export class WorkspaceService {
   constructor(readonly vault: Workspace) {}
   snapshot() {
-    return this.vault.scan();
+    return this.vault.snapshot();
   }
   saveRecord(
     data: unknown,

@@ -1,3 +1,4 @@
+import { isComplete } from '../../../../../packages/domain/workspace';
 import {
   isSpaceItem,
   type Entry,
@@ -13,7 +14,7 @@ export function workspaceGroups(entries: Entry[], showArchived: boolean, query: 
       (a, b) =>
         a.order - b.order || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
     );
-  const live = (r: SpaceItem) => showArchived || !r.completedAt;
+  const live = (r: SpaceItem) => showArchived || !isComplete(r, entries);
   const projects = records.filter((r): r is Project => r.type === 'project' && live(r));
   const groups = projects
     .map((project) => {

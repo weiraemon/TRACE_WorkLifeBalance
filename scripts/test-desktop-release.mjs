@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
+import { validateReleasePaths } from './package-desktop.mjs';
 
 const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 assert.ok(process.argv[2], 'Usage: npm run test:release -- path/to/CHAOS-Windows-x64.zip');
@@ -22,16 +23,20 @@ await fs.mkdir(staging, { recursive: true });
 const extracted = await fs.mkdtemp(path.join(staging, 'release verify '));
 try {
   const python = path.join(project, '.desktop', 'runtime', 'python', 'python.exe');
-  execFileSync(
+  const entries = execFileSync(
     python,
     [
       '-c',
-      "import sys,zipfile; z=zipfile.ZipFile(sys.argv[1]); assert z.testzip() is None, 'ZIP CRC mismatch'; z.extractall(sys.argv[2])",
+      "import sys,zipfile,json; z=zipfile.ZipFile(sys.argv[1]); assert z.testzip() is None, 'ZIP CRC mismatch'; print(json.dumps(z.namelist()))",
       zip,
-      extracted,
     ],
-    { windowsHide: true, stdio: 'inherit' },
+    { windowsHide: true, encoding: 'utf8' },
   );
+  validateReleasePaths(JSON.parse(entries));
+  execFileSync(python, ['-m', 'zipfile', '-e', zip, extracted], {
+    windowsHide: true,
+    stdio: 'inherit',
+  });
   const executable = path.join(extracted, 'CHAOS-win32-x64', 'CHAOS.exe');
   assert.ok((await fs.stat(executable)).isFile(), 'Release ZIP does not contain CHAOS.exe.');
   const require = createRequire(import.meta.url);

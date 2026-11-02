@@ -1,3 +1,4 @@
+import { isComplete } from '../../../../../packages/domain/workspace';
 import {
   businessCatalog,
   resolvePlanDestination,
@@ -137,7 +138,7 @@ function ProjectSelect({
       <select value={value} onChange={(e) => change(e.target.value)}>
         <option value="">不限定（可跨项目）</option>
         {snapshot.entries.map((e) =>
-          e.data.type === 'project' && !e.data.completedAt ? (
+          e.data.type === 'project' && !isComplete(e.data, snapshot.entries) ? (
             <option key={e.data.id} value={e.data.id}>
               {e.data.title}
             </option>
@@ -160,7 +161,7 @@ function LineSelect({
 }) {
   const projects = new Map(
     snapshot.entries
-      .filter((e) => e.data.type === 'project' && !e.data.completedAt)
+      .filter((e) => e.data.type === 'project' && !isComplete(e.data, snapshot.entries))
       .map((e) => [e.data.id, e.data]),
   );
   return (
@@ -169,7 +170,7 @@ function LineSelect({
         <option value="">不指定，由 AI 决定</option>
         {snapshot.entries.map((e) =>
           e.data.type === 'workline' &&
-          !e.data.completedAt &&
+          !isComplete(e.data, snapshot.entries) &&
           projects.has(e.data.projectId) &&
           (!projectId || e.data.projectId === projectId) ? (
             <option key={e.data.id} value={e.data.id}>
@@ -376,7 +377,9 @@ function CandidateCard({
     recommended?.kind === 'existing'
       ? snapshot.entries.find(
           (e) =>
-            e.data.type === 'workline' && e.data.id === recommended.lineId && !e.data.completedAt,
+            e.data.type === 'workline' &&
+            e.data.id === recommended.lineId &&
+            !isComplete(e.data, snapshot.entries),
         )
       : undefined;
   const recommendedLineData =
@@ -385,7 +388,9 @@ function CandidateCard({
     recommended?.kind === 'newLine'
       ? snapshot.entries.find(
           (e) =>
-            e.data.type === 'project' && e.data.id === recommended.projectId && !e.data.completedAt,
+            e.data.type === 'project' &&
+            e.data.id === recommended.projectId &&
+            !isComplete(e.data, snapshot.entries),
         )
       : undefined;
   const usable =
@@ -458,13 +463,13 @@ function CandidateCard({
   const [quickText, setQuickText] = useState(candidate.source.text);
   const canAdd = ['task', 'event'].includes(candidate.suggestion.kind);
   const rawProjects = snapshot.entries.flatMap((entry) =>
-    entry.data.type === 'project' && !entry.data.completedAt
+    entry.data.type === 'project' && !isComplete(entry.data, snapshot.entries)
       ? [{ id: entry.data.id, title: entry.data.title }]
       : [],
   );
   const rawLines = snapshot.entries.flatMap((entry) =>
     entry.data.type === 'workline' &&
-    !entry.data.completedAt &&
+    !isComplete(entry.data, snapshot.entries) &&
     (!rawProjectId || entry.data.projectId === rawProjectId)
       ? [{ id: entry.data.id, title: entry.data.title }]
       : [],

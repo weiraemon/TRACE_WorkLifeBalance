@@ -296,7 +296,7 @@ test('业务线手动完成后收起，下属未完成条目不被连带划掉�
     page.waitForResponse(
       (response) =>
         response.url().endsWith('/api/business/v1/commands') &&
-        response.request().postDataJSON()?.type === 'record.save',
+        response.request().postDataJSON()?.type === 'work.complete',
     ),
     page.getByRole('menuitem', { name: '重新打开业务线', exact: true }).click(),
   ]);

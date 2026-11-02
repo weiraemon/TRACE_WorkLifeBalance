@@ -25,6 +25,8 @@ export const deleteSpace = (id: string, entries: Entry[]) =>
     id,
     expectations: Object.fromEntries(entries.map((e) => [e.data.id, e.revision])),
   });
+export const complete = (entry: Entry, completed: boolean) =>
+  command<Entry>({ type: 'work.complete', id: entry.data.id, revision: entry.revision, completed });
 export const save = (data: RecordData, entry?: Entry, options?: SaveOptions) =>
   command<Entry>({ type: 'record.save', data, revision: entry?.revision, options });
 export async function removeSpace(entry: Entry) {

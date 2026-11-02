@@ -33,4 +33,8 @@ apps/web/src/
 
 `api.ts` 保留界面的记录、Notes 与删除调用入口，内部统一发送标准业务命令；HTTP 请求、会话 token、工作目录会话、契约头和业务响应版本校验位于 `platform/http.ts`，不再调用旧网页工作路由。记录初始化复用 `domain/index.ts` 的 `createRecord`。Electron 目录对话框与 QQ 初始化通过 `platform/desktop.ts` 取得受限桥接，功能组件不再直接读取 `window.chaosDesktop`。按钮、文案、布局或样式保持不变；尚未接入 Android 运行时。目录与依赖边界见[仓库分工与跨端复用](repository.md)。
 
+所有页面共用 App 中的一份工作快照。轮询、手动刷新和写入后的刷新按请求顺序校验，先发但晚返回的快照及错误不能覆盖更新的结果；连接新目录也使旧请求失效。该机制同时保护完成、日期、重要性、归属和 Notes 版本，不在页面里维护另一套业务状态。
+
+完成显示统一使用 `domain/workspace.ts` 的 `isComplete`；今日排序与节点行共用同一个 done 计算结果。今日、工作空间及右键的手动完成统一发送 `work.complete`，不在界面自行生成 completedAt。实际表单的 completeIds 仅表示本次提交意图，保存后由同一后端完成更新函数生成持久事实；批注仍只保存到业务线 Notes。
+
 QQ／微信设置从既有设置进入附加弹窗，专用样式限定在同步控件内，消息组件按需加载。原有四页布局、录入和编辑窗沿用 main 方案。业务接口与扩展方法见[标准业务 API](business-api.md)。

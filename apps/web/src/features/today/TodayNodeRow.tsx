@@ -4,11 +4,13 @@ import { isComplete, type MilestoneContext } from '../../../../../packages/domai
 
 export function TodayNodeRow({
   context,
+  done,
   snapshot,
   toggle,
   record,
 }: {
   context: MilestoneContext;
+  done: boolean;
   snapshot: Snapshot;
   toggle: (item: SpaceItem) => void;
   record: () => void;
@@ -17,7 +19,6 @@ export function TodayNodeRow({
   const preview = useRef<HTMLDivElement>(null);
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
-  const done = isComplete(milestone, snapshot.entries);
   const children = snapshot.entries
     .flatMap(({ data }) =>
       data.type === 'todo' && data.milestoneId === milestone.id ? [data] : [],
@@ -89,9 +90,10 @@ export function TodayNodeRow({
         {children.length ? (
           <ul>
             {children.map((item) => (
-              <li key={item.id} className={item.completedAt ? 'item-done' : ''}>
+              <li key={item.id} className={isComplete(item, snapshot.entries) ? 'item-done' : ''}>
                 <span>
-                  {item.completedAt ? '✓' : '○'} {item.kind.toUpperCase()} · {item.title}
+                  {isComplete(item, snapshot.entries) ? '✓' : '○'} {item.kind.toUpperCase()} ·{' '}
+                  {item.title}
                 </span>
                 <small>{item.dueDate ?? milestone.dueDate}</small>
               </li>

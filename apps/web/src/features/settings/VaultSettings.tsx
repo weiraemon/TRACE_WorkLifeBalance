@@ -90,6 +90,7 @@ export function Connect({
       </form>
       <p className="hint">
         可读 Markdown 为唯一事实来源。原有笔记不会被批量转换，外部修改产生冲突时停止保存。
+        上次连接的目录路径只保存在本机配置，重新打开会恢复；软件包不携带工作内容。
       </p>
     </section>
   );

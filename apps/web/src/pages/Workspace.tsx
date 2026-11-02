@@ -8,8 +8,12 @@ import {
   type SpaceItem,
   type Todo,
 } from '../../../../packages/domain/index';
-import { compareMilestones, shouldHideCompleted } from '../../../../packages/domain/workspace';
-import { createRecord, save } from '../api';
+import {
+  compareMilestones,
+  shouldHideCompleted,
+  isComplete,
+} from '../../../../packages/domain/workspace';
+import { complete } from '../api';
 import { Button, EmptyState } from '../components/ui';
 import type { Editor } from '../types/editor';
 import { WorkspaceNavigation } from '../features/workspace/WorkspaceNavigation';
@@ -60,19 +64,12 @@ export function Workspace({
       ?.querySelector<HTMLElement>(`[data-space-id="${id}"]`)
       ?.scrollIntoView({ block: 'start', inline: 'nearest' });
   };
-  const change = (r: SpaceItem, fields: object) =>
+  const toggle = (item: SpaceItem) =>
     run(async () => {
-      await save(
-        createRecord(r.type, { ...r, ...fields }),
-        snapshot.entries.find((e) => e.data.id === r.id),
-        'completedAt' in fields
-          ? { completion: Boolean((fields as { completedAt: string | null }).completedAt) }
-          : undefined,
-      );
+      const entry = snapshot.entries.find((e) => e.data.id === item.id)!;
+      await complete(entry, !isComplete(item, snapshot.entries));
       await reload();
     });
-  const toggle = (todo: Todo) =>
-    change(todo, { completedAt: todo.completedAt ? null : new Date().toISOString() });
   return (
     <div className="space-board">
       <WorkspaceNavigation
@@ -124,7 +121,6 @@ export function Workspace({
                     select={select}
                     edit={edit}
                     toggle={toggle}
-                    change={change}
                     drag={drag}
                   />
                 );

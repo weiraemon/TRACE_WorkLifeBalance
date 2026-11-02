@@ -4,9 +4,31 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 const moduleUrl = new URL('../scripts/package-desktop.mjs', import.meta.url);
-const { archiveInstalledElectron, zipDirectory } = await import(moduleUrl.href);
+const { archiveInstalledElectron, zipDirectory, validateReleasePaths } = await import(
+  moduleUrl.href
+);
 const testRoot = path.resolve('.test-vault');
 const roots: string[] = [];
+
+it('发布包拒绝工作目录、Markdown 正文和本机路径或密钥配置', () => {
+  for (const name of [
+    'resources/app/ATLAS/todo/example.md',
+    'resources/app/.atlas/qq-inbox.md',
+    'resources/app/workspace.json',
+    'resources/app/settings.json',
+    'resources/app/.chaos.local.json',
+    'resources/app/个人笔记.md',
+    'resources/app/.test-vault/actual.json',
+  ])
+    expect(() => validateReleasePaths([name])).toThrow('user data or local configuration');
+  expect(() =>
+    validateReleasePaths([
+      'resources/app/main.cjs',
+      'resources/app/THIRD_PARTY_NOTICES.md',
+      'resources/app/runtime/python/python312.zip',
+    ]),
+  ).not.toThrow();
+});
 async function setup() {
   await fs.mkdir(testRoot, { recursive: true });
   const root = await fs.mkdtemp(path.join(testRoot, 'packaging-'));

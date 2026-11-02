@@ -13,6 +13,7 @@ import {
   type DeletePreview,
   type DeleteResult,
   type SaveOptions,
+  type SpaceItem,
   type BusinessLine,
   type Milestone,
   type Todo,
@@ -34,6 +35,9 @@ import { frontmatter, newNote, updateNote } from './markdown';
 // Platform adapters implement file safety and publication; business rules stay here.
 export abstract class Workspace {
   abstract scan(): Promise<Snapshot>;
+  snapshot(): Promise<Snapshot> {
+    return this.serialized(() => this.scan());
+  }
   protected abstract readSource(relative: string): Promise<string>;
   protected abstract contentHash(source: string): string | Promise<string>;
   protected abstract resourceFingerprint(relative: string): Promise<string | null>;
@@ -44,6 +48,29 @@ export abstract class Workspace {
     expected: string | null,
   ): Promise<void>;
   protected abstract commitChanges(changes: FileChange[]): Promise<void>;
+  private completionChanges(
+    item: SpaceItem,
+    records: RecordData[],
+    at: string | null,
+    now: string,
+  ): SpaceItem[] {
+    if (item.type === 'milestone' && item.pool) throw new VaultError('待办池不完成');
+    const update = (record: SpaceItem): SpaceItem => ({
+      ...record,
+      completedAt: at === null ? null : (record.completedAt ?? at),
+      updatedAt: now,
+    });
+    const children =
+      item.type === 'milestone'
+        ? records.filter(
+            (record): record is Todo => record.type === 'todo' && record.milestoneId === item.id,
+          )
+        : [];
+    return [
+      ...children.map(update),
+      { ...update(item), ...(children.length ? { completedAt: null } : {}) },
+    ];
+  }
   private createLineParts(line: BusinessLine): RecordData[] {
     const now = new Date().toISOString(),
       notesId = crypto.randomUUID();
@@ -204,7 +231,6 @@ export abstract class Workspace {
       }
       if (settings.completion !== undefined) {
         if (!isSpaceItem(data)) throw new VaultError('此对象不支持完成');
-        if (data.type === 'milestone' && data.pool) throw new VaultError('待办池不完成');
         data = { ...data, completedAt: settings.completion ? now : null };
       }
       if (data.type === 'resource' && data.location === 'vault' && data.noteId !== data.id) {
@@ -291,44 +317,31 @@ export abstract class Workspace {
           throw new VaultError('新条目和本次完成必须关联到这段实际工作');
         for (const id of new Set(settings.completeIds)) {
           const item = changed.get(id) ?? snapshot.entries.find((e) => e.data.id === id)?.data;
-          if (item?.type === 'milestone') {
-            if (item.pool) throw new VaultError('待办池不完成');
-            const children = [
-              ...snapshot.entries.map((entry) => changed.get(entry.data.id) ?? entry.data),
-              ...settings.newItems,
-            ].filter(
-              (record): record is Todo => record.type === 'todo' && record.milestoneId === id,
-            );
-            for (const child of children)
-              changed.set(child.id, {
-                ...child,
-                completedAt: child.completedAt ?? now,
-                updatedAt: now,
-              });
-            changed.set(id, {
-              ...item,
-              completedAt: children.length ? null : (item.completedAt ?? now),
-              updatedAt: now,
-            });
-          } else if (item?.type === 'todo') {
-            changed.set(id, { ...item, completedAt: item.completedAt ?? now, updatedAt: now });
-          } else throw new VaultError('完成对象不存在');
+          if (item?.type !== 'milestone' && item?.type !== 'todo')
+            throw new VaultError('完成对象不存在');
+          const records = [
+            ...snapshot.entries.map((entry) => changed.get(entry.data.id) ?? entry.data),
+            ...settings.newItems,
+          ];
+          for (const record of this.completionChanges(item, records, now, now))
+            changed.set(record.id, record);
         }
       } else if (settings.completeIds.length) throw new VaultError('本次完成只用于实际工作');
       if (
-        data.type === 'milestone' &&
-        existing?.data.type === 'milestone' &&
-        (settings.completion !== undefined || data.completedAt !== existing.data.completedAt)
+        isSpaceItem(data) &&
+        (settings.completion !== undefined ||
+          (existing &&
+            isSpaceItem(existing.data) &&
+            data.completedAt !== existing.data.completedAt))
       ) {
-        const children = snapshot.entries
-          .map((e) => e.data)
-          .filter((r): r is Todo => r.type === 'todo' && r.milestoneId === data.id);
-        for (const child of children)
-          changed.set(child.id, { ...child, completedAt: data.completedAt, updatedAt: now });
-        if (children.length) {
-          data = { ...data, completedAt: null };
-          changed.set(data.id, data);
-        }
+        for (const record of this.completionChanges(
+          data,
+          snapshot.entries.map((entry) => entry.data),
+          data.completedAt,
+          now,
+        ))
+          changed.set(record.id, record);
+        data = changed.get(data.id)!;
       }
       const virtual = [
         ...snapshot.entries.filter((e) => !changed.has(e.data.id)),
@@ -499,12 +512,14 @@ export abstract class Workspace {
     return { source, note, item, header: header[0], body: source.slice(header[0].length) };
   }
   async readContent(id: string): Promise<NoteContent> {
-    const { source, note, item, body } = await this.contentSource(id);
-    const text =
-      item.type === 'workline'
-        ? body
-        : (section(body, item.type === 'todo' ? 'item' : 'node', item.id)?.text ?? '');
-    return { body: text, revision: await this.contentHash(source), path: note.path };
+    return this.serialized(async () => {
+      const { source, note, item, body } = await this.contentSource(id);
+      const text =
+        item.type === 'workline'
+          ? body
+          : (section(body, item.type === 'todo' ? 'item' : 'node', item.id)?.text ?? '');
+      return { body: text, revision: await this.contentHash(source), path: note.path };
+    });
   }
   async saveContent(id: string, body: string, revision: string): Promise<NoteContent> {
     return this.serialized(async () => {
