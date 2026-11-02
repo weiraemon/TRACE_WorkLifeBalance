@@ -201,7 +201,7 @@ test('静蓝主题覆盖各页并记住选择，切换不改变数据或重要�
         .trim(),
     }));
   expect((await palette()).background).toBe('rgb(248, 246, 239)');
-  const settings = page.getByRole('button', { name: '备份', exact: true });
+  const settings = page.getByRole('button', { name: '设置', exact: true });
   await settings.click();
   await page
     .getByRole('region', { name: '主题', exact: true })

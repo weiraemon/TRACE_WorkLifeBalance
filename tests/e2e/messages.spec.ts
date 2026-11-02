@@ -9,7 +9,7 @@ import { emptyInbox } from '../../packages/domain/messages';
 import { writeInboxText } from '../../apps/local-service/src/sync/message-store';
 
 async function openSync(page: Page, kind: 'QQ' | '微信') {
-  await page.getByRole('button', { name: '备份', exact: true }).click();
+  await page.getByRole('button', { name: '设置', exact: true }).click();
   await page
     .getByRole('dialog')
     .getByRole('button', { name: kind + '同步设置', exact: true })
@@ -31,8 +31,6 @@ test('消息规则、AI 提供商、QQ 项目范围与计划入库', async ({ pa
   await openSync(page, '微信');
   const wechat = page.getByRole('dialog');
   await expect(wechat).toContainText('微信同步尚未接入');
-  await wechat.getByRole('button', { name: '微信手动同步', exact: true }).click();
-  await expect(wechat.getByRole('button', { name: '开始手动同步', exact: true })).toBeDisabled();
   await wechat.getByRole('button', { name: '关闭对话框', exact: true }).click();
 
   await openSync(page, 'QQ');
@@ -193,14 +191,21 @@ test('消息规则、AI 提供商、QQ 项目范围与计划入库', async ({ pa
   );
   const file = path.join(current.root, '.atlas/qq-inbox.md');
   await fs.writeFile(file, writeInboxText(await fs.readFile(file, 'utf8'), state));
-  await openSync(page, 'QQ');
+  await page.getByRole('button', { name: /^待确认/ }).click();
+  await expect(page.locator('.pending-trigger .pending-count')).toHaveText('2');
+  await expect(dialog.getByRole('button', { name: 'QQ消息', exact: true })).toBeVisible();
+  await expect(dialog.getByText('粘贴 QQ 消息进行识别', { exact: true })).toHaveCount(0);
+  await dialog.getByRole('button', { name: '微信消息', exact: true }).click();
+  await expect(dialog).toContainText('微信同步尚未接入，暂无待确认消息');
+  await dialog.getByRole('button', { name: 'QQ消息', exact: true }).click();
   await expect(dialog.getByRole('heading', { name: '交登记表', exact: true })).toBeVisible();
   const defaultCard = dialog.locator('article.message-candidate').filter({ hasText: '交登记表' });
   await expect(defaultCard).toContainText('已使用会话默认业务线');
   await defaultCard.getByLabel('事项标题').fill('登记表截止');
   await defaultCard.getByRole('button', { name: '确认加入计划', exact: true }).click();
   await expect(dialog).toContainText('已加入计划');
-  await expect(dialog.getByRole('button', { name: '待确认（1）', exact: true })).toBeVisible();
+  await expect(dialog.locator('article.message-candidate')).toHaveCount(1);
+  await expect(page.locator('.pending-trigger .pending-count')).toHaveText('1');
   const afterDefault = await snapshot(page);
   expect(
     afterDefault.entries.some((e) => e.data.type === 'milestone' && e.data.title === '登记表截止'),
@@ -215,7 +220,8 @@ test('消息规则、AI 提供商、QQ 项目范围与计划入库', async ({ pa
   await expect(projectCard.getByLabel('新业务线名称')).toHaveValue('申报');
   await projectCard.getByLabel('新业务线名称').fill('申报事务');
   await projectCard.getByRole('button', { name: '确认加入计划', exact: true }).click();
-  await expect(dialog.getByRole('button', { name: '待确认（0）', exact: true })).toBeVisible();
+  await expect(dialog.locator('article.message-candidate')).toHaveCount(0);
+  await expect(page.locator('.pending-count')).toHaveCount(0);
   const afterProject = await snapshot(page);
   const createdProject = afterProject.entries.find(
     (e) => e.data.type === 'project' && e.data.title === '寒期项目',
@@ -294,9 +300,10 @@ test('会话开启自动加入后，命中消息直接进入计划', async ({ pa
     await expect(dialog).toContainText('此规则已保存');
     await dialog.getByRole('button', { name: '关闭对话框', exact: true }).click();
 
-    await openSync(page, 'QQ');
+    await page.getByRole('button', { name: '手动粘贴', exact: true }).click();
     const inbox = page.getByRole('dialog');
-    await inbox.getByText('粘贴 QQ 消息进行识别', { exact: true }).click();
+    await expect(inbox.locator('article.message-candidate')).toHaveCount(0);
+    await expect(inbox.locator('.message-inbox h3')).toHaveText('手动粘贴消息');
     await inbox.getByLabel('来源会话').selectOption({ label: '群聊 · 自动测试' });
     await inbox.getByLabel('发送人').fill('辅导员');
     await inbox.getByLabel('消息发送时间（北京时间）').fill('2026-10-29T09:00');

@@ -31,6 +31,21 @@
   display: grid;
   gap: 16px;
 }
+.message-source-tabs {
+  margin-bottom: 14px;
+}
+.message-inbox.mode-pending > .message-notice,
+.message-inbox.mode-pending > .segmented,
+.message-inbox.mode-pending > .message-reload,
+.message-inbox.mode-paste > .message-notice,
+.message-inbox.mode-paste > .segmented,
+.message-inbox.mode-paste > .hint,
+.message-inbox.mode-paste > .message-bulk-actions,
+.message-inbox.mode-paste > .message-bulk-backdrop,
+.message-inbox.mode-paste > .message-candidate,
+.message-inbox.mode-paste > .message-reload {
+  display: none;
+}
 .qq-group-matches {
   display: grid;
   gap: 2px;

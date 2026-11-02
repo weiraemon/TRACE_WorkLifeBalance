@@ -14,7 +14,7 @@ export async function connect(page: Page) {
   await fs.mkdir('.test-vault', { recursive: true });
   const root = await fs.mkdtemp(path.resolve('.test-vault/lines-'));
   await page.goto('/');
-  const settings = page.getByRole('button', { name: '备份', exact: true });
+  const settings = page.getByRole('button', { name: '设置', exact: true });
   await expect(settings).toBeVisible();
   await settings.click();
   const dialog = page.getByRole('dialog');

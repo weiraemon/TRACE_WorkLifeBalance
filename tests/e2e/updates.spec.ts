@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { connect, write, refresh, nav, seed, localDay } from './helpers';
 test.beforeEach(async ({ page }) => connect(page));
 
-test('全局导航合并到顶部单行，移除侧栏，窄屏搜索与备份仍可用', async ({ page }) => {
+test('全局导航合并到顶部单行，移除侧栏，窄屏搜索与设置仍可用', async ({ page }) => {
   await seed(page);
   await expect(page.locator('.sidebar')).toHaveCount(0);
   const header = page.locator('.topbar');
@@ -10,7 +10,7 @@ test('全局导航合并到顶部单行，移除侧栏，窄屏搜索与备份�
   await expect(header.locator('.app-brand')).toHaveText('CHAOS');
   const navigation = header.getByRole('navigation', { name: '主导航', exact: true });
   await expect(navigation.getByRole('button')).toHaveText(['今日', '工作空间', '知识', '回顾']);
-  const backup = header.getByRole('button', { name: '备份', exact: true });
+  const backup = header.getByRole('button', { name: '设置', exact: true });
   await expect(backup.locator('svg')).toHaveCount(1);
   for (const width of [1440, 600, 375]) {
     await page.setViewportSize({ width, height: 1000 });
@@ -35,9 +35,7 @@ test('全局导航合并到顶部单行，移除侧栏，窄屏搜索与备份�
     await search.fill('');
     await backup.click();
     const dialog = page.getByRole('dialog');
-    await expect(
-      dialog.getByRole('heading', { name: 'Vault 与数据安全', exact: true }),
-    ).toBeVisible();
+    await expect(dialog.getByRole('heading', { name: '设置', exact: true })).toBeVisible();
     await dialog.getByRole('button', { name: '关闭对话框', exact: true }).click();
     await nav(page, '知识');
     await expect(navigation.getByRole('button', { name: '知识', exact: true })).toHaveAttribute(
@@ -52,7 +50,7 @@ test('全局导航合并到顶部单行，移除侧栏，窄屏搜索与备份�
 test('三份手动快照，删除不自动备份，不提供逐操作撤销', async ({ page }) => {
   await write(page, 'project', { title: '测试项目' });
   await refresh(page);
-  await page.getByRole('button', { name: '备份', exact: true }).click();
+  await page.getByRole('button', { name: '设置', exact: true }).click();
   const dialog = page.getByRole('dialog');
   for (let i = 0; i < 4; i++) {
     await dialog.getByRole('button', { name: '创建管理数据快照', exact: true }).click();
@@ -70,7 +68,7 @@ test('三份手动快照，删除不自动备份，不提供逐操作撤销', as
   await dialog.getByRole('button', { name: '确认删除', exact: true }).click();
   await expect(page.getByRole('region', { name: '项目面 · 测试项目', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '撤销删除', exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: '备份', exact: true }).click();
+  await page.getByRole('button', { name: '设置', exact: true }).click();
   await expect(dialog.locator('.backup-row')).toHaveCount(3);
   page.once('dialog', (value) => value.accept());
   await dialog.getByRole('button', { name: '恢复', exact: true }).first().click();

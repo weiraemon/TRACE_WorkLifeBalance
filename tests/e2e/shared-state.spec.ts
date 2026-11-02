@@ -132,7 +132,7 @@ test('切换工作目录后，旧目录的迟到响应不能把界面切回去',
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await intercepted;
   const next = await fs.mkdtemp(path.resolve('.test-vault/shared-connect-'));
-  await page.getByRole('button', { name: '备份', exact: true }).click();
+  await page.getByRole('button', { name: '设置', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel('工作目录绝对路径').fill(next);
   await dialog.getByRole('button', { name: '连接工作目录', exact: true }).click();
@@ -147,6 +147,6 @@ test('切换工作目录后，旧目录的迟到响应不能把界面切回去',
   });
   await (await delayedResponse).finished();
   await page.clock.runFor(200);
-  await page.getByRole('button', { name: '备份', exact: true }).click();
+  await page.getByRole('button', { name: '设置', exact: true }).click();
   expect(await dialog.getByLabel('工作目录绝对路径').inputValue()).toBe(next);
 });

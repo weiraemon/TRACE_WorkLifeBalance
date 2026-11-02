@@ -1,5 +1,11 @@
 import { useCallback, useDeferredValue, useEffect, useState, useRef, lazy, Suspense } from 'react';
-import { MagnifyingGlassIcon, GearIcon, ReloadIcon } from '@radix-ui/react-icons';
+import {
+  MagnifyingGlassIcon,
+  GearIcon,
+  ReloadIcon,
+  ChatBubbleIcon,
+  Pencil2Icon,
+} from '@radix-ui/react-icons';
 import {
   localDay,
   isSpaceItem,
@@ -7,7 +13,7 @@ import {
   type Snapshot,
   type DeleteResult,
 } from '../../../packages/domain/index';
-import { load, session, removeSpace } from './api';
+import { api, load, session, removeSpace } from './api';
 import { spaceSubtree } from '../../../packages/domain/workspace';
 import { Button, Modal, EmptyState, ErrorMessage } from './components/ui';
 import { Connect, Backup, Appearance } from './features/settings/VaultSettings';
@@ -52,6 +58,10 @@ export default function App() {
   const query = useDeferredValue(search.toLowerCase());
   const [contentDirty, setContentDirty] = useState(false);
   const [syncPanel, setSyncPanel] = useState<'qq' | 'wechat' | null>(null);
+  const [pendingPanel, setPendingPanel] = useState(false);
+  const [pendingTab, setPendingTab] = useState<'qq' | 'wechat'>('qq');
+  const [pendingCount, setPendingCount] = useState(0);
+  const [pastePanel, setPastePanel] = useState(false);
   const [deleting, setDeleting] = useState<Entry | null>(null);
   const [deletion, setDeletion] = useState<DeleteResult | null>(null);
   const canLeaveContent = () => !contentDirty || window.confirm('正文尚未保存，确定放弃并离开？');
@@ -65,8 +75,14 @@ export default function App() {
     const request = ++snapshotRequest.current;
     setSyncing(true);
     try {
-      const next = await load();
-      if (request === snapshotRequest.current) setSnapshot(next);
+      const [next, inbox] = await Promise.all([
+        load(),
+        api<{ state: { candidates: unknown[] } }>('messages').catch(() => null),
+      ]);
+      if (request === snapshotRequest.current) {
+        setSnapshot(next);
+        if (inbox) setPendingCount(inbox.state.candidates.length);
+      }
     } catch (error) {
       if (request === snapshotRequest.current) throw error;
     } finally {
@@ -204,35 +220,67 @@ export default function App() {
               </button>
             ))}
           </nav>
-          <label className="search">
-            <MagnifyingGlassIcon />
-            <input
-              aria-label="搜索工作"
-              placeholder="搜索项目、业务线和待办…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </label>
-          <Button
-            className="icon"
-            aria-label="重新加载 Vault"
-            aria-busy={syncing}
-            disabled={!snapshot || syncing}
-            onClick={() => run(reload)}
-          >
-            <ReloadIcon />
-          </Button>
-          <Button
-            className="backup-trigger"
-            onClick={() => {
-              if (!canLeaveContent()) return;
-              setSelected(null);
-              setSettings(true);
-            }}
-          >
-            <GearIcon />
-            备份
-          </Button>
+          <div className="topbar-actions">
+            <label className="search">
+              <MagnifyingGlassIcon />
+              <input
+                aria-label="搜索工作"
+                placeholder="搜索项目、业务线和待办…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </label>
+            <Button
+              className="icon"
+              aria-label="重新加载 Vault"
+              aria-busy={syncing}
+              disabled={!snapshot || syncing}
+              onClick={() => run(reload)}
+            >
+              <ReloadIcon />
+            </Button>
+            <Button
+              className="pending-trigger"
+              aria-label={pendingCount ? `待确认，${pendingCount} 条` : '待确认'}
+              disabled={!snapshot}
+              onClick={() => {
+                if (!canLeaveContent()) return;
+                setSelected(null);
+                setPendingPanel(true);
+              }}
+            >
+              <ChatBubbleIcon />
+              <span className="topbar-action-label">待确认</span>
+              {pendingCount > 0 && (
+                <span className="pending-count">{pendingCount > 99 ? '99+' : pendingCount}</span>
+              )}
+            </Button>
+            <Button
+              className="paste-trigger"
+              aria-label="手动粘贴"
+              disabled={!snapshot}
+              onClick={() => {
+                if (!canLeaveContent()) return;
+                setSelected(null);
+                setPastePanel(true);
+              }}
+            >
+              <Pencil2Icon />
+              <span className="topbar-action-label">手动粘贴</span>
+            </Button>
+            <Button
+              className="backup-trigger"
+              aria-label="设置"
+              onClick={() => {
+                if (!canLeaveContent()) return;
+                setSelected(null);
+                setSettings(true);
+              }}
+            >
+              <GearIcon />
+              <span className="topbar-action-label">设置</span>
+            </Button>
+          </div>
         </header>
         <div
           className={`content${hasBusinessNavigation ? ' workspace-page' : ''}${page === 'today' && snapshot ? ' today-content' : ''}`}
@@ -384,16 +432,72 @@ export default function App() {
           <div className="dialog-body">
             <Suspense fallback={<EmptyState>正在加载消息设置…</EmptyState>}>
               {syncPanel === 'qq' ? (
-                <MessageInbox key={snapshot.vaultId} snapshot={snapshot} reload={reload} />
+                <MessageInbox
+                  key={snapshot.vaultId}
+                  snapshot={snapshot}
+                  reload={reload}
+                  onPendingChange={setPendingCount}
+                  mode="settings"
+                />
               ) : (
-                <WechatSync />
+                <WechatSync mode="settings" />
               )}
             </Suspense>
           </div>
         </Modal>
       )}
+      {pendingPanel && snapshot && (
+        <Modal title="待确认" wide className="sync-dialog" onClose={() => setPendingPanel(false)}>
+          <div className="dialog-body">
+            <div className="segmented message-source-tabs">
+              <button aria-pressed={pendingTab === 'qq'} onClick={() => setPendingTab('qq')}>
+                QQ消息
+              </button>
+              <button
+                aria-pressed={pendingTab === 'wechat'}
+                onClick={() => setPendingTab('wechat')}
+              >
+                微信消息
+              </button>
+            </div>
+            <Suspense fallback={<EmptyState>正在加载待确认消息…</EmptyState>}>
+              {pendingTab === 'qq' ? (
+                <MessageInbox
+                  key={`${snapshot.vaultId}-pending`}
+                  snapshot={snapshot}
+                  reload={reload}
+                  onPendingChange={setPendingCount}
+                  mode="pending"
+                />
+              ) : (
+                <WechatSync mode="pending" />
+              )}
+            </Suspense>
+          </div>
+        </Modal>
+      )}
+      {pastePanel && snapshot && (
+        <Modal
+          title="手动粘贴消息"
+          wide
+          className="sync-dialog"
+          onClose={() => setPastePanel(false)}
+        >
+          <div className="dialog-body">
+            <Suspense fallback={<EmptyState>正在加载粘贴面板…</EmptyState>}>
+              <MessageInbox
+                key={`${snapshot.vaultId}-paste`}
+                snapshot={snapshot}
+                reload={reload}
+                onPendingChange={setPendingCount}
+                mode="paste"
+              />
+            </Suspense>
+          </div>
+        </Modal>
+      )}
       {settings && (
-        <Modal title="Vault 与数据安全" onClose={() => setSettings(false)} wide>
+        <Modal title="设置" onClose={() => setSettings(false)} wide>
           <Appearance />
           <Connect
             defaultPath={snapshot?.root ?? defaultPath}

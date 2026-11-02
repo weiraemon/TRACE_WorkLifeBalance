@@ -5,12 +5,12 @@ test.beforeEach(async ({ page }) => connect(page));
 
 test('已连接目录自动填入设置，刷新后仍直接进入工作台', async ({ page }) => {
   const root = (await snapshot(page)).root;
-  await page.getByRole('button', { name: '备份', exact: true }).click();
+  await page.getByRole('button', { name: '设置', exact: true }).click();
   await expect(page.getByRole('dialog').getByLabel('工作目录绝对路径')).toHaveValue(root);
   await page.getByRole('button', { name: '关闭对话框', exact: true }).click();
   await page.reload();
   await expect(page.getByRole('region', { name: '做了什么', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '备份', exact: true }).click();
+  await page.getByRole('button', { name: '设置', exact: true }).click();
   await expect(page.getByRole('dialog').getByLabel('工作目录绝对路径')).toHaveValue(root);
 });
 

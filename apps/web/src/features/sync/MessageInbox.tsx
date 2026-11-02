@@ -783,14 +783,18 @@ export function MessageInbox({
   snapshot,
   reload,
   onPendingChange,
+  mode = 'settings',
 }: {
   snapshot: Snapshot;
   reload: () => Promise<void>;
   onPendingChange?: (count: number) => void;
+  mode?: 'pending' | 'settings' | 'paste';
 }) {
   const [view, setView] = useState<InboxView | null>(null);
   const [settings, setSettings] = useState<MessageSettings>({ names: [], classes: [], rules: [] });
-  const [tab, setTab] = useState<'inbox' | 'manual' | 'global' | 'model' | 'rules'>('inbox');
+  const [tab, setTab] = useState<'inbox' | 'manual' | 'global' | 'model' | 'rules'>(
+    mode === 'settings' ? 'global' : 'inbox',
+  );
   const [ruleKindTab, setRuleKindTab] = useState<'group' | 'private'>('group');
   const [collapsedRules, setCollapsedRules] = useState<Set<string>>(() => new Set());
   const [bulk, setBulk] = useState<'accept' | 'dismiss' | null>(null);
@@ -983,28 +987,30 @@ export function MessageInbox({
     ai.jsonMode !== selected.jsonMode ||
     Boolean(key.trim());
   return (
-    <section className="message-inbox" aria-label="QQ 自动同步">
-      <p className="message-notice" role="status">
-        支持本机 QQ
-        自动同步：在设置中启用并绑定群或私聊联系人后，会定时读取新消息；也可粘贴消息手工验证。未绑定的会话不会自动读取。
-      </p>
-      <div className="segmented">
-        <button aria-pressed={tab === 'inbox'} onClick={() => setTab('inbox')}>
-          待确认（{view.state.candidates.length}）
-        </button>
-        <button aria-pressed={tab === 'manual'} onClick={() => setTab('manual')}>
-          QQ手动同步
-        </button>
-        <button aria-pressed={tab === 'global'} onClick={() => setTab('global')}>
-          QQ自动同步全局设置
-        </button>
-        <button aria-pressed={tab === 'model'} onClick={() => setTab('model')}>
-          模型设置
-        </button>
-        <button aria-pressed={tab === 'rules'} onClick={() => setTab('rules')}>
-          会话规则设置
-        </button>
-      </div>
+    <section className={`message-inbox mode-${mode}`} aria-label="QQ 同步消息">
+      {mode === 'settings' && (
+        <>
+          <p className="message-notice" role="status">
+            支持本机 QQ
+            自动同步：在设置中启用并绑定群或私聊联系人后，会定时读取新消息。未绑定的会话不会自动读取。
+          </p>
+          <div className="segmented">
+            <button aria-pressed={tab === 'manual'} onClick={() => setTab('manual')}>
+              QQ手动同步
+            </button>
+            <button aria-pressed={tab === 'global'} onClick={() => setTab('global')}>
+              QQ自动同步全局设置
+            </button>
+            <button aria-pressed={tab === 'model'} onClick={() => setTab('model')}>
+              模型设置
+            </button>
+            <button aria-pressed={tab === 'rules'} onClick={() => setTab('rules')}>
+              会话规则设置
+            </button>
+          </div>
+        </>
+      )}
+      {mode === 'paste' && <h3>手动粘贴消息</h3>}
       <ErrorMessage message={error} />
       {notice && <p role="status">{notice}</p>}
       {tab === 'manual' ? (
@@ -1706,168 +1712,176 @@ export function MessageInbox({
         </>
       ) : (
         <>
-          <details>
-            <summary>粘贴 QQ 消息进行识别</summary>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void run(async () => {
-                  const result = await api<{ message: string }>('messages/analyze', {
-                    revision: view.revision,
-                    message: {
-                      ...source,
-                      sentAt: new Date(source.sentAt + '+08:00').toISOString(),
-                    },
-                  });
-                  setNotice(result.message);
-                });
-              }}
-            >
-              <p className="hint">
-                将命中的消息、补充上下文和身份关键词发送给 {aiLabel}
-                。没有默认业务线时，还会发送未结束项目／业务线的名称与标识，用于推荐归属，不发送
-                Notes 正文。时间按北京时间填写；@ 标记由你根据原消息确认。
-              </p>
-              <Field label="来源会话">
-                <select
-                  required
-                  value={source.ruleId}
-                  onChange={(e) => setSource({ ...source, ruleId: e.target.value })}
-                >
-                  <option value="">选择已保存的会话</option>
-                  {view.state.settings.rules
-                    .filter((r) => r.enabled)
-                    .map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.kind === 'group' ? '群聊' : '私聊'} · {r.name}
-                      </option>
-                    ))}
-                </select>
-              </Field>
-              <Field label="发送人">
-                <input
-                  required
-                  value={source.sender}
-                  onChange={(e) => setSource({ ...source, sender: e.target.value })}
-                />
-              </Field>
-              <Field label="消息发送时间（北京时间）">
-                <input
-                  required
-                  type="datetime-local"
-                  value={source.sentAt}
-                  onChange={(e) => setSource({ ...source, sentAt: e.target.value })}
-                />
-              </Field>
-              <Field label="消息正文">
-                <textarea
-                  required
-                  rows={5}
-                  maxLength={12000}
-                  value={source.text}
-                  onChange={(e) => setSource({ ...source, text: e.target.value })}
-                />
-              </Field>
-              <div className="message-conditions">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={source.atAll}
-                    onChange={(e) => setSource({ ...source, atAll: e.target.checked })}
-                  />
-                  原消息确实 @全体成员
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={source.atMe}
-                    onChange={(e) => setSource({ ...source, atMe: e.target.checked })}
-                  />
-                  原消息确实 @我
-                </label>
-              </div>
-              <Field label="同一会话的相关上下文（可选）">
-                <textarea
-                  rows={3}
-                  maxLength={6000}
-                  value={source.context}
-                  onChange={(e) => setSource({ ...source, context: e.target.value })}
-                />
-              </Field>
-              <Button disabled={busy || !activeAi.ready}>
-                {busy ? '正在处理…' : `按规则筛选并发送给 ${aiLabel}`}
-              </Button>
-              {!activeAi.ready && (
-                <p className="hint">请先在“模型设置”保存可用的 AI 接口、模型和密钥。</p>
-              )}
-            </form>
-          </details>
-          <details className="message-quick">
-            <summary>快速处理（本地解析，不调用 AI）</summary>
-            <p className="hint">
-              粘贴一段文字，先用本地脚本提取日期、时刻、标签和可能业务线，再加入待确认。
-            </p>
-            <Field label="快速处理会话">
-              <select value={quickRuleId} onChange={(e) => setQuickRuleId(e.target.value)}>
-                <option value="">选择会话规则</option>
-                {view.state.settings.rules
-                  .filter((rule) => rule.enabled)
-                  .map((rule) => (
-                    <option key={rule.id} value={rule.id}>
-                      {rule.kind === 'group' ? '群聊' : '私聊'} · {rule.name}
-                    </option>
-                  ))}
-              </select>
-            </Field>
-            <Field label="快速处理文字">
-              <textarea
-                rows={3}
-                value={quickInput}
-                onChange={(e) => {
-                  setQuickInput(e.target.value);
-                  setQuickParsed(null);
-                }}
-              />
-            </Field>
-            <div className="message-bulk-actions">
-              <Button
-                type="button"
-                disabled={busy || !quickInput.trim()}
-                onClick={() => setQuickParsed(parseQuickCapture(quickInput, snapshot.entries))}
-              >
-                本地解析
-              </Button>
-              <Button
-                type="button"
-                className="primary"
-                disabled={busy || !quickRuleId || !quickInput.trim()}
-                onClick={() =>
-                  void run(async () => {
-                    const result = await api<{ message: string }>('messages/raw', {
-                      ruleId: quickRuleId,
-                      text: quickInput,
+          {mode !== 'pending' && (
+            <>
+              <details open={mode === 'paste'}>
+                <summary>粘贴 QQ 消息进行识别</summary>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void run(async () => {
+                      const result = await api<{ message: string }>('messages/analyze', {
+                        revision: view.revision,
+                        message: {
+                          ...source,
+                          sentAt: new Date(source.sentAt + '+08:00').toISOString(),
+                        },
+                      });
+                      setNotice(result.message);
                     });
-                    setQuickInput('');
-                    setQuickParsed(null);
-                    setNotice(result.message);
-                  })
-                }
-              >
-                加入待确认
-              </Button>
-            </div>
-            {quickParsed && (
-              <p className="hint">
-                解析结果：{quickParsed.title}
-                {quickParsed.dueDate
-                  ? ` · ${quickParsed.dueDate} ${quickParsed.dueTime ?? ''}`
-                  : ''}
-                {quickParsed.tags.length ? ` · ${quickParsed.tags.join('、')}` : ''}
-              </p>
-            )}
-          </details>
+                  }}
+                >
+                  <p className="hint">
+                    将命中的消息、补充上下文和身份关键词发送给 {aiLabel}
+                    。没有默认业务线时，还会发送未结束项目／业务线的名称与标识，用于推荐归属，不发送
+                    Notes 正文。时间按北京时间填写；@ 标记由你根据原消息确认。
+                  </p>
+                  <Field label="来源会话">
+                    <select
+                      required
+                      value={source.ruleId}
+                      onChange={(e) => setSource({ ...source, ruleId: e.target.value })}
+                    >
+                      <option value="">选择已保存的会话</option>
+                      {view.state.settings.rules
+                        .filter((r) => r.enabled)
+                        .map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.kind === 'group' ? '群聊' : '私聊'} · {r.name}
+                          </option>
+                        ))}
+                    </select>
+                  </Field>
+                  <Field label="发送人">
+                    <input
+                      required
+                      value={source.sender}
+                      onChange={(e) => setSource({ ...source, sender: e.target.value })}
+                    />
+                  </Field>
+                  <Field label="消息发送时间（北京时间）">
+                    <input
+                      required
+                      type="datetime-local"
+                      value={source.sentAt}
+                      onChange={(e) => setSource({ ...source, sentAt: e.target.value })}
+                    />
+                  </Field>
+                  <Field label="消息正文">
+                    <textarea
+                      required
+                      rows={5}
+                      maxLength={12000}
+                      value={source.text}
+                      onChange={(e) => setSource({ ...source, text: e.target.value })}
+                    />
+                  </Field>
+                  <div className="message-conditions">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={source.atAll}
+                        onChange={(e) => setSource({ ...source, atAll: e.target.checked })}
+                      />
+                      原消息确实 @全体成员
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={source.atMe}
+                        onChange={(e) => setSource({ ...source, atMe: e.target.checked })}
+                      />
+                      原消息确实 @我
+                    </label>
+                  </div>
+                  <Field label="同一会话的相关上下文（可选）">
+                    <textarea
+                      rows={3}
+                      maxLength={6000}
+                      value={source.context}
+                      onChange={(e) => setSource({ ...source, context: e.target.value })}
+                    />
+                  </Field>
+                  <Button disabled={busy || !activeAi.ready}>
+                    {busy ? '正在处理…' : `按规则筛选并发送给 ${aiLabel}`}
+                  </Button>
+                  {!activeAi.ready && (
+                    <p className="hint">请先在“模型设置”保存可用的 AI 接口、模型和密钥。</p>
+                  )}
+                </form>
+              </details>
+              <details className="message-quick">
+                <summary>快速处理（本地解析，不调用 AI）</summary>
+                <p className="hint">
+                  粘贴一段文字，先用本地脚本提取日期、时刻、标签和可能业务线，再加入待确认。
+                </p>
+                <Field label="快速处理会话">
+                  <select value={quickRuleId} onChange={(e) => setQuickRuleId(e.target.value)}>
+                    <option value="">选择会话规则</option>
+                    {view.state.settings.rules
+                      .filter((rule) => rule.enabled)
+                      .map((rule) => (
+                        <option key={rule.id} value={rule.id}>
+                          {rule.kind === 'group' ? '群聊' : '私聊'} · {rule.name}
+                        </option>
+                      ))}
+                  </select>
+                </Field>
+                <Field label="快速处理文字">
+                  <textarea
+                    rows={3}
+                    value={quickInput}
+                    onChange={(e) => {
+                      setQuickInput(e.target.value);
+                      setQuickParsed(null);
+                    }}
+                  />
+                </Field>
+                <div className="message-bulk-actions">
+                  <Button
+                    type="button"
+                    disabled={busy || !quickInput.trim()}
+                    onClick={() => setQuickParsed(parseQuickCapture(quickInput, snapshot.entries))}
+                  >
+                    本地解析
+                  </Button>
+                  <Button
+                    type="button"
+                    className="primary"
+                    disabled={busy || !quickRuleId || !quickInput.trim()}
+                    onClick={() =>
+                      void run(async () => {
+                        const result = await api<{ message: string }>('messages/raw', {
+                          ruleId: quickRuleId,
+                          text: quickInput,
+                        });
+                        setQuickInput('');
+                        setQuickParsed(null);
+                        setNotice(result.message);
+                      })
+                    }
+                  >
+                    加入待确认
+                  </Button>
+                </div>
+                {quickParsed && (
+                  <p className="hint">
+                    解析结果：{quickParsed.title}
+                    {quickParsed.dueDate
+                      ? ` · ${quickParsed.dueDate} ${quickParsed.dueTime ?? ''}`
+                      : ''}
+                    {quickParsed.tags.length ? ` · ${quickParsed.tags.join('、')}` : ''}
+                  </p>
+                )}
+              </details>
+            </>
+          )}
           {!view.state.candidates.length && (
-            <p className="hint">暂无待确认事项。先添加会话规则，再粘贴消息验证。</p>
+            <p className="hint">
+              {mode === 'pending'
+                ? '暂无待确认消息。'
+                : '暂无待确认事项。先添加会话规则，再粘贴消息验证。'}
+            </p>
           )}
           {view.state.candidates.length > 0 && (
             <div className="message-bulk-actions">
@@ -1959,6 +1973,7 @@ export function MessageInbox({
         </>
       )}
       <Button
+        className="message-reload"
         disabled={busy}
         onClick={() =>
           void run(async () => {

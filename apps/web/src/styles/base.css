@@ -286,6 +286,50 @@ nav svg {
   gap: 8px;
   max-width: 360px;
 }
+.topbar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.topbar-actions .search {
+  margin-left: 0;
+  flex: 0 1 240px;
+  max-width: 300px;
+}
+.topbar-actions > .button:not(.icon) {
+  flex-shrink: 0;
+  border: 0;
+  padding: 7px 8px;
+  font-size: inherit;
+  font-weight: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pending-trigger,
+.paste-trigger {
+  color: var(--muted);
+}
+.pending-trigger:hover,
+.paste-trigger:hover {
+  color: var(--accent-strong);
+}
+.pending-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent-strong);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
 .topbar .search input {
   background: transparent;
   border: none;
@@ -539,6 +583,21 @@ input[type='checkbox'] {
   .main-nav button {
     padding: 9px 0;
   }
+  .topbar-actions {
+    gap: 2px;
+    flex-shrink: 0;
+  }
+  .topbar-actions > .button:not(.icon) {
+    padding: 6px 4px;
+    font-size: 12px;
+  }
+  .topbar-action-label {
+    display: none;
+  }
+  .topbar-actions .search {
+    flex: 0 0 26px;
+    max-width: none;
+  }
   .search {
     flex: 0 0 26px;
     width: 26px;
@@ -559,8 +618,8 @@ input[type='checkbox'] {
     color: transparent;
   }
   .search:focus-within {
-    flex-basis: 140px;
-    width: 140px;
+    flex-basis: 80px;
+    width: 80px;
   }
   .topbar .search:focus-within input {
     width: 100%;
