@@ -1,6 +1,6 @@
 {
   "name": "atlas-personal-workbench",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "engines": {
@@ -14,6 +14,7 @@
     "desktop": "npm run build:desktop && electron .desktop",
     "package:desktop": "npm run build:desktop && node scripts/package-desktop.mjs",
     "test:desktop": "playwright test --config playwright.desktop.config.ts",
+    "test:release": "node scripts/test-desktop-release.mjs",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "format": "prettier --write apps packages tests scripts *.ts *.json *.md \"docs/**/*.md\"",

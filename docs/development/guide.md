@@ -29,7 +29,9 @@
 
 Windows x64 桌面发布使用 `npm run package:desktop`：前端与统一服务由 esbuild/Vite 构建到 `.desktop/`，Electron Packager 生成 `CHAOS.exe` 并压缩到 `releases/`，同时生成 `SHA256SUMS.txt`。新包和校验文件写完后才清理旧的 CHAOS 打包目录，本地保留最新一份；打包失败保留上次可用产物，无关目录不参与清理。`releases/` 由 Git 忽略，不提交 ZIP 或解压文件。`apps/desktop` 只负责窗口、目录选择、QQ 初始化工具、单实例与子进程生命周期，不实现业务写入。打包不复制本机配置或用户数据。`project-root.ts` 统一定位静态资源和 QQ 脚本，服务包保留 `apps/local-service/src/` 层级。
 
-发布时先更新 `package.json` 和 lockfile 的版本，提交源码，再创建并推送同名版本 tag（例如版本为 0.1.1 时使用 `git tag v0.1.1`、`git push origin v0.1.1`）。现有 GitHub Actions 在完整检查通过后，校验 tag 与 package.json 一致，构建 Windows 包、运行 Electron 测试，再把 ZIP 与校验文件上传到该 tag 的 GitHub Release。普通分支推送不发布；已有发布版本不覆盖，后续更新使用新版本 tag。本地清理不删除线上历史 Release。
+打包器只使用 `npm ci` 已安装且版本匹配的 Electron：将本机运行时压缩为 Packager 所需的临时 ZIP，明确指定 electronVersion 和 electronZipDir，结束后清理临时文件。不存在“找不到手工缓存便再次下载”的分支。版本不匹配时明确失败。压缩使用 .NET ZipFile，包含 Windows 隐藏文件；发布包保留 CHAOS-win32-x64 根目录。
+
+发布时先更新 `package.json` 和 lockfile 的版本，提交源码，再创建并推送同名版本 tag（例如版本为 0.1.1 时使用 `git tag v0.1.1`、`git push origin v0.1.1`）。现有 GitHub Actions 在完整检查通过后，校验 tag 与 package.json 一致，构建 Windows 包；随后校验 ZIP 的 SHA-256、CRC，在带空格的测试目录解压，运行解压后的 CHAOS.exe 与包内 Python／SQLCipher 回归，成功后把 ZIP 与校验文件上传到该 tag 的 GitHub Release。普通分支推送不发布；已有发布版本不覆盖，后续更新使用新版本 tag。本地清理不删除线上历史 Release。
 
 品牌图标以 `apps/web/public/chaos.svg` 为唯一矢量源：完整、平滑的 C 形轮廓与金色端点，沿用系统森林绿与暖白。网页直接引用同一 SVG；桌面构建通过 Electron 离屏渲染生成 512 px PNG 及包含 16／24／32／48／64／128／256 px 的 ICO，不依赖系统 Chrome 或图形软件。
 
@@ -43,7 +45,7 @@ Windows x64 桌面发布使用 `npm run package:desktop`：前端与统一服务
 
 ## 验证
 
-运行 `npm run check` 检查领域／集成、前端构建与网页 E2E；桌面改动另运行 `npm run build:desktop`、`npm run test:desktop`。设置 `CHAOS_DESKTOP_EXECUTABLE` 可对打包后的绝对 exe 路径执行同一组桌面测试。测试目录为系统随机临时目录或项目 .test-vault，不自行搜索用户目录。文件测试依赖 NTFS 硬链接与 Junction 权限，不通过跳过断言获取通过结果。
+运行 `npm run check` 检查领域／集成、前端构建与网页 E2E；桌面改动另运行 `npm run build:desktop`、`npm run test:desktop`。发布前运行 `npm run test:release -- "releases/实际打包目录/CHAOS-Windows-x64.zip"`，验证真正交付的压缩包。设置 `CHAOS_DESKTOP_EXECUTABLE` 可对指定的绝对 exe 路径执行同一组桌面测试。测试目录为系统随机临时目录或项目 .test-vault，不自行搜索用户目录。文件测试依赖 NTFS 硬链接与 Junction 权限，不通过跳过断言获取通过结果。
 
 成功连接的工作目录保存为项目根目录 `.chaos.local.json` 中的 `vaultPath`（绝对路径），启动时自动连接。文件及写入临时文件均被 Git 忽略，不随仓库分发；工作内容仍以 Markdown 目录为准。目录不存在或被其他服务占用时，服务继续启动，界面保留地址并提示原因。配置 JSON 损坏时保留原文，修正配置后重新启动。
 

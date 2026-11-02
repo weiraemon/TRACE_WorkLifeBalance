@@ -10,6 +10,38 @@ import { packager } from '@electron/packager';
 const releaseName =
   /^CHAOS-(?:desktop(?:-[A-Za-z0-9]+)?|Windows-v\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?)$/;
 
+export function zipDirectory(source, destination, includeRoot = false) {
+  execFileSync(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      "Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::CreateFromDirectory($env:CHAOS_ZIP_SOURCE, $env:CHAOS_ZIP_DESTINATION, [System.IO.Compression.CompressionLevel]::Optimal, $env:CHAOS_ZIP_INCLUDE_ROOT -eq 'true')",
+    ],
+    {
+      windowsHide: true,
+      env: {
+        ...process.env,
+        CHAOS_ZIP_SOURCE: path.resolve(source),
+        CHAOS_ZIP_DESTINATION: path.resolve(destination),
+        CHAOS_ZIP_INCLUDE_ROOT: String(includeRoot),
+      },
+    },
+  );
+}
+
+export async function archiveInstalledElectron(executable, version, destination) {
+  const directory = path.dirname(executable);
+  assert.ok((await fs.stat(executable)).isFile(), 'Electron is not installed; run npm ci first.');
+  assert.equal(
+    (await fs.readFile(path.join(directory, 'version'), 'utf8')).trim().replace(/^v/, ''),
+    version,
+    'Installed Electron does not match its package version; run npm ci first.',
+  );
+  zipDirectory(directory, destination);
+}
+
 export async function pruneDesktopReleases(directory, keepDirectory) {
   const info = await fs.lstat(directory);
   assert.ok(info.isDirectory() && !info.isSymbolicLink(), 'Release root must be a real directory.');
@@ -43,29 +75,41 @@ async function main() {
   await fs.mkdir('releases', { recursive: true });
   const release = await fs.mkdtemp(path.join(project, 'releases', 'CHAOS-desktop-'));
   const require = createRequire(import.meta.url);
-  const runtimeCache = path.join(project, '.test-vault', 'desktop-runtimes');
-  const cachedElectron = path.join(
-    runtimeCache,
-    `electron-v${require('electron/package.json').version}-win32-x64.zip`,
-  );
-  const electronZipDir = await fs.access(cachedElectron).then(
-    () => runtimeCache,
-    () => undefined,
-  );
-  const [output] = await packager({
-    dir: '.desktop',
-    out: release,
-    name: 'CHAOS',
-    platform: 'win32',
-    arch: 'x64',
-    electronZipDir,
-    icon: '.desktop/icon.ico',
-    asar: false,
-    executableName: 'CHAOS',
-    appBundleId: 'cn.chaos.workbench',
-    prune: false,
-    win32metadata: { CompanyName: 'CHAOS', FileDescription: 'CHAOS 工作台', ProductName: 'CHAOS' },
-  });
+  const electronVersion = require('electron/package.json').version;
+  const staging = path.join(project, '.test-vault');
+  await fs.mkdir(staging, { recursive: true });
+  const electronZipDir = await fs.mkdtemp(path.join(staging, 'electron-package-'));
+  let output;
+  try {
+    // Packager requires a ZIP. Reuse the installed runtime instead of downloading it again.
+    await archiveInstalledElectron(
+      require('electron'),
+      electronVersion,
+      path.join(electronZipDir, `electron-v${electronVersion}-win32-x64.zip`),
+    );
+    [output] = await packager({
+      dir: '.desktop',
+      out: release,
+      name: 'CHAOS',
+      platform: 'win32',
+      arch: 'x64',
+      electronVersion,
+      electronZipDir,
+      icon: '.desktop/icon.ico',
+      asar: false,
+      executableName: 'CHAOS',
+      appBundleId: 'cn.chaos.workbench',
+      prune: false,
+      win32metadata: {
+        CompanyName: 'CHAOS',
+        FileDescription: 'CHAOS 工作台',
+        ProductName: 'CHAOS',
+      },
+    });
+  } finally {
+    assert.equal(path.dirname(await fs.realpath(electronZipDir)), await fs.realpath(staging));
+    await fs.rm(electronZipDir, { recursive: true, force: true });
+  }
   await fs.writeFile(
     path.join(output, '使用说明.txt'),
     `CHAOS Windows 桌面版
@@ -83,24 +127,9 @@ Python 与 SQLCipher 已内置；QQ 软件、本人账号登录、数据库密�
 升级前退出旧版，解压新版后直接打开；程序不会迁移或批量改写用户 Markdown。
 `,
   );
-  execFileSync(
-    'powershell.exe',
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      'Compress-Archive -LiteralPath $env:CHAOS_PACKAGE_SOURCE -DestinationPath $env:CHAOS_PACKAGE_ZIP',
-    ],
-    {
-      windowsHide: true,
-      env: {
-        ...process.env,
-        CHAOS_PACKAGE_SOURCE: output,
-        CHAOS_PACKAGE_ZIP: path.join(release, 'CHAOS-Windows-x64.zip'),
-      },
-    },
-  );
   const zip = path.join(release, 'CHAOS-Windows-x64.zip');
+  // ZipFile includes hidden files that Compress-Archive can omit.
+  zipDirectory(output, zip, true);
   const digest = createHash('sha256')
     .update(await fs.readFile(zip))
     .digest('hex');
