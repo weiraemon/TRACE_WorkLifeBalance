@@ -73,7 +73,7 @@ test('桌面版目录选择、四页、记录保存、完整 QQ 入口与安全�
   expect(await page.evaluate(() => typeof (globalThis as { require?: unknown }).require)).toBe(
     'undefined',
   );
-  await page.getByRole('button', { name: '备份', exact: true }).click();
+  await page.getByRole('button', { name: '设置', exact: true }).click();
   await page.getByRole('button', { name: 'QQ同步设置', exact: true }).click();
   await page.getByRole('button', { name: 'QQ自动同步全局设置', exact: true }).click();
   await expect(
