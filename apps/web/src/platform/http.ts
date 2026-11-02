@@ -1,0 +1,36 @@
+import { recordContract } from '../../../../packages/domain/index';
+
+let token = '';
+let vaultId = '';
+export async function api<T>(route: string, body?: unknown): Promise<T> {
+  const response = await fetch('/api/' + route, {
+    method: body === undefined ? 'GET' : 'POST',
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Atlas-Token': token,
+      'X-Atlas-Vault': vaultId,
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (response.headers.get('X-Atlas-Contract') !== recordContract)
+    throw new Error(
+      '前端与本地服务的数据模型不一致。请在原终端按 Ctrl+C 停止旧服务，然后在当前项目目录执行 npm run build 和 npm start，刷新页面后重试。未保存的输入请先复制保留。',
+    );
+  const value = await response.json();
+  if (!response.ok) throw new Error(value.error ?? '请求失败');
+  if (route === 'connect') vaultId = value.vaultId;
+  return value;
+}
+export async function session() {
+  const value = await api<{
+    token: string;
+    connected: boolean;
+    root: string;
+    vaultId: string;
+    connectionError?: string;
+  }>('session');
+  token = value.token;
+  vaultId = value.vaultId;
+  return value;
+}

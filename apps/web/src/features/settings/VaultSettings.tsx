@@ -1,3 +1,4 @@
+import { desktopBridge } from '../../platform/desktop';
 import { useState, useEffect, useCallback } from 'react';
 import type { Snapshot } from '../../../../../packages/domain/index';
 import { api } from '../../api';
@@ -66,13 +67,13 @@ export function Connect({
             onChange={(e) => setValue(e.target.value)}
           />
         </Field>
-        {window.chaosDesktop && (
+        {desktopBridge() && (
           <Button
             type="button"
             disabled={busy}
             onClick={() => {
-              void window
-                .chaosDesktop!.chooseDirectory()
+              void desktopBridge()!
+                .chooseDirectory()
                 .then((selected) => {
                   if (selected) setValue(selected);
                 })

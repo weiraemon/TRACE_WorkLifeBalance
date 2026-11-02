@@ -2,25 +2,30 @@
 
 ## 代码位置
 
-| 职责                                   | 位置                                                                 |
-| -------------------------------------- | -------------------------------------------------------------------- |
-| 新契约、日期、关联校验、计时去重       | packages/domain/index.ts                                             |
-| 层级、排序、当天清单、完成推导         | packages/domain/workspace.ts                                         |
-| 文件安全、跨文件发布与恢复、升线、删除 | apps/local-service/src/native/vault.ts                               |
-| Notes 分层与受管段落                   | apps/local-service/src/native/line-notes.ts                          |
-| HTTP 会话与本地打开                    | apps/local-service/src/server.ts                                     |
-| 本机工作目录配置                       | apps/local-service/src/local-config.ts、项目根目录 .chaos.local.json |
-| 页面组织与导航状态                     | apps/web/src/pages                                                   |
-| 实际录入、关联选择、已记录列表         | apps/web/src/features/actual                                         |
-| 今日安排、联络侧栏、录入切换           | apps/web/src/features/today                                          |
-| 消息识别与快速新增                     | apps/web/src/features/capture                                        |
-| 业务线、节点、条目、拖动、右键和 Notes | apps/web/src/features/workspace                                      |
-| 回顾图表与只读时间线                   | apps/web/src/features/review                                         |
-| 通用控件与基础样式                     | apps/web/src/components、apps/web/src/styles                         |
-| 消息同步与模型配置                     | apps/local-service/src/sync、apps/web/src/features/sync              |
-| 固化的产品边界                         | AGENTS.md                                                            |
+| 职责                                      | 位置                                                                 |
+| ----------------------------------------- | -------------------------------------------------------------------- |
+| 新契约、日期、关联校验、计时去重          | packages/domain/index.ts                                             |
+| 层级、排序、当天清单、完成推导            | packages/domain/workspace.ts                                         |
+| 标准业务命令与计划创建                    | packages/workspace/workspace-service.ts                              |
+| 保存、移动、完成、升线、删除与 Notes 迁移 | packages/workspace/workspace.ts                                      |
+| Markdown 保真处理与 Notes 受管段落        | packages/workspace/markdown.ts、packages/workspace/line-notes.ts     |
+| Node 文件安全、跨文件发布与恢复           | apps/local-service/src/native/vault.ts                               |
+| HTTP 会话与本地打开                       | apps/local-service/src/server.ts                                     |
+| 前端 HTTP 与桌面桥接                      | apps/web/src/platform                                                |
+| 本机工作目录配置                          | apps/local-service/src/local-config.ts、项目根目录 .chaos.local.json |
+| 页面组织与导航状态                        | apps/web/src/pages                                                   |
+| 实际录入、关联选择、已记录列表            | apps/web/src/features/actual                                         |
+| 今日安排、联络侧栏、录入切换              | apps/web/src/features/today                                          |
+| 消息识别与快速新增                        | apps/web/src/features/capture                                        |
+| 业务线、节点、条目、拖动、右键和 Notes    | apps/web/src/features/workspace                                      |
+| 回顾图表与只读时间线                      | apps/web/src/features/review                                         |
+| 通用控件与基础样式                        | apps/web/src/components、apps/web/src/styles                         |
+| 消息同步与模型配置                        | apps/local-service/src/sync、apps/web/src/features/sync              |
+| 固化的产品边界                            | AGENTS.md                                                            |
 
 开发模式为同一个本地服务挂载 Vite。默认端口 4317；E2E 用独立端口 4318。构建后运行生产服务，源码变更不会自动重启已有生产服务。
+
+完整目录职责、依赖方向、共享业务与后续手机端持久化约束见[仓库分工与跨端复用](../architecture/repository.md)。共享核心不引用 Node、Electron 或消息接入；界面和 Windows 桌面继续使用现有四页及标准服务，不复制业务规则。
 
 Windows x64 桌面发布使用 `npm run package:desktop`：前端与统一服务由 esbuild/Vite 构建到 `.desktop/`，Electron Packager 生成 `CHAOS.exe` 并压缩到 `releases/`。`apps/desktop` 只负责窗口、目录选择、QQ 初始化工具、单实例与子进程生命周期，不实现业务写入。每次新建发布目录，不复制本机配置或用户数据。`project-root.ts` 统一定位静态资源和 QQ 脚本，服务包保留 `apps/local-service/src/` 层级。
 

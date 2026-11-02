@@ -1,5 +1,5 @@
 import { intakeServiceFor } from './application/message-intake-service';
-import { workspaceServiceFor } from './application/workspace-service';
+import { workspaceServiceFor } from '../../../packages/workspace/workspace-service';
 import { businessApiVersion, businessCommandSchema } from '../../../packages/domain/business';
 import { messageServiceFor } from './application/message-inbox-service';
 import http from 'node:http';
@@ -9,7 +9,8 @@ import { projectRoot as project } from './project-root';
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { z } from 'zod';
-import { Vault, VaultError } from './native/vault';
+import { Vault } from './native/vault';
+import { VaultError } from '../../../packages/workspace/errors';
 import { recordContract, saveOptionsSchema } from '../../../packages/domain/index';
 import { readLocalConfig, rememberVault } from './local-config';
 

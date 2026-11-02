@@ -12,16 +12,20 @@ flowchart LR
   HTTP --> Intake
   Intake --> Inbox[待确认与来源服务]
   Inbox --> Business
-  Business --> Vault[原生存储与事务]
+  Business --> Core[共享 Workspace 业务实现]
+  Vault[Node Vault 文件适配] -->|继承并提供持久化| Core
   Vault --> Markdown[Markdown 工作目录]
 ```
 
 - packages/domain/business.ts：版本化命令、计划输入和机器可读 Schema 的唯一来源；不引用 QQ 或 AI 提供商。
-- application/workspace-service.ts：网页与任意客户端共用的业务入口。保存、完成、改期、批注和 Notes 操作复用原有原生规则。
+- packages/workspace/workspace-service.ts：网页与任意客户端共用的业务入口，不依赖 Node Vault。保存、完成、改期、批注和 Notes 操作复用 packages/workspace/workspace.ts 中的同一份业务规则。
 - application/message-intake-service.ts：共用的消息筛选、去重、AI 识别与待确认流程；QQ 和粘贴识别调用同一实现。
 - application/message-inbox-service.ts：来源、确认和批量处理。将识别建议转换为标准业务命令，不直接改写工作文件。
 - sync/qq-sync.ts：QQ 读取脚本、协议数据转换、同步时间和游标。新增平台也遵守这一边界。
-- native/：安全文件读写、既有业务校验、Notes 和原子发布。不得依赖消息模型、QQ 或 AI 接入。
+- packages/workspace/markdown.ts 与 line-notes.ts：Markdown 保真处理、Notes 正文组织与迁移，不依赖操作系统。
+- native/：Node 文件读写、索引诊断、路径安全、锁、原子发布与恢复；Vault 继承共享 Workspace 实现，不再维护完成、改期和 Notes 业务副本。不得依赖消息模型、QQ 或 AI 接入。
+
+完整目录职责、持久化约束与后续移动端接入方式见[仓库分工与跨端复用](repository.md)。本轮不修改 HTTP API、业务版本或 Markdown 契约。
 
 原生保存仅增加供可信服务使用的事务伴随文件；HTTP 命令不能提供文件路径或伴随文件。确认入库时，工作对象、Notes 与待确认状态一起发布，冲突时不部分保存。改期仍遵守 TODO 独立日期超过节点日期时进入待办池的规则；节点完成仍由下属条目推导，关联实际记录不等于完成。
 

@@ -1,3 +1,4 @@
+import { VaultError } from '../../../../packages/workspace/errors';
 import { randomUUID } from 'node:crypto';
 import {
   matchMessage,
@@ -10,7 +11,7 @@ import {
   type SourceMessage,
 } from '../../../../packages/domain/messages';
 import { isComplete } from '../../../../packages/domain/workspace';
-import { Vault, VaultError } from '../native/vault';
+import { Vault } from '../native/vault';
 import {
   analyzeMessage,
   dropNoopChanges,
@@ -20,7 +21,7 @@ import {
   type ExistingMessageItem,
 } from '../sync/message-analysis';
 import { activeAi, normalizeAiSettings } from '../sync/app-config';
-import { workspaceServiceFor } from './workspace-service';
+import { workspaceServiceFor } from '../../../../packages/workspace/workspace-service';
 import { messageServiceFor } from './message-inbox-service';
 export class MessageIntakeService {
   private processing = false;

@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import {
   isSpaceItem,
   parseRecord,
@@ -9,18 +8,20 @@ import {
   type Todo,
   type RecordData,
   type SaveOptions,
-} from '../../../../packages/domain/index';
+} from '../domain/index';
 import {
   businessCommandSchema,
   planSchema,
   resolvePlanDestination,
   type PlanDestination,
-} from '../../../../packages/domain/business';
-import { Vault, VaultError, type FileChange } from '../native/vault';
-import { appendComment } from '../native/line-notes';
+} from '../domain/business';
+import type { Workspace } from './workspace';
+import { VaultError } from './errors';
+import type { FileChange } from './file-change';
+import { appendComment } from './line-notes';
 
 export class WorkspaceService {
-  constructor(readonly vault: Vault) {}
+  constructor(readonly vault: Workspace) {}
   snapshot() {
     return this.vault.scan();
   }
@@ -83,7 +84,7 @@ export class WorkspaceService {
       const make = (type: string, fields: object) =>
         parseRecord({
           schemaVersion: 1,
-          id: randomUUID(),
+          id: crypto.randomUUID(),
           createdAt: now,
           updatedAt: now,
           type,
@@ -286,7 +287,7 @@ export class WorkspaceService {
         return this.saveRecord(entry.data, entry.revision, {
           comments: [
             {
-              id: randomUUID(),
+              id: crypto.randomUUID(),
               targetId: command.id,
               text: command.text,
               date: command.date ?? localDay(),
@@ -309,8 +310,8 @@ export class WorkspaceService {
     }
   }
 }
-const services = new WeakMap<Vault, WorkspaceService>();
-export function workspaceServiceFor(vault: Vault) {
+const services = new WeakMap<Workspace, WorkspaceService>();
+export function workspaceServiceFor(vault: Workspace) {
   let service = services.get(vault);
   if (!service) {
     service = new WorkspaceService(vault);

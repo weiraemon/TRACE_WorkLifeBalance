@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Vault } from '../apps/local-service/src/native/vault';
-import { workspaceServiceFor } from '../apps/local-service/src/application/workspace-service';
+import { workspaceServiceFor } from '../packages/workspace/workspace-service';
 import { messageServiceFor } from '../apps/local-service/src/application/message-inbox-service';
 import { intakeServiceFor } from '../apps/local-service/src/application/message-intake-service';
 import { saveAiConfig } from '../apps/local-service/src/sync/app-config';

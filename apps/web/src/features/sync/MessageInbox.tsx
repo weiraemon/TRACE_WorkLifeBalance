@@ -1,3 +1,4 @@
+import { desktopBridge } from '../../platform/desktop';
 import { useEffect, useState } from 'react';
 import type { Snapshot } from '../../../../../packages/domain/index';
 import {
@@ -1244,9 +1245,9 @@ export function MessageInbox({
       ) : tab === 'global' ? (
         <>
           <h3>QQ 自动同步全局设置</h3>
-          {window.chaosDesktop && (
+          {desktopBridge() && (
             <div className="actions">
-              <Button onClick={() => void run(() => window.chaosDesktop!.setupQq())}>
+              <Button onClick={() => void run(() => desktopBridge()!.setupQq())}>
                 初始化 QQ 数据库读取…
               </Button>
               <span className="hint">
@@ -1313,7 +1314,7 @@ export function MessageInbox({
                 onChange={(e) => setQq({ ...qq, backfillDays: Number(e.target.value) || 7 })}
               />
             </Field>
-            {!window.chaosDesktop && (
+            {!desktopBridge() && (
               <Field label="Python 命令">
                 <input
                   value={qq.python}

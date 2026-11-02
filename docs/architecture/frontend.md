@@ -16,6 +16,7 @@ apps/web/src/
     sync/            不改变主页面布局的附加消息与设置弹窗
   components/        通用表单、重要性、SlidingTabs
   types/             编辑入口类型
+  platform/          HTTP 会话与契约校验、受限 Electron 桥接
   styles/base.css    主题和全局基础样式
   styles.css         功能样式的统一导入入口
 ```
@@ -28,6 +29,8 @@ apps/web/src/
 
 回顾页面组织图表、每日实际记录及只读时间线；汇总计算放在 `reviewData.ts`。FullCalendar 仅在时间线需要时延迟加载，已移除交互插件。完整记录的修改通过共享实际表单完成，不在时间线上增加第二套编辑操作。
 
-各功能目录维护自己的 CSS，`styles.css` 只保留有序导入，通用控件样式随控件放置。领域规则仍由 `packages/domain` 提供，文件读写与跨文件一致性仍由本地服务负责；前端控件不直接操作 Markdown。
+各功能目录维护自己的 CSS，`styles.css` 只保留有序导入，通用控件样式随控件放置。领域契约与纯查询由 `packages/domain` 提供，工作业务编排、Markdown 和 Notes 规则由 `packages/workspace` 提供，具体文件访问、锁与可恢复发布由本地服务的 Node Vault 实现；前端控件不直接操作 Markdown 或导入这些存储实现。
+
+`api.ts` 保留原有界面调用入口，HTTP 请求、会话 token、工作目录会话和契约头校验已分离到 `platform/http.ts`。Electron 目录对话框与 QQ 初始化通过 `platform/desktop.ts` 取得受限桥接，功能组件不再直接读取 `window.chaosDesktop`。本轮不改变按钮、文案、布局或样式；尚未接入 Android 运行时。目录与依赖边界见[仓库分工与跨端复用](repository.md)。
 
 QQ／微信设置从既有设置进入附加弹窗，专用样式限定在同步控件内，消息组件按需加载。原有四页布局、录入和编辑窗沿用 main 方案。业务接口与扩展方法见[标准业务 API](business-api.md)。

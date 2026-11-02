@@ -1,3 +1,5 @@
+import { VaultError } from '../../../../packages/workspace/errors';
+import type { FileChange } from '../../../../packages/workspace/file-change';
 import { activeAi, normalizeAiSettings } from '../sync/app-config';
 import { localDay, type Entry } from '../../../../packages/domain/index';
 import { isComplete } from '../../../../packages/domain/workspace';
@@ -8,9 +10,9 @@ import {
   type MessageSettings,
   type Suggestion,
 } from '../../../../packages/domain/messages';
-import { Vault, VaultError, hash, readText, type FileChange } from '../native/vault';
+import { Vault, hash, readText } from '../native/vault';
 import { inboxPath, readInboxText, writeInboxText } from '../sync/message-store';
-import { workspaceServiceFor } from './workspace-service';
+import { workspaceServiceFor } from '../../../../packages/workspace/workspace-service';
 
 export class MessageInboxService {
   constructor(private readonly vault: Vault) {}

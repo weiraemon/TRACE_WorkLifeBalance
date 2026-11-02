@@ -3,7 +3,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { Vault, decodeNote, newNote, updateNote } from '../../apps/local-service/src/native/vault';
+import { Vault } from '../../apps/local-service/src/native/vault';
+import { decodeNote, newNote, updateNote } from '../../packages/workspace/markdown';
 import { parseRecord, type RecordData } from '../../packages/domain/index';
 const roots: string[] = [],
   opened: Vault[] = [];

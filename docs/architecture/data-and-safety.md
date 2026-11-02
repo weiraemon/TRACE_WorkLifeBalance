@@ -4,6 +4,8 @@
 
 普通 Markdown 工作目录是唯一权威数据源，Obsidian 不是运行依赖。ATLAS 管理字段保存在顶层 `atlas.managed: true` 和 `atlas.record`，稳定 UUID 不随路径变化。YAML AST 只替换 ATLAS 字段，保留其他字段、注释及自由正文。
 
+业务写入、Notes 与 Markdown 保真处理已提取到 `packages/workspace`；Windows 的 `native/Vault` 提供原有文件安全、锁和可恢复发布。此拆分不修改数据格式、HTTP 契约、备份策略或用户目录，详见[仓库分工与跨端复用](repository.md)。
+
 本机 `.chaos.local.json` 只保存上次成功连接的 `vaultPath`，不保存工作内容；文件及其临时文件被 Git 忽略。成功连接后以临时文件原子替换配置，失败连接不改写上次路径；启动恢复失败时保留默认路径供用户修正。测试使用独立配置文件。
 
 Electron 桌面版沿用同一服务和保护机制，将目录配置放在 `%APPDATA%\CHAOS\workspace.json`，与本机 QQ／AI 设置一起保留在程序包外。桌面安装目录不保存用户工作内容或密钥。渲染页面没有 Node 能力，目录选择与 QQ 初始化仅经受限 preload 调用。内置 Python／SQLCipher 由固定版本与 SHA-256 校验；原有手动备份策略不变。
