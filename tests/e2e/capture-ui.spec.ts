@@ -6,6 +6,7 @@ test.beforeEach(async ({ page }) => connect(page));
 test('新增主区域直接选择重要性，默认绿色；无标签圆点，有标签使用对应图标且标签与时间在上方', async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 1920, height: 1000 });
   const { line } = await seed(page);
   await nav(page, '工作空间');
   const track = page.getByRole('region', { name: '业务线 · 论文研究', exact: true });
@@ -50,6 +51,34 @@ test('新增主区域直接选择重要性，默认绿色；无标签圆点，�
     expect(layout.time).toBeLessThan(layout.dot);
   }
   expect(new Set(icons).size).toBe(3);
+  for (const done of [false, true]) {
+    if (done) {
+      await plain.click();
+      await expect(plain).toBeChecked();
+    }
+    for (const [tags, icon] of [
+      ['会议', icons[0]],
+      ['报告', icons[2]],
+      ['', null],
+    ] as const) {
+      await track
+        .locator(`[data-space-id="${saved.data.id}"] .point-title`)
+        .click({ button: 'right' });
+      await page.getByRole('menuitem', { name: '编辑节点', exact: true }).click();
+      await dialog.getByLabel('节点标签', { exact: true }).fill(tags);
+      await dialog.getByRole('button', { name: '保存', exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(plain).toHaveAttribute('aria-checked', String(done));
+      if (icon) {
+        await expect(plain).toHaveClass(/node-tagged/);
+        expect(await plain.locator('svg').first().innerHTML()).toBe(icon);
+        await expect(plain.locator('.node-completion-mark')).toHaveCount(done ? 1 : 0);
+      } else {
+        await expect(plain).not.toHaveClass(/node-tagged/);
+        await expect(plain.locator('svg')).toHaveCount(done ? 1 : 0);
+      }
+    }
+  }
   await page.screenshot({ path: '.test-vault/node-tag-icons.png', fullPage: true });
 });
 

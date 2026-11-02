@@ -87,7 +87,7 @@ export function WorkspaceNavigation({
               checked={showOlderNodes ?? false}
               onChange={(event) => onShowOlderNodesChange(event.target.checked)}
             />
-            显示较早已完成节点
+            显示较早已完成节点和条目
           </label>
         )}
         <label className="check-label">

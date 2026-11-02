@@ -1,7 +1,45 @@
 import { expect, test } from '@playwright/test';
-import { connect, snapshot, write } from './helpers';
+import { connect, snapshot, write, nav, refresh } from './helpers';
 
 test.use({ timezoneId: 'Asia/Shanghai' });
+
+test('跨到11月3日自动隐藏11月1日已完成节点和池内条目，不修改原数据', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-11-02T23:58:00+08:00') });
+  await connect(page);
+  const project = await write(page, 'project', { title: '跨日项目' });
+  const line = await write(page, 'workline', { title: '跨日线', projectId: project.data.id });
+  const node = await write(page, 'milestone', {
+    title: '11月1日已完成节点',
+    lineId: line.data.id,
+    dueDate: '2026-11-01',
+    completedAt: new Date().toISOString(),
+  });
+  const pool = (await snapshot(page)).entries.find(
+    ({ data }) => data.type === 'milestone' && data.lineId === line.data.id && data.pool,
+  )!;
+  const todo = await write(page, 'todo', {
+    title: '11月1日已完成条目',
+    milestoneId: pool.data.id,
+    dueDate: '2026-11-01',
+    completedAt: new Date().toISOString(),
+  });
+  await refresh(page);
+  await nav(page, '工作空间');
+  const board = page.locator('.workspace-content');
+  const marker = board.locator(`[data-space-id="${node.data.id}"]`);
+  const row = board.locator(`[data-space-id="${todo.data.id}"]`);
+  await expect(marker).toHaveCount(1);
+  await expect(row).toHaveCount(1);
+  const before = (await snapshot(page)).entries;
+  await page.clock.setSystemTime(new Date('2026-11-03T00:00:01+08:00'));
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(marker).toHaveCount(0);
+  await expect(row).toHaveCount(0);
+  await page.getByLabel('显示较早已完成节点和条目', { exact: true }).check();
+  await expect(marker).toHaveCount(1);
+  await expect(row).toHaveCount(1);
+  expect((await snapshot(page)).entries).toEqual(before);
+});
 
 test('午夜自动换日，空白记录更新时间，快速收集草稿保留', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-11-01T23:59:58+08:00') });

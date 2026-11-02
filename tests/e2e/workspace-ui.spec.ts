@@ -3,7 +3,7 @@ import { connect, seed, nav, write, refresh, snapshot, localDay } from './helper
 
 test.beforeEach(async ({ page }) => connect(page));
 
-test('仅超过两天且已完成的节点隐藏，较早未完成节点及过期提醒保留且不改数据', async ({ page }) => {
+test('两天前及更早且已完成的节点和条目隐藏，未完成及过期提醒保留且不改数据', async ({ page }) => {
   const { line } = await seed(page);
   const day = (offset: number) => {
     const date = new Date(localDay() + 'T12:00:00');
@@ -16,6 +16,11 @@ test('仅超过两天且已完成的节点隐藏，较早未完成节点及过�
     dueDate: day(-3),
   });
   await write(page, 'todo', { title: '旧节点的行动', milestoneId: old.data.id });
+  await write(page, 'todo', {
+    title: '旧节点已完成行动',
+    milestoneId: old.data.id,
+    completedAt: new Date().toISOString(),
+  });
   await write(page, 'milestone', {
     title: '四天前已完成',
     lineId: line.data.id,
@@ -23,6 +28,36 @@ test('仅超过两天且已完成的节点隐藏，较早未完成节点及过�
     completedAt: new Date().toISOString(),
   });
   await write(page, 'milestone', { title: '恰好两天前', lineId: line.data.id, dueDate: day(-2) });
+  const boundary = await write(page, 'milestone', {
+    title: '恰好两天前已完成',
+    lineId: line.data.id,
+    dueDate: day(-2),
+  });
+  await write(page, 'todo', {
+    title: '两天前已完成行动',
+    milestoneId: boundary.data.id,
+    completedAt: new Date().toISOString(),
+  });
+  await write(page, 'milestone', {
+    title: '昨天已完成',
+    lineId: line.data.id,
+    dueDate: day(-1),
+    completedAt: new Date().toISOString(),
+  });
+  const pool = (await snapshot(page)).entries.find(
+    ({ data }) => data.type === 'milestone' && data.lineId === line.data.id && data.pool,
+  )!;
+  await write(page, 'todo', {
+    title: '池内两天前已完成',
+    milestoneId: pool.data.id,
+    dueDate: day(-2),
+    completedAt: new Date().toISOString(),
+  });
+  await write(page, 'todo', {
+    title: '池内无日期已完成',
+    milestoneId: pool.data.id,
+    completedAt: new Date().toISOString(),
+  });
   await write(page, 'milestone', { title: '没有截止日期', lineId: line.data.id });
   await refresh(page);
   const before = (await snapshot(page)).entries;
@@ -39,15 +74,20 @@ test('仅超过两天且已完成的节点隐藏，较早未完成节点及过�
   await page.getByRole('button', { name: '关闭对话框', exact: true }).click();
   await nav(page, '工作空间');
   const board = page.locator('.workspace-content');
-  for (const title of ['四天前已完成'])
+  for (const title of ['四天前已完成', '恰好两天前已完成'])
     await expect(
       board.getByRole('article', { name: `关键节点 · ${title}`, exact: true }),
     ).toHaveCount(0);
-  for (const title of ['三天前未完成', '恰好两天前', '没有截止日期', '待办池'])
+  for (const title of ['三天前未完成', '恰好两天前', '昨天已完成', '没有截止日期', '待办池'])
     await expect(
       board.getByRole('article', { name: `关键节点 · ${title}`, exact: true }),
     ).toBeVisible();
-  await page.getByLabel('显示较早已完成节点', { exact: true }).check();
+  for (const title of ['旧节点已完成行动', '两天前已完成行动', '池内两天前已完成'])
+    await expect(board.getByRole('button', { name: title, exact: true })).toHaveCount(0);
+  await expect(board.getByRole('button', { name: '池内无日期已完成', exact: true })).toHaveCount(1);
+  await page.getByLabel('显示较早已完成节点和条目', { exact: true }).check();
+  for (const title of ['旧节点已完成行动', '两天前已完成行动', '池内两天前已完成'])
+    await expect(board.getByRole('button', { name: title, exact: true })).toHaveCount(1);
   await expect(
     board.getByRole('article', { name: '关键节点 · 三天前未完成', exact: true }),
   ).toContainText('旧节点的行动');
@@ -57,7 +97,9 @@ test('仅超过两天且已完成的节点隐藏，较早未完成节点及过�
   expect((await snapshot(page)).entries).toEqual(before);
   await page.reload();
   await nav(page, '工作空间');
-  await expect(page.getByLabel('显示较早已完成节点', { exact: true })).not.toBeChecked();
+  await expect(page.getByLabel('显示较早已完成节点和条目', { exact: true })).not.toBeChecked();
+  for (const title of ['旧节点已完成行动', '两天前已完成行动', '池内两天前已完成'])
+    await expect(board.getByRole('button', { name: title, exact: true })).toHaveCount(0);
   await expect(
     board.getByRole('article', { name: '关键节点 · 四天前已完成', exact: true }),
   ).toHaveCount(0);

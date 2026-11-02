@@ -27,9 +27,10 @@ export function MilestonePoint({
   change,
   drag,
 }: MilestonePointProps) {
+  const done = isComplete(point, snapshot.entries);
   return (
     <article
-      className={`milestone-point${point.pool ? ' todo-pool' : ''}${isComplete(point, snapshot.entries) ? ' milestone-done' : ''}`}
+      className={`milestone-point${point.pool ? ' todo-pool' : ''}${done ? ' milestone-done' : ''}`}
       key={point.id}
       data-space-id={point.id}
       {...drag.targetProps(point.id)}
@@ -52,22 +53,17 @@ export function MilestonePoint({
             <button
               className={`point-dot priority-${point.importance}${point.tags.length ? ' node-tagged' : ''}`}
               role="checkbox"
-              aria-checked={isComplete(point, snapshot.entries)}
+              aria-checked={done}
               aria-label={`完成节点 ${point.title}`}
               title={`${point.title} · ${point.tags.join(' · ')} · ${importanceLabel(point.importance)}`}
               onClick={() =>
                 change(point, {
-                  completedAt: isComplete(point, snapshot.entries)
-                    ? null
-                    : new Date().toISOString(),
+                  completedAt: done ? null : new Date().toISOString(),
                 })
               }
             >
-              {isComplete(point, snapshot.entries) ? (
-                <CheckIcon />
-              ) : point.tags[0] ? (
-                <NodeTagIcon tag={point.tags[0]} />
-              ) : null}
+              {point.tags[0] ? <NodeTagIcon tag={point.tags[0]} /> : done ? <CheckIcon /> : null}
+              {done && point.tags[0] && <CheckIcon className="node-completion-mark" />}
             </button>
           </div>
         </>

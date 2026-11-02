@@ -2,12 +2,13 @@ import { useRef, useState } from 'react';
 import { PlusIcon } from '@radix-ui/react-icons';
 import {
   isSpaceItem,
+  localDay,
   type Milestone,
   type Snapshot,
   type SpaceItem,
   type Todo,
 } from '../../../../packages/domain/index';
-import { compareMilestones, shouldHideMilestone } from '../../../../packages/domain/workspace';
+import { compareMilestones, shouldHideCompleted } from '../../../../packages/domain/workspace';
 import { createRecord, save } from '../api';
 import { Button, EmptyState } from '../components/ui';
 import type { Editor } from '../types/editor';
@@ -38,9 +39,16 @@ export function Workspace({
   const [showOlderNodes, setShowOlderNodes] = useState(false);
   const content = useRef<HTMLDivElement>(null);
   const drag = useWorkspaceDrag(snapshot, reload, run);
+  const today = localDay();
   const records = snapshot.entries
     .map((e) => e.data)
     .filter(isSpaceItem)
+    .filter(
+      (item) =>
+        showOlderNodes ||
+        (item.type !== 'milestone' && item.type !== 'todo') ||
+        !shouldHideCompleted(item, snapshot.entries, today),
+    )
     .sort(
       (a, b) =>
         a.order - b.order || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
@@ -104,12 +112,7 @@ export function Workspace({
             <div className="plane-content">
               {lines.map((line) => {
                 const points = records
-                  .filter(
-                    (r): r is Milestone =>
-                      r.type === 'milestone' &&
-                      r.lineId === line.id &&
-                      (showOlderNodes || !shouldHideMilestone(r, snapshot.entries)),
-                  )
+                  .filter((r): r is Milestone => r.type === 'milestone' && r.lineId === line.id)
                   .sort(compareMilestones);
                 return (
                   <BusinessLineTrack

@@ -674,7 +674,8 @@
   margin: 0;
   font-size: 11px;
 }
-.point-dot.node-tagged[aria-checked='false'] {
+.point-dot.node-tagged {
+  position: relative;
   background: var(--paper);
   color: var(--priority-color);
   border-radius: 0;
@@ -682,7 +683,18 @@
   place-items: center;
   box-shadow: 0 0 0 5px var(--paper);
 }
-.point-dot.node-tagged[aria-checked='false'] svg {
+.point-dot.node-tagged svg {
   width: 24px;
   height: 24px;
+}
+.point-dot.node-tagged .node-completion-mark {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--priority-color);
+  color: var(--paper);
+  box-shadow: 0 0 0 2px var(--paper);
 }
