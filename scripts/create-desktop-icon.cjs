@@ -24,16 +24,6 @@ app
         nodeIntegration: false,
       },
     });
-    const painted = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('Icon rendering timed out')), 15000);
-      const rendered = (_event, _dirty, image) => {
-        if (image.isEmpty() || image.resize({ width: 1, height: 1 }).toBitmap()[3] === 0) return;
-        clearTimeout(timer);
-        window.webContents.removeListener('paint', rendered);
-        resolve(image);
-      };
-      window.webContents.on('paint', rendered);
-    });
     await window.loadURL(
       'data:text/html;charset=utf-8,' +
         encodeURIComponent(
@@ -41,8 +31,19 @@ app
             svg,
         ),
     );
-    const image = await painted;
+    // The first offscreen paint can be an opaque blank page before the SVG loads.
+    // Wait for document rendering, then capture and reject blank exports.
+    await window.webContents.executeJavaScript(
+      'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))',
+    );
+    const image = await window.webContents.capturePage();
     assert.ok(!image.isEmpty(), 'The icon must render before export');
+    const pixels = image.resize({ width: 32, height: 32 }).toBitmap();
+    const colors = new Set();
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i + 3] > 0) colors.add(pixels.subarray(i, i + 3).toString('hex'));
+    }
+    assert.ok(colors.size > 8, 'Icon rendering is blank; refuse to package an empty icon');
     await fs.mkdir(output, { recursive: true });
     await fs.writeFile(
       path.join(output, 'icon.png'),

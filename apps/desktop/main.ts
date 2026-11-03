@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
-import { fork, type ChildProcess } from 'node:child_process';
+import { execFile, fork, type ChildProcess } from 'node:child_process';
+import { qqSetupArguments } from './qq-setup';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { once } from 'node:events';
@@ -153,10 +154,24 @@ async function start() {
     });
     return result.canceled ? null : result.filePaths[0];
   });
-  ipcMain.handle('chaos:setup-qq', async (event) => {
+  ipcMain.handle('chaos:setup-qq', async (event, input: unknown) => {
     trustedSender(event);
-    const error = await shell.openPath(path.join(root, 'setup-qq.cmd'));
-    if (error) throw new Error('无法打开 QQ 初始化工具');
+    const args = qqSetupArguments(root, input);
+    await new Promise<void>((resolve, reject) => {
+      // Start-Process gives the interactive tool its own console and input handles.
+      // All arguments here are fixed flags or base64, never raw user input.
+      execFile(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          `Start-Process -FilePath powershell.exe -ArgumentList '${args.join(' ')}' -WindowStyle Normal -ErrorAction Stop`,
+        ],
+        { cwd: root, windowsHide: true },
+        (error) => (error ? reject(new Error('无法打开 QQ 初始化工具')) : resolve()),
+      );
+    });
   });
   await window.loadURL(androidPreview ? `${origin}/?ui=android` : origin);
 }

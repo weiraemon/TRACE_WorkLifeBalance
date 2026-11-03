@@ -20,7 +20,7 @@ import {
   type Suggestion,
 } from '../../../../../packages/domain/messages';
 import { api } from '../../api';
-import { Button, Field, ErrorMessage } from '../../components/ui';
+import { Button, Field, ErrorMessage, Modal } from '../../components/ui';
 import { parseQuickCapture } from '../capture/quickCaptureParser';
 
 function beijingInput(date: Date) {
@@ -829,6 +829,9 @@ export function MessageInbox({
     selfQQ: '',
   });
   const [qqKey, setQqKey] = useState('');
+  const [setup, setSetup] = useState<{ dataDir: string; selfQQ: string } | null>(null);
+  const [setupError, setSetupError] = useState('');
+  const [setupBusy, setSetupBusy] = useState(false);
   const [qqGroups, setQqGroups] = useState<{ id: string; name: string }[]>([]);
   const [qqContacts, setQqContacts] = useState<{ id: string; name: string; remark: string }[]>([]);
   const [error, setError] = useState('');
@@ -1244,7 +1247,12 @@ export function MessageInbox({
           <h3>QQ 自动同步全局设置</h3>
           {desktopBridge() && (
             <div className="actions">
-              <Button onClick={() => void run(() => desktopBridge()!.setupQq())}>
+              <Button
+                onClick={() => {
+                  setSetupError('');
+                  setSetup({ dataDir: qq.dataDir, selfQQ: qq.selfQQ });
+                }}
+              >
                 初始化 QQ 数据库读取…
               </Button>
               <span className="hint">
@@ -1983,6 +1991,68 @@ export function MessageInbox({
       >
         重新加载 QQ 同步
       </Button>
+      {setup && (
+        <Modal
+          title="初始化 QQ 数据库读取"
+          onClose={() => {
+            if (!setupBusy) setSetup(null);
+          }}
+        >
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setSetupBusy(true);
+              setSetupError('');
+              try {
+                await desktopBridge()!.setupQq({
+                  dataDir: setup.dataDir.trim(),
+                  selfQQ: setup.selfQQ.trim(),
+                });
+                setSetup(null);
+                setNotice(
+                  '初始化工具已打开，请在弹出窗口中完成操作。成功后点击“重新加载 QQ 同步”读取新配置。',
+                );
+              } catch (error) {
+                setSetupError(error instanceof Error ? error.message : String(error));
+              } finally {
+                setSetupBusy(false);
+              }
+            }}
+          >
+            <Field label="初始化使用的 QQ 数据目录">
+              <input
+                required
+                autoFocus
+                value={setup.dataDir}
+                onChange={(e) => setSetup({ ...setup, dataDir: e.target.value })}
+                placeholder="D:\Tencent Files\123456789\nt_qq"
+              />
+            </Field>
+            <p className="hint">
+              填写目标账号的目录，可选择 nt_qq 或 nt_db。初始化工具会关闭并重新启动
+              QQ，请登录下方指定账号。
+            </p>
+            <Field label="初始化使用的 QQ 号">
+              <input
+                required
+                inputMode="numeric"
+                pattern="[0-9]{5,12}"
+                value={setup.selfQQ}
+                onChange={(e) => setSetup({ ...setup, selfQQ: e.target.value })}
+              />
+            </Field>
+            <ErrorMessage message={setupError} />
+            <div className="form-actions">
+              <Button type="button" disabled={setupBusy} onClick={() => setSetup(null)}>
+                取消
+              </Button>
+              <Button type="submit" className="primary" disabled={setupBusy}>
+                {setupBusy ? '正在启动…' : '启动初始化工具'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </section>
   );
 }

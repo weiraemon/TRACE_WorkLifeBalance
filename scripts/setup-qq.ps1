@@ -1010,6 +1010,7 @@ try {
 
   Write-Host ''
   Write-Host '初始化完成。' -ForegroundColor Green
+  Write-Host '初始化程序已执行完毕，可以手动关闭此窗口。' -ForegroundColor Cyan
   if ($key) {
     Write-Host '下一步：打开 CHAOS 的“QQ同步设置”，测试读取并启用自动同步。'
     if ($didExtract) { Write-Host 'QQ 已被提取流程关闭，请重新打开 QQ 并保持登录。' }

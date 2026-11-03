@@ -6,7 +6,7 @@ declare global {
   interface Window {
     chaosDesktop?: {
       chooseDirectory: () => Promise<string | null>;
-      setupQq: () => Promise<void>;
+      setupQq: (input: { dataDir: string; selfQQ: string }) => Promise<void>;
     };
   }
 }
