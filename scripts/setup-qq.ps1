@@ -14,6 +14,7 @@ param(
   [string]$PythonCommand,
   [string]$DataDir,
   [string]$SelfQQ,
+  [string]$ResultFile,
   [string]$QqKeyExtractorPath,
   [string]$QqKey,
   [switch]$SkipDependencies,
@@ -44,6 +45,7 @@ $ExtractorSha256 = '99306030F51A2264C0EFFDA6D395A969EC1B00CFE1BF262286769FEC0A78
 $WorkDir = Join-Path $env:TEMP ('chaos-qq-setup-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $WorkDir -Force | Out-Null
 $KeepWorkDir = $false
+$SetupSucceeded = $false
 
 function Write-Step([string]$Message) {
   Write-Host ''
@@ -878,7 +880,7 @@ try {
   if (-not $SelfQQ) { throw '未设置本人 QQ 号；请用 -SelfQQ 指定。' }
 
   $preferred = @($candidateDirs | Where-Object { $_ -match "\\$([regex]::Escape($SelfQQ))\\" })
-  if ($preferred.Count -gt 0) { $candidateDirs = @(@($preferred + $candidateDirs) | Select-Object -Unique) }
+  $candidateDirs = @($preferred | Select-Object -Unique)
   $data = $candidateDirs | Select-Object -First 1
   if (-not $data) { throw '找不到 nt_msg.db，请用 -DataDir 指定 QQ 账号目录。' }
   Write-Ok "QQ 数据目录：$data"
@@ -902,7 +904,7 @@ try {
     Test-QQDatabase $pythonInfo.Python $key $data | Out-Null
   } elseif (-not $SkipKey -and -not $ForceKey -and $existingConfig -and $existingConfig.key) {
     Write-Step '检查已保存的 QQ 密钥'
-    $existingDirs = @($existingConfig.dataDir) + $candidateDirs
+    $existingDirs = @($candidateDirs)
     $usable = Find-UsableDataDir $pythonInfo.Python ([string]$existingConfig.key) $existingDirs
     if ($usable) {
       $key = [string]$existingConfig.key
@@ -1010,6 +1012,7 @@ try {
 
   Write-Host ''
   Write-Host '初始化完成。' -ForegroundColor Green
+  $SetupSucceeded = [bool]($key -and -not $NoConfigWrite)
   Write-Host '初始化程序已执行完毕，可以手动关闭此窗口。' -ForegroundColor Cyan
   if ($key) {
     Write-Host '下一步：打开 CHAOS 的“QQ同步设置”，测试读取并启用自动同步。'
@@ -1022,6 +1025,9 @@ try {
   Write-Host ("初始化失败：" + $_.Exception.Message) -ForegroundColor Red
   exit 1
 } finally {
+  if ($ResultFile) {
+    [System.IO.File]::WriteAllText($ResultFile, $(if ($SetupSucceeded) { 'success' } else { 'failed' }))
+  }
   if ($KeepWorkDir) {
     Write-Host "脱敏诊断已保留：$WorkDir" -ForegroundColor DarkGray
   } else {

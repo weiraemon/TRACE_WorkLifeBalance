@@ -68,6 +68,7 @@ test('桌面版目录选择、四页、记录保存、完整 QQ 入口与安全�
   expect(await desktop!.evaluate(({ Menu }) => Menu.getApplicationMenu())).toBeNull();
   expect(await page.evaluate(() => Object.keys(window.chaosDesktop ?? {}).sort())).toEqual([
     'chooseDirectory',
+    'discoverQq',
     'setupQq',
   ]);
   expect(await page.evaluate(() => typeof (globalThis as { require?: unknown }).require)).toBe(

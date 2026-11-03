@@ -832,6 +832,32 @@ export function MessageInbox({
   const [setup, setSetup] = useState<{ dataDir: string; selfQQ: string } | null>(null);
   const [setupError, setSetupError] = useState('');
   const [setupBusy, setSetupBusy] = useState(false);
+  const [detecting, setDetecting] = useState(false);
+  const [accounts, setAccounts] = useState<{ dataDir: string; selfQQ: string; modified: string }[]>(
+    [],
+  );
+  const [discoveryHint, setDiscoveryHint] = useState('');
+  const detectAccounts = async (browse = false) => {
+    setDetecting(true);
+    setSetupError('');
+    try {
+      const result = await desktopBridge()!.discoverQq({ seed: qq.dataDir, browse });
+      if (!result) return;
+      setAccounts(result.accounts);
+      setSetup(result.accounts.length === 1 ? result.accounts[0] : { dataDir: '', selfQQ: '' });
+      setDiscoveryHint(
+        result.limited
+          ? '搜索已达到范围上限，请选择更接近 QQ 数据的文件夹继续查找。'
+          : result.accounts.length
+            ? '请选择本人账号；检测到本地数据不代表该账号当前已登录。'
+            : '未找到账号，请选择 QQ 数据所在文件夹，可选择 Tencent Files 或其上级目录。',
+      );
+    } catch (error) {
+      setSetupError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setDetecting(false);
+    }
+  };
   const [qqGroups, setQqGroups] = useState<{ id: string; name: string }[]>([]);
   const [qqContacts, setQqContacts] = useState<{ id: string; name: string; remark: string }[]>([]);
   const [error, setError] = useState('');
@@ -1250,7 +1276,9 @@ export function MessageInbox({
               <Button
                 onClick={() => {
                   setSetupError('');
-                  setSetup({ dataDir: qq.dataDir, selfQQ: qq.selfQQ });
+                  setSetup({ dataDir: '', selfQQ: '' });
+                  setAccounts([]);
+                  void detectAccounts();
                 }}
               >
                 初始化 QQ 数据库读取…
@@ -1995,7 +2023,7 @@ export function MessageInbox({
         <Modal
           title="初始化 QQ 数据库读取"
           onClose={() => {
-            if (!setupBusy) setSetup(null);
+            if (!setupBusy && !detecting) setSetup(null);
           }}
         >
           <form
@@ -2008,10 +2036,9 @@ export function MessageInbox({
                   dataDir: setup.dataDir.trim(),
                   selfQQ: setup.selfQQ.trim(),
                 });
+                await refresh();
                 setSetup(null);
-                setNotice(
-                  '初始化工具已打开，请在弹出窗口中完成操作。成功后点击“重新加载 QQ 同步”读取新配置。',
-                );
+                setNotice('QQ 初始化成功，已自动刷新配置。可以手动关闭命令行窗口。');
               } catch (error) {
                 setSetupError(error instanceof Error ? error.message : String(error));
               } finally {
@@ -2019,35 +2046,64 @@ export function MessageInbox({
               }
             }}
           >
-            <Field label="初始化使用的 QQ 数据目录">
-              <input
+            <p className="hint">{detecting ? '正在检测本机 QQ 账号…' : discoveryHint}</p>
+            <Field label="选择 QQ 账号">
+              <select
                 required
-                autoFocus
+                disabled={detecting || setupBusy}
                 value={setup.dataDir}
-                onChange={(e) => setSetup({ ...setup, dataDir: e.target.value })}
-                placeholder="D:\Tencent Files\123456789\nt_qq"
-              />
+                onChange={(e) => {
+                  const account = accounts.find((a) => a.dataDir === e.target.value);
+                  if (account) setSetup(account);
+                }}
+              >
+                <option value="">请选择账号</option>
+                {accounts.map((account) => (
+                  <option key={account.dataDir} value={account.dataDir}>
+                    QQ {account.selfQQ} · 最近更新 {new Date(account.modified).toLocaleString()} ·{' '}
+                    {account.dataDir}
+                  </option>
+                ))}
+              </select>
             </Field>
-            <p className="hint">
-              填写目标账号的目录，可选择 nt_qq 或 nt_db。初始化工具会关闭并重新启动
-              QQ，请登录下方指定账号。
-            </p>
-            <Field label="初始化使用的 QQ 号">
-              <input
-                required
-                inputMode="numeric"
-                pattern="[0-9]{5,12}"
-                value={setup.selfQQ}
-                onChange={(e) => setSetup({ ...setup, selfQQ: e.target.value })}
-              />
-            </Field>
+            {setup.dataDir && <p className="hint">数据目录：{setup.dataDir}</p>}
+            <div className="form-actions">
+              <Button
+                type="button"
+                disabled={detecting || setupBusy}
+                onClick={() => void detectAccounts()}
+              >
+                重新检测
+              </Button>
+              <Button
+                type="button"
+                disabled={detecting || setupBusy}
+                onClick={() => void detectAccounts(true)}
+              >
+                选择文件夹查找…
+              </Button>
+            </div>
+            <p className="hint">已有密钥有效时直接复用；否则工具会重启 QQ，请登录所选账号。</p>
+            {setupBusy && (
+              <p role="status">
+                请在命令行窗口完成操作，成功后这里会自动刷新。无需关闭命令行窗口。
+              </p>
+            )}
             <ErrorMessage message={setupError} />
             <div className="form-actions">
-              <Button type="button" disabled={setupBusy} onClick={() => setSetup(null)}>
+              <Button
+                type="button"
+                disabled={setupBusy || detecting}
+                onClick={() => setSetup(null)}
+              >
                 取消
               </Button>
-              <Button type="submit" className="primary" disabled={setupBusy}>
-                {setupBusy ? '正在启动…' : '启动初始化工具'}
+              <Button
+                type="submit"
+                className="primary"
+                disabled={setupBusy || detecting || !setup.dataDir}
+              >
+                {setupBusy ? '等待初始化完成…' : '启动初始化工具'}
               </Button>
             </div>
           </form>
