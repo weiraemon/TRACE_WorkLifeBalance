@@ -5,6 +5,7 @@ import { WorkspaceService } from '../packages/workspace/workspace-service';
 import { createRecord, localDay, type Snapshot } from '../packages/domain/index';
 import { isComplete } from '../packages/domain/workspace';
 import type { FileChange } from '../packages/workspace/file-change';
+import type { ExchangeBundle, ExchangePreview, ExchangeReceipt } from '../packages/domain/exchange';
 
 async function fixture() {
   const files = new Map<string, string>();
@@ -158,4 +159,26 @@ it('Android transport runs offline commands and rejects excluded integrations', 
   expect(response.snapshot.entries.some((entry) => entry.data.type === 'workline')).toBe(true);
   await expect(transport('messages')).rejects.toThrow('不支持');
   await transport('connect');
+});
+
+it('Android 使用同一交换命令，导入 Notes 与结构并可返回增量回执', async () => {
+  const sender = await fixture(),
+    receiver = await fixture();
+  const bundle = (await sender.service.execute({ type: 'exchange.export' })) as ExchangeBundle;
+  const preview = (await receiver.service.execute({
+    type: 'exchange.preview',
+    bundle,
+  })) as ExchangePreview;
+  expect(preview.errors).toEqual([]);
+  const result = (await receiver.service.execute({
+    type: 'exchange.apply',
+    bundle,
+    revision: preview.revision,
+  })) as { receipt: ExchangeReceipt };
+  const delta = (await sender.service.execute({
+    type: 'exchange.export',
+    baseline: result.receipt,
+  })) as ExchangeBundle;
+  expect(delta.changes).toHaveLength(0);
+  expect((await receiver.service.snapshot()).issues).toEqual([]);
 });

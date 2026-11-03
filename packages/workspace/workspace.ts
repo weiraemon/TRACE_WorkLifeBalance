@@ -18,7 +18,7 @@ import {
   type Milestone,
   type Todo,
 } from '../domain/index';
-import { spaceSubtree, lineFor, spaceParentId } from '../domain/workspace';
+import { spaceSubtree, lineFor, spaceParentId, canPromote } from '../domain/workspace';
 import {
   appendComment,
   section,
@@ -48,6 +48,24 @@ export abstract class Workspace {
     expected: string | null,
   ): Promise<void>;
   protected abstract commitChanges(changes: FileChange[]): Promise<void>;
+  private async recordBody(entry: Entry) {
+    const source = await this.readSource(entry.path);
+    if ((await this.contentHash(source)) !== entry.revision)
+      throw new VaultError('文件已被外部修改，请重新加载', 409);
+    const match = frontmatter.exec(source);
+    if (!match || match.index !== 0) throw new VaultError('管理字段损坏', 409);
+    return source.slice(match[0].length);
+  }
+  async readManaged() {
+    return this.serialized(async () => {
+      const snapshot = await this.scan();
+      if (snapshot.issues.length) throw new VaultError('工作目录存在诊断，请先处理后再交换', 409);
+      const items = [];
+      for (const entry of snapshot.entries)
+        items.push({ data: entry.data, body: await this.recordBody(entry) });
+      return { snapshot, items };
+    });
+  }
   private completionChanges(
     item: SpaceItem,
     records: RecordData[],
@@ -434,6 +452,7 @@ export abstract class Workspace {
       snapshot: Snapshot;
       createLineParts: (line: BusinessLine) => RecordData[];
       notesBody: (line: BusinessLine, bodies: Map<string, string>) => Promise<string>;
+      readBody: (entry: Entry) => Promise<string>;
     }) => Promise<{
       records: RecordData[];
       bodies?: Map<string, string>;
@@ -448,6 +467,7 @@ export abstract class Workspace {
         snapshot,
         createLineParts: (line) => this.createLineParts(line),
         notesBody: (line, bodies) => this.notesBody(line, snapshot.entries, bodies),
+        readBody: (entry) => this.recordBody(entry),
       });
       const changed = new Map(batch.records.map((record) => [record.id, record]));
       if (changed.size !== batch.records.length) throw new VaultError('批次包含重复 ID', 409);
@@ -548,9 +568,12 @@ export abstract class Workspace {
       if (entry.data.type === 'workline') return entry;
       if (entry.revision !== revision) throw new VaultError('对象已更改，请重新加载后升线', 409);
       const item = entry.data;
-      if (item.type !== 'todo' && item.type !== 'milestone')
-        throw new VaultError('只有节点、TODO、IDEA可升为业务线');
-      if (item.type === 'milestone' && item.pool) throw new VaultError('待办池不能升级');
+      if (!canPromote(item))
+        throw new VaultError(
+          item.type === 'milestone' && item.pool
+            ? '待办池不能升级'
+            : '只有节点、TODO、IDEA可升为业务线',
+        );
       const oldLine = lineFor(item, snapshot.entries)!;
       const line = createRecord(
         'workline',

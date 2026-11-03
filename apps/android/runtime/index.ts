@@ -65,6 +65,14 @@ export function createAndroidTransport(native: NativeCall) {
         return vault.open(String(body.id));
       case 'export':
         return vault.exportDirectory();
+      case 'wifi/request':
+        return JSON.parse(
+          await native<string>('wifiRequest', {
+            vaultId: vault.directory.vaultId,
+            url: body.url,
+            body: JSON.stringify(body.frame),
+          }),
+        );
       default:
         throw new Error('Android 首版不支持此平台操作：' + route);
     }

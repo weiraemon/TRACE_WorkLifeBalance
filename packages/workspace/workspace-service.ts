@@ -19,6 +19,7 @@ import type { Workspace } from './workspace';
 import { VaultError } from './errors';
 import type { FileChange } from './file-change';
 import { appendComment } from './line-notes';
+import { exportExchange, previewExchange, applyExchange } from './exchange';
 
 export class WorkspaceService {
   constructor(readonly vault: Workspace) {}
@@ -232,6 +233,12 @@ export class WorkspaceService {
   async execute(input: unknown) {
     const command = businessCommandSchema.parse(input);
     switch (command.type) {
+      case 'exchange.export':
+        return exportExchange(this.vault, command.baseline);
+      case 'exchange.preview':
+        return previewExchange(this.vault, command.bundle);
+      case 'exchange.apply':
+        return applyExchange(this.vault, command.bundle, command.revision);
       case 'record.save':
         return this.saveRecord(command.data, command.revision, command.options);
       case 'work.complete':

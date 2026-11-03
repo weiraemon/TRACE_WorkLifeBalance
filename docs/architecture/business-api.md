@@ -59,6 +59,13 @@ Android 经 `api.ts` 的平台传输入口在本机调用同一版本的 `Worksp
 | notes.create       | note（title、可选 kind / tag）                 | 创建普通 Markdown 笔记，保留原有文件名与标签校验                     |
 | notes.read         | id                                             | 读取同一份 Notes 正文                                                |
 | notes.save         | id、revision、body                             | 保存业务线 Notes 全文                                                |
+| exchange.export    | 可选 baseline（回执）                          | 生成全量首次包或相对于回执的新增／更新增量包                         |
+| exchange.preview   | bundle                                         | 验证 JSON 包，匹配 UUID，返回冲突和绑定当前状态的预览版本            |
+| exchange.apply     | bundle、revision（预览版本）                   | 整包原子导入并生成确认回执，不直接接受文件变更                       |
+
+JSON 格式、机器可读 Schema、共同版本与冲突语义见[增量交换协议](exchange.md)。Windows 和 Android 调用同一命令，系统文件选择与保存只负责传递 JSON。删除、附件与后台联网不在首版交换范围内。
+
+Wi-Fi 的本机控制接口为 `GET /api/wifi/status`、`POST /api/wifi/start`（host）、`/stop`、`/confirm` 与 `/reject`（packageId）。它们仍需本机 token 和当前目录会话。`/request` 只代理到私有 IPv4 的固定交换路径；Android 的同名平台路由交给受限原生 HTTP 桥。独立局域网端口只接受 AES-GCM 密文，不暴露这些控制接口；收到手机变化只创建内存中的待确认预览，不能远程执行确认。退出或切换目录时关闭会话。
 
 外部客户端可直接创建计划，无需伪装成 QQ 消息：
 

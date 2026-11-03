@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { day, noteInputSchema, saveOptionsSchema, type Entry } from './index';
+import { exchangeBundleSchema, exchangeReceiptSchema } from './exchange';
 export const businessApiVersion = '1' as const;
 export const planDestinationSchema = z.discriminatedUnion('kind', [
   z
@@ -111,6 +112,14 @@ export type CreatePlan = z.infer<typeof planSchema>;
 const revision = z.string().regex(/^[a-f0-9]{64}$/);
 const target = { id: z.string().uuid(), revision };
 export const businessCommandSchema = z.discriminatedUnion('type', [
+  z
+    .object({
+      type: z.literal('exchange.export'),
+      baseline: exchangeReceiptSchema.nullable().optional(),
+    })
+    .strict(),
+  z.object({ type: z.literal('exchange.preview'), bundle: exchangeBundleSchema }).strict(),
+  z.object({ type: z.literal('exchange.apply'), bundle: exchangeBundleSchema, revision }).strict(),
   z
     .object({
       type: z.literal('record.save'),

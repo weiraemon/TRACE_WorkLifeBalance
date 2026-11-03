@@ -8,12 +8,24 @@ import org.junit.Test;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.OutputStream;
+import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import static org.junit.Assert.*;
 
 /** Real SAF tests. Run only against the explicitly selected synthetic emulator directory. */
 public class DocumentStoreTest {
+    @Test public void exchangeFilesAreBoundedAndStrictUtf8() throws Exception {
+        try { ChaosFilesPlugin.wifiRequest("http://8.8.8.8:4317/chaos-exchange/00000000-0000-0000-0000-000000000000", "{}"); fail("应拒绝公网"); }
+        catch (Exception expected) { assertTrue(expected.getMessage().contains("局域网")); }
+        try { ChaosFilesPlugin.wifiRequest("http://127.0.0.1:4317/api/session", "{}"); fail("应拒绝非交换接口"); }
+        catch (Exception expected) { assertTrue(expected.getMessage().contains("局域网")); }
+        assertEquals("{\"text\":\"正文\"}", ChaosFilesPlugin.readExchange(new ByteArrayInputStream("{\"text\":\"正文\"}".getBytes(StandardCharsets.UTF_8))));
+        try { ChaosFilesPlugin.readExchange(new ByteArrayInputStream(new byte[] {(byte)0xc3, (byte)0x28})); fail("应拒绝非法 UTF-8"); }
+        catch (java.nio.charset.CharacterCodingException expected) { }
+        try { ChaosFilesPlugin.readExchange(new ByteArrayInputStream(new byte[524289])); fail("应拒绝超大文件"); }
+        catch (Exception expected) { assertTrue(expected.getMessage().contains("512")); }
+    }
     private Context context;
     private Uri tree;
     private String device;

@@ -17,6 +17,7 @@ import { api, load, session, removeSpace } from './api';
 import { spaceSubtree } from '../../../packages/domain/workspace';
 import { Button, Modal, EmptyState, ErrorMessage } from './components/ui';
 import { Connect, Backup, Appearance } from './features/settings/VaultSettings';
+import { Exchange } from './features/settings/Exchange';
 import type { Editor } from './types/editor';
 import { WorkItemForm } from './features/workspace/WorkItemForm';
 import { ActualRecordForm } from './features/actual/ActualRecordForm';
@@ -531,6 +532,7 @@ export default function App() {
                 </div>
               </section>
               <Backup snapshot={snapshot} reload={reload} />
+              <Exchange key={snapshot.vaultId} snapshot={snapshot} reload={reload} />
             </>
           )}
         </Modal>

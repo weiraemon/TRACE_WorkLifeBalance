@@ -8,7 +8,7 @@
 
 本轮 Android 接入基于稳定 main `v0.1.6`（`261b1ad`），本机平台验证记录见 [Android 本地版](android-local.md)。实际开发时记录所基于的稳定 main 提交和 Windows 界面截图；后续用户明确要求并合入主干的变更随主干演进，不把这个版本永久冻结。研究文档中的备选方案不等于已批准实施的功能。
 
-仓库现已增加 Capacitor Android 工程、本地共享业务运行时及 SAF 适配；跨设备同步仍未实现。当前范围、构建、预览及模拟器验收见 [Android 本地版](android-local.md)。不得把浏览器内存测试通过写成 Android 已可用。
+仓库现已增加 Capacitor Android 工程、本地共享业务运行时及 SAF 适配；2026-11-03 用户进一步授权初步增量交换，首版采用[JSON 增量协议](../architecture/exchange.md)，不包含自动或后台联网同步。当前范围、构建、预览及模拟器验收见 [Android 本地版](android-local.md)，功能缺口见[Android 业务覆盖核对](android-feature-coverage.md)。不得把浏览器内存测试通过写成 Android 已可用。
 
 2026-11-03 用户明确授权 Android 独立页面组合：六入口导航、圆圈式项目／业务线导览、竖向业务线与左右切线，以及拆分后的今日与笔记。该授权只改变 Android 界面编排；本文件关于 Windows 界面、共享业务、数据安全和验证的约束继续适用。
 

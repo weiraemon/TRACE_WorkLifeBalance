@@ -1,6 +1,6 @@
 # 仓库分工与跨端复用
 
-Windows Electron 与网页版继续使用原四页界面。Android 本地版新增 Capacitor 外壳、共享业务运行时与 SAF 文件适配，手机按明确需求使用六入口及独立竖屏页面组合；完成、日期、归属、实际记录、Notes 和 Markdown 规则仍由共享核心维护。同步协议未实现。构建与验收见 [Android 本地版](../development/android-local.md)。
+Windows Electron 与网页版继续使用原四页界面。Android 本地版新增 Capacitor 外壳、共享业务运行时与 SAF 文件适配，手机按明确需求使用六入口及独立竖屏页面组合；完成、日期、归属、实际记录、Notes 和 Markdown 规则仍由共享核心维护。用户触发的 JSON 新增／更新增量交换也由共享服务实现，见[交换协议](exchange.md)；不包含自动联网同步。构建与验收见 [Android 本地版](../development/android-local.md)。
 
 `apps/android/runtime/` 装配共享 WorkspaceService，并继承 Workspace 提供持久化；`apps/android/native/` 只负责系统权限、文件安全、发布恢复与设备能力；`apps/android/web/` 是手机装配入口；`apps/web/src/features/mobile/` 组织手机展示，复用既有表单和查询。手机 UI 不直接导入 Workspace 或原生文件实现。
 

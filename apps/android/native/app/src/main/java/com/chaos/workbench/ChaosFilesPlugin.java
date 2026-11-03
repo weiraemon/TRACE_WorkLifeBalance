@@ -16,6 +16,14 @@ import org.json.JSONObject;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.nio.charset.CodingErrorAction;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 @CapacitorPlugin(name = "ChaosFiles")
 public class ChaosFilesPlugin extends Plugin {
@@ -43,6 +51,24 @@ public class ChaosFilesPlugin extends Plugin {
         String method = call.getString("method", "");
         String url = getBridge().getWebView().getUrl();
         if (url == null || !url.startsWith("https://localhost/")) { call.reject("拒绝来自非本地应用页面的调用"); return; }
+        if (method.equals("readExchange") || method.equals("saveExchange")) {
+            if (picking) { call.reject("系统选择器正在打开"); return; }
+            Intent intent;
+            if (method.equals("readExchange")) {
+                intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE);
+            } else {
+                JSONObject input = call.getObject("input", new JSObject());
+                String filename = input.optString("filename", "");
+                if (!filename.matches("CHAOS-(changes|receipt)-[a-fA-F0-9-]+\\.json") ||
+                    input.optString("text").getBytes(StandardCharsets.UTF_8).length > 524288) {
+                    call.reject("非法交换文件名或文件超过 512 KiB"); return;
+                }
+                intent = new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/json").addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_TITLE, filename);
+            }
+            picking = true;
+            startActivityForResult(call, intent, method.equals("readExchange") ? "exchangeReadPicked" : "exchangeSavePicked");
+            return;
+        }
         if (method.equals("chooseDirectory") || method.equals("export")) {
             if (picking) { call.reject("系统选择器正在打开"); return; }
             picking = true;
@@ -71,6 +97,7 @@ public class ChaosFilesPlugin extends Plugin {
                 if (method.equals("background")) { getActivity().runOnUiThread(() -> getActivity().moveTaskToBack(true)); resolve(call, null); return; }
                 if (store == null || !store.session.equals(input.optString("vaultId"))) throw new Exception("工作目录会话已失效，请重新连接");
                 switch (method) {
+                    case "wifiRequest": resolve(call, wifiRequest(input.getString("url"), input.getString("body"))); break;
                     case "remember": config().edit().putString("tree", store.tree.toString()).commit(); resolve(call, null); break;
                     case "scan": resolve(call, store.scan()); break;
                     case "read": resolve(call, store.read(input.getString("path"))); break;
@@ -118,6 +145,66 @@ public class ChaosFilesPlugin extends Plugin {
         if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null) { call.reject("已取消导出"); return; }
         Uri uri = result.getData().getData();
         worker.execute(() -> { try { store.exportTo(uri); resolve(call, null); } catch (Exception error) { fail(call, error); } });
+    }
+    static String readExchange(InputStream stream) throws Exception {
+        if (stream == null) throw new Exception("无法读取交换文件");
+        try (InputStream input = stream; ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192]; int count;
+            while ((count = input.read(buffer)) != -1) {
+                if (output.size() + count > 524288) throw new Exception("交换文件超过 512 KiB");
+                output.write(buffer, 0, count);
+            }
+            return StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(output.toByteArray())).toString();
+        }
+    }
+    static String wifiRequest(String address, String body) throws Exception {
+        URL url = new URL(address);
+        String host = url.getHost();
+        if (!host.matches("[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+")) throw new Exception("只允许局域网 IPv4 地址");
+        String[] parts = host.split("\\."); int[] ip = new int[4];
+        for (int i = 0; i < 4; i++) { ip[i] = Integer.parseInt(parts[i]); if (ip[i] > 255) throw new Exception("非法地址"); }
+        boolean local = ip[0] == 10 || ip[0] == 127 || (ip[0] == 192 && ip[1] == 168) || (ip[0] == 172 && ip[1] >= 16 && ip[1] <= 31);
+        if (!local || !url.getProtocol().equals("http") || url.getPort() < 1024 || url.getPort() > 65535 ||
+            url.getUserInfo() != null || url.getQuery() != null || url.getRef() != null ||
+            !url.getPath().matches("/chaos-exchange/[a-f0-9-]{36}")) throw new Exception("非法 CHAOS 局域网地址");
+        byte[] payload = body.getBytes(StandardCharsets.UTF_8);
+        if (payload.length > 1600000) throw new Exception("Wi-Fi 交换数据过大");
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        try {
+            connection.setInstanceFollowRedirects(false); connection.setConnectTimeout(5000); connection.setReadTimeout(120000);
+            connection.setRequestMethod("POST"); connection.setDoOutput(true); connection.setRequestProperty("Content-Type", "application/json");
+            connection.setFixedLengthStreamingMode(payload.length);
+            try (OutputStream output = connection.getOutputStream()) { output.write(payload); }
+            if (connection.getResponseCode() != 200) throw new Exception("配对已过期或请求无效，请重新连接");
+            try (InputStream input = connection.getInputStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                byte[] buffer = new byte[8192]; int count;
+                while ((count = input.read(buffer)) != -1) {
+                    if (output.size() + count > 1600000) throw new Exception("Wi-Fi 响应过大");
+                    output.write(buffer, 0, count);
+                }
+                return StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(output.toByteArray())).toString();
+            }
+        } finally { connection.disconnect(); }
+    }
+    @ActivityCallback private void exchangeReadPicked(PluginCall call, ActivityResult result) {
+        picking = false; if (call == null) return;
+        if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null) { call.reject("已取消读取"); return; }
+        Uri uri = result.getData().getData();
+        worker.execute(() -> { try { resolve(call, readExchange(getContext().getContentResolver().openInputStream(uri))); } catch (Exception error) { fail(call, error); } });
+    }
+    @ActivityCallback private void exchangeSavePicked(PluginCall call, ActivityResult result) {
+        picking = false; if (call == null) return;
+        if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null) { call.reject("已取消保存"); return; }
+        Uri uri = result.getData().getData();
+        worker.execute(() -> {
+            try (OutputStream output = getContext().getContentResolver().openOutputStream(uri, "wt")) {
+                if (output == null) throw new Exception("无法保存交换文件");
+                output.write(call.getObject("input", new JSObject()).getString("text").getBytes(StandardCharsets.UTF_8));
+                output.flush(); resolve(call, null);
+            } catch (Exception error) { fail(call, error); }
+        });
     }
     @Override protected void handleOnDestroy() {
         worker.execute(() -> { try { if (store != null) store.close(); } catch (Exception ignored) {} }); worker.shutdown();

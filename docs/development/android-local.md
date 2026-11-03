@@ -1,6 +1,6 @@
 # Android 本地版：构建、预览与验收
 
-Android 使用 Capacitor 7 承载现有 React 界面。共享 `WorkspaceService`、`Workspace`、领域契约、Markdown 与 Notes 实现直接编译到本机运行时，不启动 Windows 服务，不复制业务规则，不依赖网络。基于 Windows main `261b1ad`（v0.1.6）开发，桌面仍使用原四页布局。
+Android 使用 Capacitor 7 承载现有 React 界面。共享 `WorkspaceService`、`Workspace`、领域契约、Markdown 与 Notes 实现直接编译到本机运行时，不启动 Windows 服务，不复制业务规则，日常本地工作不依赖网络。基于 Windows main `261b1ad`（v0.1.6）开发，桌面仍使用原四页布局。
 
 后续 Windows 与 Android 的新增业务继续在同一主干和共享核心实现；本次保留 Windows 界面只约束本次变更，不限制后续两端共同开发。分工与验收约定见[共用底座的开发约定](../architecture/repository.md#后续-windows-与-android-共用底座的开发约定)。
 
@@ -24,6 +24,8 @@ Android 图标和启动画面共用 `app/src/main/res/drawable/chaos_icon.xml` �
 随手记直接追加至所属业务线 Notes，不增加备忘录数据表或正文副本。未保存表单、批注和笔记在离开前确认；冲突保留草稿。项目和业务线删除仍额外确认。现有完整复盘文章展示继续沿用，未增加独立的复盘编辑工作流。
 
 本期不包含 QQ／微信接入、AI 服务、自动同步、二维码交换或后台任务。桌面的这些入口和能力保持现状。
+
+2026-11-03 新增用户主动触发的 Wi-Fi 直连增量交换，两端在“设置 → 设备增量交换”开启连接、发送、预览与确认；回执自动返回。离线时可通过系统文件选择器读取／保存同一格式的 JSON。业务导入由同一 `WorkspaceService` 原子执行，不在 Java 桥中改写工作记录。格式、操作步骤及删除／附件限制见[交换协议](../architecture/exchange.md)；完整功能覆盖与缺口见[Android 业务覆盖核对](android-feature-coverage.md)。
 
 ## 文件能力与限制
 
@@ -85,11 +87,11 @@ npm run package:android
 npm run test:android
 ```
 
-`test:android` 默认只连接已启动的 `emulator-*` 设备；实体手机需显式指定 `ANDROID_SERIAL`。脚本只允许使用 `Documents/CHAOS-Android-Test`，拒绝在已连接的个人目录运行写入测试。
+`test:android` 默认只连接已启动的 `emulator-*` 设备；实体手机需显式指定 `ANDROID_SERIAL`。业务写入只允许使用 `Documents/CHAOS-Android-Test`，拒绝在已连接的个人目录运行写入测试；JSON 传输验收另创建带唯一标识的合成 Downloads 文件，并只删除本次创建的精确文件名。
 
 闭环由现成工具组成：adb 安装／启动 APK；Playwright 通过调试 WebView 操作真实页面；系统 UI Automator 完成 SAF 授权；AndroidJUnitRunner 验证真实文件提供方。CDP 使用 `noDefaults`，避免向 WebView 发送其不支持的浏览器下载配置。
 
-验收包含目录授权、项目／业务线／节点／待办创建、切线、Notes、关闭网络后的实际与完成联合保存、回顾、手动备份、强制终止后离线重启，以及真实 SAF 的 15 处发布中断恢复、第三种内容冲突、路径越界、严格 UTF-8 与目录独占。原生测试只在明确的合成目录内运行。
+验收包含目录授权、项目／业务线／节点／待办创建、切线、Notes、关闭网络后的实际与完成联合保存、回顾、手动备份、强制终止后离线重启，以及真实 SAF 的 15 处发布中断恢复、第三种内容冲突、路径越界、严格 UTF-8 与目录独占。JSON 用系统选择器读取／保存并回传 Windows；Wi-Fi 使用模拟器网关验证原生 HTTP 密文双向收发和电脑确认。原生测试只在明确的合成目录内运行，故障注入样本验收后按固定、已解析的测试路径清理。
 
 截图、原生测试输出与 JSON 结果写入 `test-results/android/`。浏览器手机回归见 `tests/e2e/mobile-ui.spec.ts`；共享业务适配回归见 `tests/android-runtime.test.ts`。没有执行的真机、磁盘满、实际断电和其他提供方测试必须在交付中区分说明。
 
@@ -97,9 +99,10 @@ npm run test:android
 
 ## 2026-11-03 本机验证记录
 
-- `npm run check`：架构边界、149 项单元测试、TypeScript／Vite 构建和 61 项浏览器回归通过。
+- `npm run check`：架构边界、161 项单元测试、TypeScript／Vite 构建和 63 项浏览器回归通过。
 - Android 35、Pixel 7 x86_64、WHPX 模拟器：真实 SAF 授权，项目／业务线／节点／待办、实际滑动切线、Notes、断网实际保存、手动备份与恢复、强制终止后离线重启通过。
-- `DocumentStoreTest` 四项原生测试通过，包括 15 个发布位置的中断恢复与第三种内容冲突保护。输出与截图在 `test-results/android/`。
+- `DocumentStoreTest` 五项原生测试通过，包括 15 个发布位置的中断恢复与第三种内容冲突保护。输出与截图在 `test-results/android/`。
 - Windows 实际发布 ZIP 的 Electron 启动、四页、保存、配置恢复、隔离及 SQLCipher 验收通过。
 - 电脑预览安装 EXE：独立目录安装、六页切换、完成／Notes／实际保存、重启保留内容和卸载保留额外文件验收通过。
+- Windows JSON 与 Android 系统选择器双向交换通过；模拟器网关上的 Android 原生 AES-GCM 局域网拉取、推送、电脑确认与回执闭环通过。它不代替实体手机和实际 Wi-Fi／防火墙验收。
 - 开发 APK 已检查包内路径并生成 SHA-256；未执行发行签名、实体手机、真实断电、磁盘满或其他文件提供方验收。联网依赖审计按用户要求跳过。

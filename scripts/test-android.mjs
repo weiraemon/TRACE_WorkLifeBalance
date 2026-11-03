@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, fork } from 'node:child_process';
+import { once } from 'node:events';
 import { chromium } from '@playwright/test';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -60,7 +61,7 @@ async function connectWebView() {
         .flatMap((context) => context.pages())
         .find((page) => page.url().startsWith('https://localhost'));
       assert.ok(page, 'waiting for local WebView');
-      page.setDefaultTimeout(15000);
+      page.setDefaultTimeout(60000);
       await page.getByRole('navigation', { name: '手机导航' }).waitFor();
       return { browser, page };
     },
@@ -90,6 +91,7 @@ async function tapNative(pattern) {
   }, '系统目录授权未完成');
 }
 let browser;
+let wifiChild;
 function nativeTests() {
   device(
     'install',
@@ -111,8 +113,12 @@ function nativeTests() {
     'com.chaos.workbench.test/androidx.test.runner.AndroidJUnitRunner',
   );
   fs.writeFileSync(path.join(output, 'instrumentation.txt'), instrumentation);
-  assert.match(instrumentation, /OK \(4 tests\)/);
+  assert.match(instrumentation, /OK \(5 tests\)/);
   assert.doesNotMatch(instrumentation, /FAILURES|INSTRUMENTATION_FAILED/);
+  // Remove only the reserved synthetic fault fixtures before timing business UI operations.
+  const fixtures = device('shell', 'readlink', '-f', directory + '/instrumentation');
+  assert.equal(fixtures, '/storage/emulated/0/Documents/CHAOS-Android-Test/instrumentation');
+  device('shell', 'rm', '-rf', '--', fixtures);
   checks.push('真实 SAF：15 个发布中断位置恢复、冲突拒绝、路径防护、严格 UTF-8、目录独占');
 }
 try {
@@ -288,7 +294,10 @@ try {
     async () => assert.equal(await page.getByLabel('随手记', { exact: true }).inputValue(), ''),
     '恢复前的测试笔记未保存',
   );
-  await page.locator('.markdown-body').getByText(restoreMarker, { exact: true }).waitFor({ timeout: 60000 });
+  await page
+    .locator('.markdown-body')
+    .getByText(restoreMarker, { exact: true })
+    .waitFor({ timeout: 60000 });
   await page.getByRole('button', { name: '设置', exact: true }).click();
   page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: '恢复', exact: true }).first().click();
@@ -300,6 +309,150 @@ try {
     '手动恢复没有还原 Notes',
   );
   checks.push('回顾、手动备份与恢复');
+  // Only synthetic transfer files are created in Downloads; business writes stay in the test vault.
+  const exchangeRoot = fs.mkdtempSync(path.join(root, '.test-vault/android-exchange-'));
+  const fixture = (mode) => {
+    const result = spawnSync(
+      process.execPath,
+      ['--import', 'tsx', 'scripts/test-android-exchange-fixture.ts', exchangeRoot, mode],
+      {
+        cwd: root,
+        encoding: 'utf8',
+        timeout: 60000,
+      },
+    );
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+  };
+  fixture('prepare');
+  const metadata = JSON.parse(fs.readFileSync(path.join(exchangeRoot, 'metadata.json'), 'utf8'));
+  const transferName = 'CHAOS-Android-Test-' + path.basename(exchangeRoot) + '.json';
+  const transferPath = '/sdcard/Download/' + transferName;
+  device('push', path.join(exchangeRoot, 'send.json'), transferPath);
+  const downloads = async () => {
+    await tapNative(/^(Show roots|显示根目录)$/i);
+    await tapNative(/^(Downloads|下载)$/i);
+  };
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  const exchange = page.getByRole('region', { name: '设备增量交换' });
+  await exchange.getByText('离线文件交换', { exact: true }).click();
+  await exchange.getByRole('button', { name: '打开交换文件或回执', exact: true }).click();
+  await downloads();
+  await tapNative(new RegExp('^' + transferName.replaceAll('.', '\\.') + '$'));
+  await exchange
+    .getByRole('button', { name: '确认导入并生成回执', exact: true })
+    .waitFor({ timeout: 60000 });
+  await exchange.getByRole('button', { name: '确认导入并生成回执', exact: true }).click();
+  await exchange.getByRole('status').filter({ hasText: '已导入' }).waitFor({ timeout: 60000 });
+  await page.getByRole('button', { name: '关闭对话框', exact: true }).click();
+  await nav('工作空间');
+  await page.getByRole('button', { name: `打开业务线 ${metadata.lineTitle}`, exact: true }).click();
+  await page.getByRole('checkbox', { name: `完成 ${metadata.todoTitle}`, exact: true }).click();
+  await eventually(
+    async () =>
+      assert.equal(
+        await page
+          .getByRole('checkbox', { name: `完成 ${metadata.todoTitle}`, exact: true })
+          .isChecked(),
+        true,
+      ),
+    '交换后的待办没有完成',
+  );
+  await nav('笔记');
+  await page.getByRole('button', { name: `打开业务线 ${metadata.lineTitle}`, exact: true }).click();
+  await page.getByLabel('随手记', { exact: true }).fill(metadata.memo);
+  await page.getByRole('button', { name: '记到笔记', exact: true }).click();
+  await eventually(
+    async () => assert.equal(await page.getByLabel('随手记', { exact: true }).inputValue(), ''),
+    '交换测试笔记未保存',
+  );
+  await page
+    .locator('.markdown-body')
+    .getByText(metadata.memo, { exact: true })
+    .waitFor({ timeout: 60000 });
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  await exchange.getByText('离线文件交换', { exact: true }).click();
+  await exchange.getByRole('button', { name: '生成发送包', exact: true }).click();
+  await exchange.getByText('查看 JSON', { exact: true }).click();
+  const reply = JSON.parse(await exchange.getByLabel('导出的交换 JSON').inputValue());
+  await exchange.getByRole('button', { name: '保存发送包', exact: true }).click();
+  await downloads();
+  await tapNative(/^(SAVE|保存)$/i);
+  await exchange.getByRole('status').filter({ hasText: '文件已保存' }).waitFor({ timeout: 60000 });
+  const replyPath = '/sdcard/Download/CHAOS-changes-' + reply.id + '.json';
+  device('pull', replyPath, path.join(exchangeRoot, 'reply.json'));
+  fixture('verify');
+  for (const file of [transferPath, replyPath]) {
+    assert.match(
+      file,
+      /^\/sdcard\/Download\/CHAOS-(?:Android-Test-android-exchange-[A-Za-z0-9]+|changes-[a-f0-9-]{36})\.json$/,
+    );
+    device('shell', 'rm', '--', file);
+  }
+  await page.screenshot({ path: path.join(output, 'exchange.png') });
+  await page.getByRole('button', { name: '关闭对话框', exact: true }).click();
+  checks.push('Windows JSON → Android 系统文件读取、预览导入、修改与文件保存 → Windows 增量回传');
+  device('shell', 'svc', 'wifi', 'enable');
+  device('shell', 'svc', 'data', 'enable');
+  wifiChild = fork('scripts/test-android-exchange-fixture.ts', [exchangeRoot, 'wifi'], {
+    cwd: root,
+    execArgv: ['--import', 'tsx'],
+    silent: true,
+    windowsHide: true,
+  });
+  wifiChild.stdout.resume();
+  wifiChild.stderr.resume();
+  const wifiMessage = (type) =>
+    new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        wifiChild.off('message', handler);
+        reject(new Error('Wi-Fi 测试服务超时'));
+      }, 30000);
+      const handler = (message) => {
+        if (message.type === 'error' || message.type === type) {
+          clearTimeout(timer);
+          wifiChild.off('message', handler);
+          if (message.type === 'error') reject(new Error(message.error));
+          else resolve();
+        }
+      };
+      wifiChild.on('message', handler);
+    });
+  await wifiMessage('ready');
+  const wifi = JSON.parse(fs.readFileSync(path.join(exchangeRoot, 'wifi.json'), 'utf8'));
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  const wifiPanel = page.getByRole('region', { name: 'Wi-Fi 直连', exact: true });
+  await wifiPanel.getByLabel('电脑配对连接', { exact: true }).fill(wifi.pairing);
+  await wifiPanel.getByRole('button', { name: '读取电脑变化', exact: true }).click();
+  await wifiPanel
+    .getByRole('button', { name: '确认导入电脑变化', exact: true })
+    .waitFor({ timeout: 60000 });
+  await wifiPanel.getByRole('button', { name: '确认导入电脑变化', exact: true }).click();
+  await wifiPanel.getByRole('status').filter({ hasText: '确认已返回' }).waitFor({ timeout: 60000 });
+  await page.getByRole('button', { name: '关闭对话框', exact: true }).click();
+  await nav('工作空间');
+  await page.getByRole('button', { name: `查看项目 ${wifi.title}`, exact: true }).waitFor();
+  await page.getByRole('button', { name: '新建项目', exact: true }).click();
+  await page.getByRole('dialog').getByLabel('标题', { exact: true }).fill(wifi.phoneTitle);
+  await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click();
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  await wifiPanel.getByLabel('电脑配对连接', { exact: true }).fill(wifi.pairing);
+  await wifiPanel.getByRole('button', { name: '发送手机变化', exact: true }).click();
+  await wifiPanel.getByRole('status').filter({ hasText: '变化已送达' }).waitFor({ timeout: 60000 });
+  const confirmed = wifiMessage('confirmed');
+  wifiChild.send({ type: 'confirm' });
+  await confirmed;
+  await wifiPanel
+    .getByRole('status')
+    .filter({ hasText: '电脑已确认导入' })
+    .waitFor({ timeout: 60000 });
+  await page.screenshot({ path: path.join(output, 'wifi-exchange.png') });
+  await page.getByRole('button', { name: '关闭对话框', exact: true }).click();
+  const exited = once(wifiChild, 'exit');
+  wifiChild.send({ type: 'stop' });
+  await exited;
+  wifiChild = null;
+  checks.push('Android 原生局域网密文传输：拉取电脑变化、手机确认、推送变化、电脑确认与自动回执');
   await browser.close();
   browser = null;
   device('shell', 'am', 'force-stop', 'com.chaos.workbench');
@@ -326,6 +479,7 @@ try {
   console.log(checks.join('\n'));
   device('shell', 'am', 'start', '-n', 'com.chaos.workbench/.MainActivity');
 } finally {
+  wifiChild?.kill();
   await browser?.close();
   device('shell', 'svc', 'wifi', 'enable');
   device('shell', 'svc', 'data', 'enable');

@@ -38,6 +38,37 @@
   padding-top: 20px;
   border-top: 1px solid var(--line);
 }
+.exchange {
+  padding-top: 20px;
+  margin-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.exchange fieldset {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.exchange textarea {
+  width: 100%;
+  min-height: 120px;
+  overflow-wrap: anywhere;
+}
+.exchange input[type='file'] {
+  width: 100%;
+}
+.exchange ul {
+  padding-left: 20px;
+  max-height: 240px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.exchange .actions {
+  flex-wrap: wrap;
+  margin-block: 12px;
+}
+.exchange details {
+  margin-block: 12px;
+}
 .appearance {
   display: flex;
   align-items: center;

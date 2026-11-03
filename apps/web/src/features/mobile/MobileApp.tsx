@@ -24,6 +24,7 @@ import { api, complete, load, removeSpace, save, session } from '../../api';
 import { androidRequest, isAndroid } from '../../platform/android';
 import { Button, DatePicker, EmptyState, ErrorMessage, Modal } from '../../components/ui';
 import { Appearance, Backup, Connect } from '../settings/VaultSettings';
+import { Exchange } from '../settings/Exchange';
 import { TodayAgenda } from '../today/TodayAgenda';
 import { ActualRecordList } from '../actual/ActualRecordList';
 import { ActualRecordForm } from '../actual/ActualRecordForm';
@@ -607,6 +608,7 @@ export default function MobileApp() {
                 )}
               </div>
               <Backup snapshot={snapshot} reload={reload} />
+              <Exchange key={snapshot.vaultId} snapshot={snapshot} reload={reload} mobile />
             </>
           )}
         </Modal>

@@ -22,6 +22,8 @@ import {
 } from '../../../packages/domain/messages';
 import { aiView, saveAiConfig, saveQqConfig } from './sync/app-config';
 import { QqSync } from './sync/qq-sync';
+import { startWifiExchange, wifiAddresses, wifiProxy } from './application/wifi-exchange';
+let wifi: Awaited<ReturnType<typeof startWifiExchange>> | undefined;
 
 let port = Number(process.env.ATLAS_PORT ?? 4317);
 let origin = `http://127.0.0.1:${port}`;
@@ -145,6 +147,8 @@ const server = http.createServer(async (req, res) => {
           const next = await Vault.open(input.path);
           try {
             await rememberVault(configPath, next.root);
+            wifi?.close();
+            wifi = undefined;
             await vault?.close();
           } catch (error) {
             await next.close();
@@ -162,6 +166,49 @@ const server = http.createServer(async (req, res) => {
       const active = vault;
       if (switching || req.headers['x-atlas-vault'] !== active.sessionId)
         throw new VaultError('其他窗口已切换 Vault；此窗口停止读写，请重新连接原 Vault', 409);
+      if (url.pathname === '/api/wifi/status' && req.method === 'GET')
+        return send(res, 200, {
+          ...wifi?.status(),
+          running: wifi?.status().running ?? false,
+          addresses: wifiAddresses(),
+        });
+      if (url.pathname === '/api/wifi/start' && req.method === 'POST') {
+        const input = z
+          .object({ host: z.string() })
+          .strict()
+          .parse(await body(req));
+        if (!wifiAddresses().some((address) => address.address === input.host))
+          throw new VaultError('请选择本机 Wi-Fi 或局域网地址');
+        wifi?.close();
+        wifi = undefined;
+        wifi = await startWifiExchange(workspaceServiceFor(active), input.host);
+        return send(res, 200, wifi.status());
+      }
+      if (url.pathname === '/api/wifi/stop' && req.method === 'POST') {
+        wifi?.close();
+        wifi = undefined;
+        return send(res, 200, {});
+      }
+      if (
+        (url.pathname === '/api/wifi/confirm' || url.pathname === '/api/wifi/reject') &&
+        req.method === 'POST'
+      ) {
+        const input = z
+          .object({ packageId: z.string().uuid() })
+          .strict()
+          .parse(await body(req));
+        if (!wifi) throw new VaultError('Wi-Fi 连接已关闭');
+        if (url.pathname.endsWith('/confirm')) await wifi.confirm(input.packageId);
+        else wifi.reject(input.packageId);
+        return send(res, 200, wifi.status());
+      }
+      if (url.pathname === '/api/wifi/request' && req.method === 'POST') {
+        const input = z
+          .object({ url: z.string().max(1000), frame: z.unknown() })
+          .strict()
+          .parse(await body(req));
+        return send(res, 200, await wifiProxy(input.url, input.frame));
+      }
       if (url.pathname === '/api/business/v1/schema' && req.method === 'GET')
         return send(res, 200, {
           version: businessApiVersion,
@@ -488,6 +535,7 @@ const shutdown = async () => {
   if (stopping) return;
   stopping = true;
   qqSync.stop();
+  wifi?.close();
   server.close();
   await restoring;
   await vault?.close();

@@ -16,6 +16,9 @@ export type MilestoneContext = {
   project: Project;
 };
 export type TodoContext = MilestoneContext & { todo: Todo };
+export function canPromote(record: RecordData): record is Todo | (Milestone & { pool: false }) {
+  return record.type === 'todo' || (record.type === 'milestone' && !record.pool);
+}
 export function agendaForDay(entries: Entry[], date = localDay()) {
   const rows = [
     ...milestonesForDay(entries, date).map((context) => ({
