@@ -139,40 +139,26 @@ npx tsx scripts/sample-vault.ts E:\CHAOS-Demo
 
 ## 接入 QQ 与 AI
 
-### 一键接入 QQ（推荐）
+### 接入 QQ（推荐）
 
 需要 **Windows、Node.js ≥ 22.12、Python 3.10–3.12（推荐 3.12）、已安装的 QQNT**。没有可用 Python 时，脚本会先尝试 winget，失败后再下载官方 Python 3.12 安装程序并安装到当前用户；3.13+ 没有 `sqlcipher3` 预编译包时会自动回退安装 3.12。QQ 不需要提前登录，脚本会负责关闭并以调试模式重新启动它。
 
-1. 关闭正在运行的 CHAOS 和 QQ；
-2. 双击项目根目录的 `setup-qq.cmd`；
-3. 脚本会检查 Node/Python，缺少 `sqlcipher3` 时自动安装；
-4. 脚本会定位 QQ 数据目录、下载并校验密钥提取脚本，然后启动 QQ；
-5. 在弹出的 QQ 窗口登录目标账号，脚本会自动捕获密钥；
-6. 脚本验证 `nt_msg.db` 可读后，把 QQ 配置写入本机 `%APPDATA%\CHAOS\settings.json`。
+1. 打开CHAOS.exe，点击右上角设置；
+![进入设置](docs\media\QQ_Step1.png)
+2. 点击QQ同步设置；
+![点击QQ同步设置](docs\media\QQ_Step2.png)
+3. 点击初始化QQ数据库读取；
+![点击初始化QQ数据库读取](docs\media\QQ_Step3.png)
+4. 输入QQ数据目录和初始化使用的QQ号；
+![初始化](docs\media\QQ_Step4.png)
 
-脚本不会把密钥打印到控制台。它会收集登录过程中出现的多个候选密钥，并逐个用 `nt_msg.db` 实际解密验证；只有验证通过的密钥才会写入配置。已配置过 QQ 的机器再次运行时通常不需要重新提取。自动同步默认保持关闭，确认测试通过后再启用。如果自动定位账号目录失败，可以指定：
-
-```powershell
-.\setup-qq.cmd -DataDir "D:\...\123456789\nt_qq" -SelfQQ "123456789"
-```
-
-这里-DataDir是QQ保存文件的路径，可以在QQ的设置中查看。具体操作如下：
-
-点击QQ左下角的三横线，点击设置
-
-![进入QQ设置](docs/media/QQ_Step1.png)
-
-进入设置，点击“储存管理”，“将聊天消息默认保存到”下方的路径即为QQ文件的保存目录，其中就包括需要用的数据库，在这个路径后面加上“\123456789\nt_qq”，即为-DataDir需要指定的路径，其中“123456789”为你的QQ号，需要进行替换
-
-![查看文件保存目录](docs/media/QQ_Step2.png)
-
-密钥提取依赖第三方调试脚本，可能触发安全软件或 QQ 安全提示；仅建议在自己的账号和电脑上使用，QQ 升级后可能需要重新提取。
-
-如果自动下载不方便，也可以手动下载 [QQBackup/qq-win-db-key](https://github.com/QQBackup/qq-win-db-key) 的 `windows_ntqq_get_key.ps1`，然后运行：
-
-```powershell
-.\scripts\setup-qq.ps1 -QqKeyExtractorPath "路径\windows_ntqq_get_key.ps1"
-```
+   - 图中的路径可以通过以下方法查看。点击QQ左下角的三横线，点击设置；
+   ![点击设置](docs\media\QQ_Step5.png)
+   - 点击“储存管理”，其中，聊天消息默认保存到的文件夹中，就有你的数据库。一般来说，在这个目录后面加上\123456789\nt_qq就是你的数据库保存位置，可以在资源管理器中查看是否存在该目录。其中“123456789”为你的QQ号，需要按照实际情况更改。
+   ![查看目录](docs\media\QQ_Step6.png)
+5. QQ号设置好之后，点击启动初始化工具，打开一个终端，按照脚本要求完成QQ密钥的获取，期间需要登录一次QQ来获取密钥。脚本验证 `nt_msg.db` 可读后，把 QQ 配置写入本机 `%APPDATA%\CHAOS\settings.json`；密钥提取依赖第三方调试脚本，可能触发安全软件或 QQ 安全提示；仅建议在自己的账号和电脑上使用，QQ 升级后可能需要重新提取。
+6. 获取成功之后，关闭终端，返回上一界面。若需自动同步，需勾选“启用后台自动同步”，然后点击“保存QQ设置”，这样就完成了QQ密钥的设置
+![保存QQ设置](docs\media\QQ_Step7.png)
 
 ### 设置 QQ 同步
 
