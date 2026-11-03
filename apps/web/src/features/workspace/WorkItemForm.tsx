@@ -17,11 +17,13 @@ export function WorkItemForm({
   snapshot,
   close,
   reload,
+  onDirtyChange,
 }: {
   editor: Editor;
   snapshot: Snapshot;
   close: () => void;
   reload: () => Promise<void>;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const type = editor.type as keyof typeof spaceLabel;
   const item = editor.entry && isSpaceItem(editor.entry.data) ? editor.entry.data : undefined;
@@ -53,6 +55,7 @@ export function WorkItemForm({
     ]),
   ];
   const applyParsedText = (value: string) => {
+    onDirtyChange?.(true);
     const parsed = parseQuickCapture(value, snapshot.entries);
     const line = snapshot.entries.find(
       (entry) => entry.data.type === 'workline' && entry.data.id === parsed.lineId,
@@ -75,6 +78,10 @@ export function WorkItemForm({
       onClose={close}
     >
       <form
+        onChangeCapture={() => onDirtyChange?.(true)}
+        onClickCapture={(event) => {
+          if ((event.target as Element).closest('.importance-picker')) onDirtyChange?.(true);
+        }}
         onSubmit={async (event) => {
           event.preventDefault();
           setBusy(true);
@@ -117,6 +124,7 @@ export function WorkItemForm({
                 : [],
             });
             await reload();
+            onDirtyChange?.(false);
             close();
           } catch (e) {
             setError(e instanceof Error ? e.message : String(e));

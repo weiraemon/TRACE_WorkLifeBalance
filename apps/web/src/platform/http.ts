@@ -3,7 +3,14 @@ import { recordContract } from '../../../../packages/domain/index';
 
 let token = '';
 let vaultId = '';
+type PlatformTransport = (route: string, body?: unknown) => Promise<unknown>;
+let platformTransport: PlatformTransport | undefined;
+// Installed by the Android application runtime, never by a page or a storage component.
+export function installPlatformTransport(transport: PlatformTransport) {
+  platformTransport = transport;
+}
 export async function api<T>(route: string, body?: unknown): Promise<T> {
+  if (platformTransport) return platformTransport(route, body) as Promise<T>;
   const response = await fetch('/api/' + route, {
     method: body === undefined ? 'GET' : 'POST',
     cache: 'no-store',

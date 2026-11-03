@@ -15,3 +15,11 @@ docs/development/test-report.md
 coverage/
 __pycache__/
 *.pyc
+# Android toolchains, copied web assets, build output and local signing credentials.
+.android-tools/
+.android-dist/
+apps/android/native/.gradle/
+apps/android/native/**/build/
+apps/android/native/local.properties
+*.jks
+*.keystore

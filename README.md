@@ -52,6 +52,8 @@ CHAOS 是一个本地运行的个人工作台。把外部要求与自己的探�
 
 ## 快速开始
 
+Android 本地开发版使用六入口竖屏界面，支持本机 Markdown 目录，暂不接入消息或跨设备同步。构建 APK：`npm run package:android`；电脑手机界面预览：`npm run preview:android`，或用 `npm run package:android:preview` 生成可直接安装的手机界面预览 EXE；启动 Android Studio 模拟器后运行 `npm run test:android` 可验收真实 APK、系统目录授权与文件恢复。详见 [Android 构建、预览与验收](docs/development/android-local.md)。
+
 桌面版需要 **Windows x64 · 本地 NTFS 目录**。
 
 **给普通用户：Electron 桌面版**。解压发布包的整个文件夹，双击 `CHAOS.exe`，点击“浏览文件夹…”选择 Markdown 工作目录。自带 Chromium、Node、Python 和 SQLCipher，无需安装浏览器或运行环境，也无需保留终端。关闭程序会同时停止本地服务和 QQ 自动同步；再次启动自动恢复工作目录。可为 `CHAOS.exe` 创建桌面快捷方式。

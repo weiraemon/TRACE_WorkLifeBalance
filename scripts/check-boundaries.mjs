@@ -34,18 +34,32 @@ function check(file, text) {
   const web = file.startsWith('apps/web/');
   const native = file.startsWith('apps/local-service/src/native/');
   const shell = file.startsWith('apps/desktop/');
+  const androidRuntime = file.startsWith('apps/android/runtime/');
   const fail = (message) => errors.push(file + ': ' + message);
   function dependency(specifier, typeOnly = false) {
     const target = specifier.startsWith('.')
       ? path.resolve(path.dirname(file), specifier).replaceAll('\\', '/')
       : specifier;
     const system = builtins.has(specifier.replace(/^node:/, '')) || specifier === 'electron';
-    if ((domain || workspace || web) && system) fail('portable code must not import ' + specifier);
+    if ((domain || workspace || web || androidRuntime) && system)
+      fail('portable code must not import ' + specifier);
+    if (
+      androidRuntime &&
+      /\/apps\/(?:web|desktop|local-service)\/|\/apps\/android\/(?:web|native)\//.test(target)
+    )
+      fail('Android runtime must not depend on UI or desktop adapters: ' + specifier);
+    if ((domain || workspace) && specifier.startsWith('@capacitor/'))
+      fail('platform plugins belong in the application entry point');
     if ((domain || workspace) && /\/apps\//.test(target))
       fail('shared code must not depend on an app: ' + specifier);
     if (domain && /\/packages\/workspace\//.test(target))
       fail('domain must not depend on application services');
-    if (web && /\/apps\/(?:local-service|desktop)\/|\/packages\/workspace\//.test(target))
+    if (
+      web &&
+      /\/apps\/(?:local-service|desktop)\/|\/apps\/android\/(?:runtime|native)\/|\/packages\/workspace\//.test(
+        target,
+      )
+    )
       fail('UI must use its client/platform entry points: ' + specifier);
     if (shell && /\/(?:native|application|domain|workspace)\//.test(target))
       fail('desktop shell must use the shared service, not business/storage internals');
@@ -129,6 +143,23 @@ assert.equal(
   0,
 );
 assert.ok(check('apps/web/src/pages/probe.tsx', 'window.chaosDesktop;').length);
+assert.ok(
+  check(
+    'apps/web/src/platform/probe.ts',
+    "import { AndroidWorkspace } from '../../../android/runtime/workspace';",
+  ).length,
+);
+assert.ok(check('apps/android/runtime/probe.ts', "import '../web/main';").length);
+assert.ok(check('apps/android/runtime/probe.ts', "import fs from 'node:fs';").length);
+assert.ok(
+  check(
+    'apps/android/runtime/probe.ts',
+    "import { Vault } from '../../local-service/src/native/vault';",
+  ).length,
+);
+assert.ok(
+  check('packages/workspace/probe.ts', "import { Capacitor } from '@capacitor/core';").length,
+);
 assert.ok(check('apps/web/src/probe.ts', "api('records', {});").length);
 assert.ok(check('apps/local-service/src/server.ts', "const route = '/api/records';").length);
 assert.ok(

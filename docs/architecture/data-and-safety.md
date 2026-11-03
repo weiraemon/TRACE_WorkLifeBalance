@@ -2,6 +2,8 @@
 
 ## 权威数据与契约
 
+Android 本地版同样直接使用 Markdown。其 SAF 提供方验证、目录授权、SHA-256 版本、可恢复交换、手动备份与导出边界见 [Android 本地版](../development/android-local.md)。Windows 文件实现不被手机导入；两端只共享业务与 Markdown／Notes 实现。
+
 普通 Markdown 工作目录是唯一权威数据源，Obsidian 不是运行依赖。ATLAS 管理字段保存在顶层 `atlas.managed: true` 和 `atlas.record`，稳定 UUID 不随路径变化。YAML AST 只替换 ATLAS 字段，保留其他字段、注释及自由正文。
 
 业务写入、Notes 与 Markdown 保真处理已提取到 `packages/workspace`；Windows 的 `native/Vault` 提供原有文件安全、锁和可恢复发布。网页工作读写已统一到标准业务 API，旧网页工作路由移除；数据格式、备份策略和用户目录保持不变，详见[仓库分工与跨端复用](repository.md)。

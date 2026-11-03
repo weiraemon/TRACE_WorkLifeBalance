@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">CHAOS</string>
+    <string name="title_activity_main">CHAOS</string>
+    <string name="package_name">com.chaos.workbench</string>
+    <string name="custom_url_scheme">com.chaos.workbench</string>
+</resources>

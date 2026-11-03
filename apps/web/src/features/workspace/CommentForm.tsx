@@ -6,10 +6,12 @@ export function CommentForm({
   entry,
   close,
   reload,
+  onDirtyChange,
 }: {
   entry: Entry;
   close: () => void;
   reload: () => Promise<void>;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [text, setText] = useState(''),
     [error, setError] = useState(''),
@@ -22,6 +24,7 @@ export function CommentForm({
       onClose={close}
     >
       <form
+        onChangeCapture={() => onDirtyChange?.(true)}
         onSubmit={async (e) => {
           e.preventDefault();
           setBusy(true);
@@ -29,6 +32,7 @@ export function CommentForm({
           try {
             await save(entry.data, entry, { comments: [{ id, targetId: entry.data.id, text }] });
             await reload();
+            onDirtyChange?.(false);
             close();
           } catch (e) {
             setError(e instanceof Error ? e.message : String(e));

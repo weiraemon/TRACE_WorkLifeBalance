@@ -1,6 +1,19 @@
 # 仓库分工与跨端复用
 
-当前交付仍是 Windows Electron 桌面版和连接本地服务的网页版。仓库已提取跨端业务核心，并将网页工作读写统一到标准业务 API。没有增加 Android 工程、同步协议或运行时依赖，四页布局、样式、业务行为与 Markdown 格式保持不变。
+Windows Electron 与网页版继续使用原四页界面。Android 本地版新增 Capacitor 外壳、共享业务运行时与 SAF 文件适配，手机按明确需求使用六入口及独立竖屏页面组合；完成、日期、归属、实际记录、Notes 和 Markdown 规则仍由共享核心维护。同步协议未实现。构建与验收见 [Android 本地版](../development/android-local.md)。
+
+`apps/android/runtime/` 装配共享 WorkspaceService，并继承 Workspace 提供持久化；`apps/android/native/` 只负责系统权限、文件安全、发布恢复与设备能力；`apps/android/web/` 是手机装配入口；`apps/web/src/features/mobile/` 组织手机展示，复用既有表单和查询。手机 UI 不直接导入 Workspace 或原生文件实现。
+
+## 后续 Windows 与 Android 共用底座的开发约定
+
+本次 Android 接入与后续两端功能共同演进一致，不建立 Android 业务分支。“Windows 界面保持不变”限定本次接入的范围，不冻结后续 Windows 功能或界面开发。
+
+- 新增或修改业务时，先在 `packages/domain` 维护同一份数据与命令契约，在 `packages/workspace` 维护同一份完成、日期、归属、实际记录、Notes 与删除规则；两端调用同一个 WorkspaceService。
+- 可复用的表单、查询与控件继续放在共享前端功能目录。Windows 四页和 Android 六入口是不同的展示组合，不是两套业务模型；新功能按需要接入各自入口，并验证两端。
+- 文件授权、目录扫描、可靠发布与恢复、资源打开和生命周期由平台适配层实现。平台能力尚不支持时明确说明，不能在手机页面或原生桥中另写业务规则。
+- 共享核心不得反向导入平台代码；UI 不得直接导入 Windows 或 Android 存储与业务运行时。`npm run check:architecture` 对这些依赖进行检查，`npm run check` 保持共享业务与界面回归，Android 另补构建与平台验收。
+
+因此，共享业务变更可同时服务两端；平台 UI 或文件适配变更在对应边界内开发。需要两端入口或平台能力的功能仍须分别接线和验证，不把“共享底座”理解为新界面会自动出现在所有平台。
 
 ## 目录地图
 
@@ -18,6 +31,9 @@
 | `apps/local-service/src/application/` | 消息收集、去重、识别与确认编排；确认后调用共享业务服务                                               | 第二套工作对象保存与完成规则                   |
 | `apps/local-service/src/sync/`        | QQ 读取与同步、来源文件、AI 调用、本机密钥和配置                                                     | 绕过业务服务直接改写工作 Markdown              |
 | `apps/desktop/`                       | Electron 窗口、生命周期、目录对话框、QQ 初始化和允许的系统打开行为                                   | 工作对象、Markdown 或 Notes 业务逻辑           |
+| `apps/android/web/`                   | Android 界面与本机平台传输的装配入口                                                                 | 第二套页面表单或业务规则                       |
+| `apps/android/runtime/`               | 装配同一 WorkspaceService，继承 Workspace 并连接 Android 持久化边界                                  | Windows 文件适配、UI 或原生权限实现            |
+| `apps/android/native/`                | Android 生命周期、SAF 授权、文件安全、恢复与系统打开                                                 | 完成、日期、归属或 Notes 业务规则              |
 | `scripts/`                            | 开发样例、架构检查、打包与 QQ 辅助脚本                                                               | 另一个业务实现                                 |
 | `tests/`                              | 领域、业务、文件安全、HTTP、浏览器和 Electron 回归                                                   | 用户真实工作目录                               |
 | `examples/`                           | 可复制的示例工作目录                                                                                 | 真实数据或密钥                                 |
@@ -31,13 +47,19 @@
 flowchart TD
   UI[web 页面与功能组件] --> Client[api.ts / platform]
   Client --> HTTP[local-service HTTP 入口]
+  Mobile[Android 六入口界面] --> Client
+  Client --> Local[Android 本机传输]
   Electron[desktop 外壳] --> HTTP
   HTTP --> Service[workspace / WorkspaceService]
+  Local --> Service
   Intake[local-service 消息应用服务] --> Service
   Service --> Core[workspace / Workspace]
   Node[native / Vault] -->|实现持久化边界并继承业务实现| Core
   HTTP -->|装配| Node
   Node --> FS[Node / Windows 文件系统]
+  SAF[Android SAF 文件适配] -->|实现持久化边界并继承业务实现| Core
+  Local -->|装配| SAF
+  SAF --> AndroidFS[Android 授权 Markdown 目录]
   Core --> Format[workspace / Markdown 与 Notes]
   Service --> Domain[domain]
   Core --> Domain
@@ -92,15 +114,15 @@ flowchart TD
 
 跨文件写入保持现有可恢复发布机制，不声称底层文件系统支持多文件瞬时原子替换。恢复日志是短期的未完成发布信息，成功后清除，不是操作历史、自动备份或回收区。手动备份仍最多三份。
 
-`Vault.open/close/safe/recover`、手动备份、Obsidian URL 和本机资源打开仍在 Node 适配器中。手机后续需要自己的目录授权、扫描诊断、可靠写入、恢复和资源打开实现；这次没有声称这些能力已支持 Android。
+`Vault.open/close/safe/recover`、手动备份、Obsidian URL 和 Windows 本机资源打开仍在 Node 适配器中。Android 在 `apps/android/` 提供自己的目录授权、扫描、可靠写入、恢复与资源打开适配，支持范围和模拟器验证见 [Android 本地版](../development/android-local.md)。两端共享业务规则，分别保证各自文件边界。
 
 ## 后续手机和 Windows 怎样共同演化
 
 1. 业务行为先改 `domain` 和 `workspace`，两端共用规则，不为 Android 复制一份业务服务。
-2. 手机若继续用同一套 React，响应式组合、触摸交互仍在现有 `pages/features/components` 中维护；平台调用从 `platform` 接入。此次仅分离当前 HTTP 实现，尚未实现可切换的安卓传输桥。
-3. Android 工程实际开始时再增加平台适配，实现上述持久化约束，并复用 `WorkspaceService`。不复制 Electron、QQ 读取脚本、Windows 绝对路径或进程锁格式。
+2. 手机继续使用同一套 React，响应式组合、触摸交互在现有 `pages/features/components` 中维护；HTTP 与 Android 本机调用从 `platform` 接入。电脑预览 EXE 组合手机 UI 和现有 Windows 本机服务，不代替 Android 文件能力验收。
+3. Android 工程通过平台适配实现上述持久化约束，并复用 `WorkspaceService`。不复制 Electron、QQ 读取脚本、Windows 绝对路径或进程锁格式。
 4. 扫码／文本／文件交换届时定义独立、版本化的交换协议，校验后调用共享业务服务。当前 `Snapshot.vaultId` 是目录连接会话标识，不能直接用作跨设备工作区身份；`FileChange` 和 pending 日志也不能当作可直接导入的交换包。
-5. 继续在一个仓库和 PR 中维护共享规则与平台适配；以后在同一发布标签下分别构建 Windows 和 APK。APK 签名和移动测试在有实际工程时再加入。
+5. 继续在一个仓库和 PR 中维护共享规则与平台适配。本次只推送源码，不创建 tag 或 GitHub Release；APK 和预览 EXE 保留在本地 `releases/`。Android 已加入本机构建与模拟器测试，正式签名凭据仍由本机配置提供，不提交 Git。
 
 ## 验证与约束
 

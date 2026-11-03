@@ -13,6 +13,7 @@ export function ActualRecordForm({
   reload,
   embedded = false,
   source,
+  onDirtyChange,
 }: {
   editor: Editor;
   snapshot: Snapshot;
@@ -20,6 +21,7 @@ export function ActualRecordForm({
   reload: () => Promise<void>;
   embedded?: boolean;
   source?: RecordSource;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const old = editor.entry?.data.type === 'actual' ? editor.entry.data : undefined;
   const now = new Date(),
@@ -35,6 +37,19 @@ export function ActualRecordForm({
   const [date, setDate] = useState(old?.date ?? String(editor.defaults?.date ?? localDay()));
   const edited = useRef(false);
   const selection = useActualAssociations(snapshot, old, source);
+  const associationState = JSON.stringify([
+    selection.itemIds,
+    selection.milestoneIds,
+    selection.completeIds,
+    selection.comments,
+  ]);
+  const previousAssociations = useRef(associationState);
+  useEffect(() => {
+    if (associationState !== previousAssociations.current) {
+      previousAssociations.current = associationState;
+      onDirtyChange?.(true);
+    }
+  }, [associationState, onDirtyChange]);
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   const defaultDate = String(editor.defaults?.date ?? localDay());
@@ -59,6 +74,11 @@ export function ActualRecordForm({
       aria-label="实际工作录入"
       onChangeCapture={() => {
         edited.current = true;
+        onDirtyChange?.(true);
+      }}
+      onClickCapture={(event) => {
+        if ((event.target as Element).closest('.actual-association-picker, .actual-associations'))
+          onDirtyChange?.(true);
       }}
       onSubmit={async (e) => {
         e.preventDefault();
@@ -93,6 +113,7 @@ export function ActualRecordForm({
             },
           );
           await reload();
+          onDirtyChange?.(false);
           close();
         } catch (e) {
           setError(e instanceof Error ? e.message : String(e));

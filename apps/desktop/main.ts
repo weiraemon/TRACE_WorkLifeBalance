@@ -1,14 +1,21 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import { fork, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
+import fs from 'node:fs/promises';
 import { once } from 'node:events';
 import { externalLink } from './links';
 
-app.setName('CHAOS');
-app.setAppUserModelId('cn.chaos.workbench');
+const androidPreview = process.argv.includes('--android-preview');
+app.setName(androidPreview ? 'CHAOS Android Preview' : 'CHAOS');
+app.setAppUserModelId(androidPreview ? 'cn.chaos.android.preview' : 'cn.chaos.workbench');
 app.setPath(
   'userData',
-  process.env.CHAOS_DESKTOP_USER_DATA || path.join(app.getPath('appData'), 'CHAOS', 'desktop'),
+  process.env.CHAOS_DESKTOP_USER_DATA ||
+    path.join(
+      app.getPath('appData'),
+      androidPreview ? 'CHAOS-Android-Preview' : 'CHAOS',
+      'desktop',
+    ),
 );
 const root = app.getAppPath();
 let window: BrowserWindow | undefined;
@@ -28,7 +35,28 @@ function trustedSender(event: Electron.IpcMainInvokeEvent) {
 
 async function start() {
   const configDirectory =
-    process.env.CHAOS_CONFIG_DIR || path.join(app.getPath('appData'), 'CHAOS');
+    process.env.CHAOS_CONFIG_DIR ||
+    path.join(app.getPath('appData'), androidPreview ? 'CHAOS-Android-Preview' : 'CHAOS');
+  if (androidPreview) {
+    const directory = path.join(configDirectory, 'sample-workspace');
+    await fs.mkdir(directory, { recursive: true });
+    if ((await fs.readdir(directory)).length === 0) {
+      const sample = fork(path.join(root, 'sample-vault.mjs'), [directory], {
+        execPath: process.execPath,
+        windowsHide: true,
+        silent: true,
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      });
+      sample.stdout?.resume();
+      sample.stderr?.resume();
+      const [code] = await once(sample, 'exit');
+      if (code !== 0) throw new Error('无法创建预览示例目录，请检查本机目录权限。');
+    }
+    await fs.writeFile(
+      path.join(configDirectory, 'workspace.json'),
+      JSON.stringify({ vaultPath: directory }),
+    );
+  }
   const python = path.join(root, 'runtime', 'python', 'python.exe');
   service = fork(path.join(root, 'apps', 'local-service', 'src', 'server.mjs'), ['--production'], {
     execPath: process.execPath,
@@ -38,7 +66,8 @@ async function start() {
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
-      ATLAS_PORT: process.env.ATLAS_PORT || '4317',
+      ATLAS_PORT: process.env.ATLAS_PORT || (androidPreview ? '0' : '4317'),
+      ...(androidPreview ? { CHAOS_CONFIG_DIR: configDirectory } : {}),
       ATLAS_CONFIG_PATH:
         process.env.ATLAS_CONFIG_PATH || path.join(configDirectory, 'workspace.json'),
       CHAOS_BUNDLED_PYTHON: python,
@@ -82,11 +111,12 @@ async function start() {
   });
   Menu.setApplicationMenu(null);
   window = new BrowserWindow({
-    title: 'CHAOS',
-    width: 1440,
-    height: 960,
-    minWidth: 860,
-    minHeight: 620,
+    title: androidPreview ? 'CHAOS · Android 界面预览' : 'CHAOS',
+    width: androidPreview ? 390 : 1440,
+    height: androidPreview ? 844 : 960,
+    useContentSize: androidPreview,
+    minWidth: androidPreview ? 360 : 860,
+    minHeight: androidPreview ? 500 : 620,
     backgroundColor: '#f7f8f3',
     show: false,
     autoHideMenuBar: true,
@@ -128,7 +158,7 @@ async function start() {
     const error = await shell.openPath(path.join(root, 'setup-qq.cmd'));
     if (error) throw new Error('无法打开 QQ 初始化工具');
   });
-  await window.loadURL(origin);
+  await window.loadURL(androidPreview ? `${origin}/?ui=android` : origin);
 }
 
 function openExternal(value: string) {

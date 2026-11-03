@@ -10,6 +10,14 @@
     "dev": "tsx apps/local-service/src/server.ts",
     "start": "tsx apps/local-service/src/server.ts --production",
     "build": "tsc --noEmit && vite build",
+    "build:android:web": "tsc --noEmit && vite build --config vite.android.config.ts",
+    "android:sync": "npm run build:android:web && cap sync android",
+    "android:open": "cap open android",
+    "test:android": "node scripts/test-android.mjs",
+    "preview:android": "node scripts/preview-android.mjs",
+    "package:android": "npm run android:sync && node scripts/build-android.mjs",
+    "package:android:preview": "npm run build:desktop && node scripts/package-android-preview.mjs",
+    "test:android:preview": "node scripts/test-android-preview.mjs",
     "build:desktop": "npm run build && node scripts/build-desktop.mjs",
     "desktop": "npm run build:desktop && electron .desktop",
     "package:desktop": "npm run build:desktop && node scripts/package-desktop.mjs",
@@ -22,6 +30,8 @@
     "check:architecture": "node scripts/check-boundaries.mjs"
   },
   "dependencies": {
+    "@capacitor/android": "^7.6.10",
+    "@capacitor/core": "^7.6.10",
     "@fullcalendar/core": "^6.1.19",
     "@fullcalendar/react": "^6.1.19",
     "@fullcalendar/timegrid": "^6.1.19",
@@ -34,7 +44,8 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@electron/packager": "^20.3.0",
+    "@capacitor/cli": "^7.6.10",
+    "@electron/packager": "^18.4.4",
     "@playwright/test": "^1.56.1",
     "@types/node": "^22.18.0",
     "@types/react": "^19.2.0",

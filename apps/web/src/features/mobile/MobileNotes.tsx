@@ -1,0 +1,85 @@
+import { useCallback, useRef, useState } from 'react';
+import { localDay, type BusinessLine, type Snapshot } from '../../../../../packages/domain/index';
+import { readContent, saveContent } from '../../api';
+import { Button, ErrorMessage, Field } from '../../components/ui';
+import { NotesContent } from '../workspace/NotesContent';
+
+export function MobileNotes({
+  snapshot,
+  line,
+  reload,
+  onDirtyChange,
+}: {
+  snapshot: Snapshot;
+  line: BusinessLine;
+  reload: () => Promise<void>;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
+  const [memo, setMemo] = useState(''),
+    [error, setError] = useState(''),
+    [busy, setBusy] = useState(false);
+  const [bodyDirty, setBodyDirty] = useState(false);
+  const memoRef = useRef(memo);
+  memoRef.current = memo;
+  const bodyChanged = useCallback(
+    (value: boolean) => {
+      setBodyDirty(value);
+      onDirtyChange(value || Boolean(memoRef.current.trim()));
+    },
+    [onDirtyChange],
+  );
+  const resource = snapshot.entries.find((entry) => entry.data.id === line.notesId);
+  return (
+    <section className="mobile-notes" aria-label={`笔记 · ${line.title}`}>
+      <h1>{line.title}</h1>
+      <form
+        className="mobile-memo"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (!memo.trim() || busy || bodyDirty) return;
+          setBusy(true);
+          setError('');
+          try {
+            const note = await readContent(line.id);
+            await saveContent(
+              line.id,
+              note.body.trimEnd() + `\n\n## 随手记 · ${localDay()}\n\n${memo.trim()}\n`,
+              note.revision,
+            );
+            setMemo('');
+            onDirtyChange(false);
+            await reload();
+          } catch (error) {
+            setError(String(error));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <Field label="随手记">
+          <textarea
+            rows={4}
+            value={memo}
+            placeholder="先记下来，留在这条业务线的笔记里…"
+            onChange={(event) => {
+              setMemo(event.target.value);
+              onDirtyChange(Boolean(event.target.value.trim()) || bodyDirty);
+            }}
+          />
+        </Field>
+        <ErrorMessage message={error} />
+        <Button type="submit" className="primary" disabled={!memo.trim() || busy || bodyDirty}>
+          {busy ? '正在保存…' : '记到笔记'}
+        </Button>
+        {bodyDirty && <p className="hint">先保存或取消下方的正文编辑，再添加随手记。</p>}
+      </form>
+      <NotesContent
+        id={line.id}
+        revision={resource?.revision}
+        editable
+        reload={reload}
+        onDirtyChange={bodyChanged}
+      />
+    </section>
+  );
+}
