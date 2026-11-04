@@ -38,9 +38,17 @@ async function checkedBundle(input: unknown) {
     if ((await itemHash(change)) !== change.hash) throw new VaultError('对象内容校验失败，未导入');
   return bundle;
 }
-async function plan(bundle: ExchangeBundle, snapshot: Snapshot, items: ExchangeItem[]) {
+async function plan(
+  bundle: ExchangeBundle,
+  snapshot: Snapshot,
+  items: ExchangeItem[],
+  vault: Workspace,
+) {
   const current = new Map<string, { item: ExchangeItem; hash: string }>();
-  for (const item of items) current.set(item.data.id, { item, hash: await itemHash(item) });
+  for (const [index, item] of items.entries()) {
+    await vault.progress('正在比对本机内容版本', index, items.length);
+    current.set(item.data.id, { item, hash: await itemHash(item) });
+  }
   const rows: ExchangePreview['rows'] = [];
   const records: RecordData[] = [],
     bodies = new Map<string, string>();
@@ -104,7 +112,8 @@ async function plan(bundle: ExchangeBundle, snapshot: Snapshot, items: ExchangeI
     ...snapshot.entries.filter((entry) => !changed.has(entry.data.id)),
     ...records.map((data) => ({ data, path: '', revision: '' })),
   ];
-  for (const record of virtual) {
+  for (const [index, record] of virtual.entries()) {
+    if (index % 20 === 0) await vault.progress('正在检查导入关联与冲突', index, virtual.length);
     try {
       validateChange(record.data, virtual);
     } catch (error) {
@@ -182,15 +191,17 @@ export async function exportExchange(
 export async function previewExchange(vault: Workspace, input: unknown): Promise<ExchangePreview> {
   const bundle = await checkedBundle(input);
   const { snapshot, items } = await vault.readManaged();
-  return (await plan(bundle, snapshot, items)).preview;
+  return (await plan(bundle, snapshot, items, vault)).preview;
 }
 export async function applyExchange(vault: Workspace, input: unknown, revision: string) {
   const bundle = await checkedBundle(input);
   return vault.applyBatch(async (tx) => {
     const items = [];
-    for (const entry of tx.snapshot.entries)
+    for (const [index, entry] of tx.snapshot.entries.entries()) {
+      await vault.progress('正在复核导入前的文件版本', index, tx.snapshot.entries.length);
       items.push({ data: entry.data, body: await tx.readBody(entry) });
-    const result = await plan(bundle, tx.snapshot, items);
+    }
+    const result = await plan(bundle, tx.snapshot, items, vault);
     if (result.preview.revision !== revision)
       throw new VaultError('预览后本机内容已更改，请重新预览', 409);
     if (

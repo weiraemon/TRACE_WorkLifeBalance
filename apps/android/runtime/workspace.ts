@@ -19,8 +19,14 @@ export class AndroidWorkspace extends Workspace {
   constructor(
     readonly directory: DirectorySession,
     readonly native: NativeCall,
+    private readonly report?: (phase: string, completed?: number, total?: number) => void,
   ) {
     super();
+  }
+  override async progress(phase: string, completed: number, total: number) {
+    this.report?.(phase, completed, total);
+    if (completed % 20 === 0 || completed === total)
+      await new Promise((resolve) => setTimeout(resolve, 0));
   }
   protected serialized<T>(fn: () => Promise<T>): Promise<T> {
     const result = this.tail.then(fn);
@@ -34,7 +40,8 @@ export class AndroidWorkspace extends Workspace {
     const files = await this.call<ScannedFile[]>('scan');
     const entries: Entry[] = [];
     const issues: Snapshot['issues'] = [];
-    for (const file of files) {
+    for (const [index, file] of files.entries()) {
+      if (index % 20 === 0) await this.progress('正在解析工作目录', index, files.length);
       try {
         if (file.error) throw new Error(file.error);
         if (file.source === undefined) continue;
@@ -49,7 +56,8 @@ export class AndroidWorkspace extends Workspace {
     }
     const counts = new Map<string, number>();
     for (const entry of entries) counts.set(entry.data.id, (counts.get(entry.data.id) ?? 0) + 1);
-    for (const entry of entries) {
+    for (const [index, entry] of entries.entries()) {
+      if (index % 20 === 0) await this.progress('正在检查记录与关联', index, entries.length);
       if (counts.get(entry.data.id)! > 1)
         issues.push({
           path: entry.path,

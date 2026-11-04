@@ -1,6 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
+import qrcode from 'qrcode-generator';
 import { api, command } from '../../api';
 import { Button, ErrorMessage, Field } from '../../components/ui';
+import { operationSnapshot, reportOperation, runOperation } from '../../platform/operations';
+import { androidRequest, isAndroid } from '../../platform/android';
 import {
   encryptWifi,
   decryptWifi,
@@ -43,6 +46,13 @@ export function WifiExchange({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [message, setMessage] = useState('');
+  const pairingQr = useMemo(() => {
+    if (!status.pairing) return '';
+    const code = qrcode(0, 'M');
+    code.addData(status.pairing);
+    code.make();
+    return code.createDataURL(5, 20);
+  }, [status.pairing]);
   const load = async () => {
     const next = await api<Status>('wifi/status');
     setStatus(next);
@@ -52,6 +62,7 @@ export function WifiExchange({
     if (mobile) return;
     let active = true;
     const refresh = async () => {
+      if (operationSnapshot()) return;
       try {
         const next = await api<Status>('wifi/status');
         if (active) {
@@ -72,10 +83,12 @@ export function WifiExchange({
   async function talk<T>(input: unknown): Promise<T> {
     const connection = parsePairing(pairing);
     const frame = await encryptWifi(connection.secret, input, 'request');
+    reportOperation('正在连接电脑并等待响应');
     const response = wifiFrameSchema.parse(
       await api('wifi/request', { url: connection.url, frame }),
     );
     if (response.requestId !== frame.requestId) throw new Error('响应与本次请求不一致');
+    reportOperation('正在解密并校验电脑数据');
     const value = (await decryptWifi(connection.secret, response, 'response')) as T & {
       error?: string;
     };
@@ -87,12 +100,12 @@ export function WifiExchange({
     if (checked.kind !== 'receipt') throw new Error('电脑未返回有效回执');
     remember(checked);
   }
-  async function run(task: () => Promise<void>) {
+  async function run(task: () => Promise<void>, label = '正在处理 Wi-Fi 连接', cancelable = false) {
     setBusy(true);
     setError('');
     setMessage('');
     try {
-      await task();
+      await runOperation(label, task, cancelable);
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -104,6 +117,10 @@ export function WifiExchange({
     let active = true,
       timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
+      if (operationSnapshot()) {
+        timer = setTimeout(() => void poll(), 2000);
+        return;
+      }
       let again = true;
       try {
         const result = await talk<{ receipt: ExchangeReceipt | null; rejected: boolean }>({
@@ -169,11 +186,28 @@ export function WifiExchange({
     <section className="wifi-exchange" aria-label="Wi-Fi 直连">
       <h3>Wi-Fi 直连</h3>
       <p className="hint">
-        电脑和手机连接同一 Wi-Fi。电脑手动开启后，将完整配对连接输入手机；连接 30
-        分钟后自动关闭。传输内容加密，写入仍需接收端预览确认。
+        电脑和手机连接同一 Wi-Fi。电脑开启连接后，手机扫码配对，连接可使用 30 分钟。
       </p>
       {mobile ? (
         <>
+          {isAndroid() && (
+            <Button
+              className="primary"
+              disabled={busy || Boolean(pending)}
+              onClick={() =>
+                void run(async () => {
+                  const value = await androidRequest<string>('scanPairing');
+                  parsePairing(value);
+                  setPairing(value);
+                  sessionStorage.setItem('chaos-wifi-pairing', value);
+                  setIncoming(null);
+                  setMessage('配对完成，可以读取电脑变化。');
+                }, '等待扫描电脑二维码')
+              }
+            >
+              扫码连接电脑
+            </Button>
+          )}
           <Field label="电脑配对连接">
             <input
               value={pairing}
@@ -192,18 +226,22 @@ export function WifiExchange({
             <Button
               disabled={busy || !pairing || Boolean(pending)}
               onClick={() =>
-                void run(async () => {
-                  setIncoming(null);
-                  const result = await talk<{ bundle: ExchangeBundle }>({
-                    action: 'pull',
-                    baseline,
-                  });
-                  const preview = await command<ExchangePreview>({
-                    type: 'exchange.preview',
-                    bundle: result.bundle,
-                  });
-                  setIncoming({ bundle: result.bundle, preview });
-                })
+                void run(
+                  async () => {
+                    setIncoming(null);
+                    const result = await talk<{ bundle: ExchangeBundle }>({
+                      action: 'pull',
+                      baseline,
+                    });
+                    const preview = await command<ExchangePreview>({
+                      type: 'exchange.preview',
+                      bundle: result.bundle,
+                    });
+                    setIncoming({ bundle: result.bundle, preview });
+                  },
+                  '正在读取电脑变化',
+                  true,
+                )
               }
             >
               读取电脑变化
@@ -225,7 +263,7 @@ export function WifiExchange({
                     setPending(bundle.id);
                     setMessage('变化已送达，请在电脑设置中确认导入。');
                   }
-                })
+                }, '正在整理并发送手机变化')
               }
             >
               发送手机变化
@@ -250,7 +288,7 @@ export function WifiExchange({
                     setMessage('电脑变化已导入本机，正在返回确认。');
                     await talk({ action: 'ack', receipt: result.receipt });
                     setMessage('电脑变化已导入，确认已返回；现在可发送手机变化。');
-                  })
+                  }, '正在导入电脑变化')
                 }
               >
                 确认导入电脑变化
@@ -289,9 +327,18 @@ export function WifiExchange({
             </>
           ) : (
             <>
-              <Field label="电脑配对连接">
-                <textarea readOnly value={status.pairing || ''} />
-              </Field>
+              {pairingQr && (
+                <figure className="wifi-pairing-qr">
+                  <img src={pairingQr} alt="电脑配对二维码" />
+                  <figcaption>手机点击“扫码连接电脑”</figcaption>
+                </figure>
+              )}
+              <details>
+                <summary>手动复制配对连接</summary>
+                <Field label="电脑配对连接">
+                  <textarea readOnly value={status.pairing || ''} />
+                </Field>
+              </details>
               <p className="hint">
                 请选择手机可访问的 Wi-Fi 地址；首次连接需允许 Windows
                 防火墙的专用网络访问。不要公开配对连接。
@@ -319,7 +366,7 @@ export function WifiExchange({
                         await reload();
                         await load();
                         setMessage('手机变化已导入，确认已发送。');
-                      })
+                      }, '正在导入手机变化')
                     }
                   >
                     确认导入手机变化

@@ -43,6 +43,35 @@
   margin-top: 20px;
   border-top: 1px solid var(--line);
 }
+.operation-progress {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: var(--bg, #f7f8f3);
+  margin-block: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+.operation-progress progress {
+  display: block;
+  width: 100%;
+  accent-color: var(--accent);
+}
+.wifi-pairing-qr {
+  margin: 16px 0;
+}
+.wifi-pairing-qr img {
+  display: block;
+  width: 260px;
+  max-width: 100%;
+  image-rendering: pixelated;
+}
+.wifi-pairing-qr figcaption {
+  margin-top: 8px;
+  color: var(--muted);
+}
 .exchange fieldset {
   border: 0;
   padding: 0;

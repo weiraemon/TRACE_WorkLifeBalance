@@ -48,7 +48,7 @@ export async function wifiProxy(url: string, frame: unknown) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(wifiFrameSchema.parse(frame)),
     redirect: 'error',
-    signal: AbortSignal.timeout(120000),
+    signal: AbortSignal.timeout(30000),
   });
   if (!response.ok) throw new Error('Wi-Fi 连接已过期、配对信息不正确或请求已使用，请重新连接');
   if (Number(response.headers.get('content-length')) > 1600000) throw new Error('Wi-Fi 响应过大');

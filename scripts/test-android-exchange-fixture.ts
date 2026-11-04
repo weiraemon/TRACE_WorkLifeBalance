@@ -6,6 +6,7 @@ import { workspaceServiceFor } from '../packages/workspace/workspace-service';
 import { createRecord } from '../packages/domain/index';
 import type { ExchangeBundle, ExchangePreview } from '../packages/domain/exchange';
 import { startWifiExchange } from '../apps/local-service/src/application/wifi-exchange';
+import http from 'node:http';
 
 const directory = path.resolve(process.argv[2]);
 assert.equal(path.dirname(directory), path.resolve('.test-vault'));
@@ -14,7 +15,29 @@ await fs.mkdir(path.join(directory, 'windows'), { recursive: true });
 const vault = await Vault.open(path.join(directory, 'windows'));
 const service = workspaceServiceFor(vault);
 try {
-  if (process.argv[3] === 'wifi') {
+  if (process.argv[3] === 'wifi-hang') {
+    const server = http.createServer((request) => {
+      request.resume();
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as { port: number }).port;
+    await fs.writeFile(
+      path.join(directory, 'wifi.json'),
+      JSON.stringify({
+        pairing: `http://10.0.2.2:${port}/chaos-exchange/00000000-0000-0000-0000-000000000000#00000000000000000000000000000000`,
+      }),
+    );
+    process.send?.({ type: 'ready' });
+    await new Promise<void>((resolve) => {
+      process.once('disconnect', resolve);
+      process.on('message', (message: { type: string }) => {
+        if (message.type === 'stop') resolve();
+      });
+    });
+    server.close();
+    server.closeAllConnections();
+    process.disconnect?.();
+  } else if (process.argv[3] === 'wifi') {
     const suffix = path.basename(directory).replace('android-exchange-', '');
     const title = 'WiFi电脑新建 ' + suffix,
       phoneTitle = 'WiFi手机回传 ' + suffix;

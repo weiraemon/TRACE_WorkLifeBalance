@@ -1,5 +1,6 @@
 import { businessApiVersion, type BusinessCommand } from '../../../../packages/domain/business';
-import { recordContract } from '../../../../packages/domain/index';
+import { recordContract, type Snapshot } from '../../../../packages/domain/index';
+import { operationSignal, checkOperation } from './operations';
 
 let token = '';
 let vaultId = '';
@@ -10,6 +11,7 @@ export function installPlatformTransport(transport: PlatformTransport) {
   platformTransport = transport;
 }
 export async function api<T>(route: string, body?: unknown): Promise<T> {
+  checkOperation();
   if (platformTransport) return platformTransport(route, body) as Promise<T>;
   const response = await fetch('/api/' + route, {
     method: body === undefined ? 'GET' : 'POST',
@@ -20,6 +22,7 @@ export async function api<T>(route: string, body?: unknown): Promise<T> {
       'X-Atlas-Vault': vaultId,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal: operationSignal(),
   });
   if (response.headers.get('X-Atlas-Contract') !== recordContract)
     throw new Error(
@@ -37,6 +40,7 @@ export async function session() {
     root: string;
     vaultId: string;
     connectionError?: string;
+    snapshot?: Snapshot;
   }>('session');
   token = value.token;
   vaultId = value.vaultId;

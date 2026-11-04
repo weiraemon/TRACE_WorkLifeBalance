@@ -34,6 +34,7 @@ import { frontmatter, newNote, updateNote } from './markdown';
 
 // Platform adapters implement file safety and publication; business rules stay here.
 export abstract class Workspace {
+  async progress(_phase: string, _completed: number, _total: number): Promise<void> {}
   abstract scan(): Promise<Snapshot>;
   snapshot(): Promise<Snapshot> {
     return this.serialized(() => this.scan());
@@ -61,8 +62,10 @@ export abstract class Workspace {
       const snapshot = await this.scan();
       if (snapshot.issues.length) throw new VaultError('工作目录存在诊断，请先处理后再交换', 409);
       const items = [];
-      for (const entry of snapshot.entries)
+      for (const [index, entry] of snapshot.entries.entries()) {
+        await this.progress('正在读取并校验正文', index, snapshot.entries.length);
         items.push({ data: entry.data, body: await this.recordBody(entry) });
+      }
       return { snapshot, items };
     });
   }
@@ -145,6 +148,7 @@ export abstract class Workspace {
       changed.set(id, data);
     }
     for (const data of changed.values()) {
+      await this.progress('正在准备写入文件', changes.length, changed.size);
       const matches = entries.filter((e) => e.data.id === data.id);
       if (matches.length > 1) throw new VaultError('重复 ID，拒绝发布', 409);
       const existing = matches[0];

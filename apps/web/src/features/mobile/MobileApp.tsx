@@ -41,6 +41,8 @@ import { VerticalLine } from './VerticalLine';
 import { MobileActions } from './MobileActions';
 import { MobileNotes } from './MobileNotes';
 import './mobile.css';
+import { OperationProgress } from '../../components/OperationProgress';
+import { operationSnapshot, runOperation } from '../../platform/operations';
 
 const Review = lazy(() =>
   import('../../pages/Review').then((module) => ({ default: module.Review })),
@@ -158,21 +160,31 @@ export default function MobileApp() {
         await reload();
       });
   };
+  const readDirectory = useCallback(() => {
+    setLoading(true);
+    setError('');
+    void runOperation(
+      '正在读取工作目录',
+      async () => {
+        const value = await session();
+        if (value.connectionError) setError(value.connectionError);
+        if (value.snapshot) accept(value.snapshot);
+        else if (value.connected) await reload();
+      },
+      true,
+    )
+      .catch((error) => setError(String(error)))
+      .finally(() => setLoading(false));
+  }, [accept, reload]);
   useEffect(() => {
     document.documentElement.dataset.surface = 'android';
     history.replaceState({ chaosMobile: { page: 'today', lineId: '' } }, '');
-    void session()
-      .then(async (value) => {
-        if (value.connectionError) setError(value.connectionError);
-        if (value.connected) await reload();
-      })
-      .catch((error) => setError(String(error)))
-      .finally(() => setLoading(false));
+    readDirectory();
     return () => {
       delete document.documentElement.dataset.surface;
       request.current++;
     };
-  }, [reload]);
+  }, [readDirectory]);
   useEffect(() => {
     if (!snapshot) return;
     let previousDay = localDay(),
@@ -184,7 +196,7 @@ export default function MobileApp() {
         setDate((date) => (date === previous ? today : date));
         previousDay = today;
       }
-      if (document.hidden || pending) return;
+      if (document.hidden || pending || operationSnapshot()) return;
       pending = true;
       void reload()
         .catch((error) => setError(String(error)))
@@ -289,10 +301,16 @@ export default function MobileApp() {
       <Button
         className="primary"
         onClick={() =>
-          run(async () => {
-            accept(await api<Snapshot>('connect', {}));
-            setSettings(false);
-          })
+          run(() =>
+            runOperation(
+              '正在连接工作目录',
+              async () => {
+                accept(await api<Snapshot>('connect', {}));
+                setSettings(false);
+              },
+              true,
+            ),
+          )
         }
       >
         选择文件夹
@@ -331,11 +349,13 @@ export default function MobileApp() {
         </Button>
       </header>
       <main className="mobile-main" ref={main}>
+        {!settings && !loading && <OperationProgress />}
         <ErrorMessage message={error} />
         {error && <Button onClick={() => setError('')}>收起提示</Button>}
+        {error && !snapshot && !loading && <Button onClick={readDirectory}>重新读取原目录</Button>}
         {loading ? (
-          <div className="mobile-loading" role="status">
-            正在读取工作目录…
+          <div className="mobile-loading">
+            <OperationProgress />
           </div>
         ) : !snapshot ? (
           connection
@@ -586,6 +606,7 @@ export default function MobileApp() {
       </nav>
       {settings && (
         <Modal title="设置" onClose={() => setSettings(false)}>
+          <OperationProgress />
           <Appearance />
           {connection}
           {snapshot && (

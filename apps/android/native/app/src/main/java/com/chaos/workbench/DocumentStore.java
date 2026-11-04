@@ -29,6 +29,11 @@ final class DocumentStore implements AutoCloseable {
     private final FileChannel lockChannel;
     private final FileLock lock;
     private boolean poisoned;
+    private NativeOperation operation = new NativeOperation("", event -> {});
+    void operation(NativeOperation next) { operation = next; }
+    static final class OwnershipChanged extends IOException {
+        OwnershipChanged() { super("目录含有旧安装或其他设备的授权标记，请重新选择并确认接管"); }
+    }
     // Instrumentation interrupts publication at an actual persistence boundary, only in debug builds.
     static int interruptAfter = -1;
     private int boundaries;
@@ -45,6 +50,10 @@ final class DocumentStore implements AutoCloseable {
             .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString();
     }
     DocumentStore(Context context, Uri tree, String device) throws Exception {
+        this(context, tree, device, false, new NativeOperation("", event -> {}));
+    }
+    DocumentStore(Context context, Uri tree, String device, boolean reclaim, NativeOperation operation) throws Exception {
+        this.operation = operation;
         this.context = context; this.tree = tree; this.device = device;
         if (!"content".equals(tree.getScheme()) || !"com.android.externalstorage.documents".equals(tree.getAuthority())
             || !DocumentsContract.isTreeUri(tree) || !DocumentsContract.getTreeDocumentId(tree).startsWith("primary:"))
@@ -57,13 +66,15 @@ final class DocumentStore implements AutoCloseable {
         if (acquired == null) { lockChannel.close(); throw new IOException("工作目录已被占用"); }
         lock = acquired;
         try {
+            operation.update("正在检查目录授权与占用", -1, -1);
             if (find(".atlas/service.lock") != null || find(".atlas/service-connecting") != null)
                 throw new IOException("目录包含其他设备的运行锁，请先关闭对应程序并使用完整目录导出");
             Uri owner = find(".atlas/android-owner.json");
-            if (owner != null && !device.equals(new JSONObject(read(owner, 65536)).getString("device")))
-                throw new IOException("目录仍由其他 Android 设备持有，未取得写入授权");
+            boolean changedOwner = owner != null && !device.equals(new JSONObject(read(owner, 65536)).getString("device"));
+            if (changedOwner && !reclaim) throw new OwnershipChanged();
             probe();
-            if (owner == null) writeNew(".atlas/android-owner.json", new JSONObject().put("device", device).toString());
+            if (changedOwner) delete(".atlas/android-owner.json");
+            if (owner == null || changedOwner) writeNew(".atlas/android-owner.json", new JSONObject().put("device", device).toString());
             resume();
         } catch (Exception error) { lock.release(); lockChannel.close(); throw error; }
     }
@@ -72,6 +83,7 @@ final class DocumentStore implements AutoCloseable {
             throw new IOException("模拟发布中断");
     }
     private void check() throws IOException {
+        operation.check();
         if (!lock.isValid()) throw new IOException("目录会话已关闭，请重新连接");
         if (poisoned) throw new IOException("上次发布未完成，请重新连接以恢复；当前输入仍保留");
     }
@@ -86,11 +98,12 @@ final class DocumentStore implements AutoCloseable {
     }
     private Uri root() { return DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree)); }
     private JSONArray children(Uri directory) throws Exception {
+        operation.check();
         JSONArray result = new JSONArray();
         Uri list = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getDocumentId(directory));
         String[] columns = { DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME,
             DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_FLAGS, DocumentsContract.Document.COLUMN_SIZE };
-        try (Cursor cursor = context.getContentResolver().query(list, columns, null, null, null)) {
+        try (Cursor cursor = context.getContentResolver().query(list, columns, null, null, null, operation.signal)) {
             if (cursor == null) throw new IOException("无法读取目录，授权可能已撤销");
             Set<String> names = new HashSet<>();
             while (cursor.moveToNext()) {
@@ -103,16 +116,28 @@ final class DocumentStore implements AutoCloseable {
         return result;
     }
     private Uri child(Uri parent, String name) throws Exception {
-        JSONArray items = children(parent);
-        for (int i = 0; i < items.length(); i++) {
-            JSONObject item = items.getJSONObject(i);
-            if (name.equals(item.getString("name"))) {
-                if ((item.getLong("flags") & DocumentsContract.Document.FLAG_VIRTUAL_DOCUMENT) != 0)
-                    throw new IOException("不支持虚拟文档");
-                return DocumentsContract.buildDocumentUriUsingTree(tree, item.getString("id"));
+        // This adapter supports only ExternalStorageProvider primary: document IDs.
+        // A direct document query avoids enumerating every sibling for every file read.
+        Uri uri = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getDocumentId(parent) + "/" + name);
+        operation.check();
+        try (Cursor cursor = context.getContentResolver().query(uri, new String[]{
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_FLAGS
+        }, null, null, null, operation.signal)) {
+            if (cursor == null || !cursor.moveToFirst()) return null;
+            if (!name.equals(cursor.getString(0))) throw new IOException("文件提供方返回了不同名称，停止访问");
+            if ((cursor.getLong(1) & DocumentsContract.Document.FLAG_VIRTUAL_DOCUMENT) != 0) throw new IOException("不支持虚拟文档");
+            return uri;
+        } catch (RuntimeException error) {
+            if (error.getCause() instanceof java.io.FileNotFoundException) return null;
+            // ExternalStorageProvider can reject a missing descendant as a tree permission error.
+            // Listing its authorized parent distinguishes absence from a revoked grant.
+            JSONArray siblings = children(parent);
+            for (int i = 0; i < siblings.length(); i++) {
+                JSONObject sibling = siblings.getJSONObject(i);
+                if (name.equals(sibling.getString("name"))) throw error;
             }
+            return null;
         }
-        return null;
     }
     private Uri find(String path) throws Exception {
         Uri current = root();
@@ -120,7 +145,8 @@ final class DocumentStore implements AutoCloseable {
         return current;
     }
     private String name(Uri uri) throws Exception {
-        try (Cursor cursor = context.getContentResolver().query(uri, new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME}, null, null, null)) {
+        operation.check();
+        try (Cursor cursor = context.getContentResolver().query(uri, new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME}, null, null, null, operation.signal)) {
             if (cursor == null || !cursor.moveToFirst()) throw new IOException("文件已不存在");
             return cursor.getString(0);
         }
@@ -135,6 +161,7 @@ final class DocumentStore implements AutoCloseable {
         return current;
     }
     private Uri create(Uri parent, String name, String mime) throws Exception {
+        operation.check();
         if (child(parent, name) != null) throw new IOException("文件已存在，未覆盖：" + name);
         Uri created = DocumentsContract.createDocument(context.getContentResolver(), parent, mime, name);
         if (created == null) throw new IOException("目录提供方未能创建文件");
@@ -142,12 +169,16 @@ final class DocumentStore implements AutoCloseable {
         return created;
     }
     private byte[] bytes(Uri uri, int limit) throws Exception {
-        try (InputStream input = context.getContentResolver().openInputStream(uri); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+        operation.check();
+        ParcelFileDescriptor descriptor = context.getContentResolver().openFileDescriptor(uri, "r", operation.signal);
+        if (descriptor == null) throw new IOException("无法读取文件");
+        operation.onCancel(() -> { try { descriptor.close(); } catch (IOException ignored) {} });
+        try (InputStream input = new ParcelFileDescriptor.AutoCloseInputStream(descriptor); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             if (input == null) throw new IOException("无法读取文件");
             byte[] buffer = new byte[16384]; int count;
-            while ((count = input.read(buffer)) >= 0) { if (output.size() + count > limit) throw new IOException("笔记超过大小限制，已停止读取"); output.write(buffer, 0, count); }
+            while ((count = input.read(buffer)) >= 0) { operation.check(); if (output.size() + count > limit) throw new IOException("笔记超过大小限制，已停止读取"); output.write(buffer, 0, count); }
             return output.toByteArray();
-        }
+        } finally { operation.onCancel(null); }
     }
     private String read(Uri uri, int limit) throws Exception { return text(bytes(uri, limit)); }
     String read(String path) throws Exception {
@@ -159,13 +190,17 @@ final class DocumentStore implements AutoCloseable {
         return uri == null || DIR.equals(context.getContentResolver().getType(uri)) ? null : hash(uri);
     }
     private String hash(Uri uri) throws Exception {
+        operation.check();
         if (uri == null) return null;
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        try (InputStream input = context.getContentResolver().openInputStream(uri)) {
+        ParcelFileDescriptor descriptor = context.getContentResolver().openFileDescriptor(uri, "r", operation.signal);
+        if (descriptor == null) throw new IOException("无法读取文件");
+        operation.onCancel(() -> { try { descriptor.close(); } catch (IOException ignored) {} });
+        try (InputStream input = new ParcelFileDescriptor.AutoCloseInputStream(descriptor)) {
             if (input == null) throw new IOException("无法读取文件");
             byte[] buffer = new byte[16384]; int count;
-            while ((count = input.read(buffer)) >= 0) digest.update(buffer, 0, count);
-        }
+            while ((count = input.read(buffer)) >= 0) { operation.check(); digest.update(buffer, 0, count); }
+        } finally { operation.onCancel(null); }
         StringBuilder result = new StringBuilder();
         for (byte value : digest.digest()) result.append(String.format(Locale.ROOT, "%02x", value & 255));
         return result.toString();
@@ -173,7 +208,8 @@ final class DocumentStore implements AutoCloseable {
     private void writeNew(String path, String source) throws Exception {
         Uri directory = parent(path); String[] pieces = parts(path);
         Uri uri = create(directory, pieces[pieces.length - 1], "application/x-chaos-data");
-        ParcelFileDescriptor descriptor = context.getContentResolver().openFileDescriptor(uri, "rw");
+        operation.check();
+        ParcelFileDescriptor descriptor = context.getContentResolver().openFileDescriptor(uri, "rw", operation.signal);
         if (descriptor == null) throw new IOException("无法写入文件");
         try (ParcelFileDescriptor.AutoCloseOutputStream output = new ParcelFileDescriptor.AutoCloseOutputStream(descriptor)) {
             output.write(source.getBytes(StandardCharsets.UTF_8)); output.flush(); descriptor.getFileDescriptor().sync();
@@ -185,10 +221,12 @@ final class DocumentStore implements AutoCloseable {
         rename(path + ".preparing", path);
     }
     private void delete(String path) throws Exception {
+        operation.check();
         Uri uri = find(path);
         if (uri != null && !DocumentsContract.deleteDocument(context.getContentResolver(), uri)) throw new IOException("文件删除失败：" + path);
     }
     private void rename(String source, String target) throws Exception {
+        operation.check();
         if (find(target) != null) throw new IOException("目标已有内容，未覆盖：" + target);
         Uri uri = find(source); if (uri == null) throw new IOException("待发布文件不存在");
         String[] pieces = parts(target);
@@ -211,11 +249,18 @@ final class DocumentStore implements AutoCloseable {
             if (!sha("CHAOS storage probe A").equals(hash(find(moved)))) throw new IOException("目录提供方无法可靠重命名");
         } finally { delete(first); delete(second); delete(moved); }
     }
-    JSONArray scan() throws Exception { check(); JSONArray result = new JSONArray(); walk(root(), "", result, 0); return result; }
+    JSONArray scan() throws Exception {
+        check(); JSONArray result = new JSONArray();
+        operation.update("正在扫描工作目录", 0, -1);
+        walk(root(), "", result, 0);
+        operation.update("目录扫描完成", result.length(), result.length());
+        return result;
+    }
     private void walk(Uri directory, String prefix, JSONArray result, int depth) throws Exception {
         if (depth > 40 || result.length() > 30000) throw new IOException("目录过深或文件过多，请选择专用工作文件夹");
         JSONArray items = children(directory);
         for (int i = 0; i < items.length(); i++) {
+            operation.check();
             JSONObject item = items.getJSONObject(i); String name = item.getString("name");
             if (SKIP.contains(name) || name.startsWith(".chaos-")) continue;
             String path = prefix + name; parts(path);
@@ -227,6 +272,7 @@ final class DocumentStore implements AutoCloseable {
                 try { String source = read(uri, 5 * 1024 * 1024); file.put("source", source).put("revision", sha(source)); }
                 catch (Exception error) { file.put("error", error.getMessage()); }
             }
+            operation.update("正在扫描工作目录", result.length(), -1);
         }
     }
     private void validate(JSONArray changes) throws Exception {
@@ -246,6 +292,7 @@ final class DocumentStore implements AutoCloseable {
         if (find(".atlas/pending.json") != null || find(".atlas/android-swap.json") != null) throw new IOException("存在未完成发布，请重新连接");
         for (int i = 0; i < changes.length(); i++) {
             JSONObject change = changes.getJSONObject(i);
+            operation.update("正在检查待导入文件", i, changes.length());
             if (!Objects.equals(expected(change), hash(find(change.getString("path"))))) throw new IOException("文件已被外部修改，未开始保存：" + change.getString("path"));
         }
         try { writeLog(".atlas/pending.json", changes.toString()); boundary(); resume(); }
@@ -265,6 +312,7 @@ final class DocumentStore implements AutoCloseable {
         boolean foundSwap = swap == null;
         for (int i = 0; i < changes.length(); i++) {
             JSONObject change = changes.getJSONObject(i); String path = change.getString("path");
+            operation.update("正在检查未完成导入", i, changes.length());
             if (swap != null && path.equals(swap.getString("path"))) { foundSwap = true; validateSwap(change, swap); continue; }
             String current = hash(find(path));
             if (!Objects.equals(current, expected(change)) && !Objects.equals(current, desired(change))) throw new IOException("恢复遇到外部修改，未覆盖：" + path);
@@ -273,6 +321,7 @@ final class DocumentStore implements AutoCloseable {
         boundary();
         for (int i = 0; i < changes.length(); i++) {
             JSONObject change = changes.getJSONObject(i); String path = change.getString("path");
+            operation.update("正在写入并恢复文件", i, changes.length());
             if (swap != null && path.equals(swap.getString("path"))) { publish(change, swap); swap = null; }
             else if (!Objects.equals(hash(find(path)), desired(change))) {
                 String prefix = path.contains("/") ? path.substring(0, path.lastIndexOf('/') + 1) : "";
@@ -281,6 +330,7 @@ final class DocumentStore implements AutoCloseable {
             }
         }
         delete(".atlas/pending.json");
+        operation.update("文件发布完成", changes.length(), changes.length());
         boundary();
     }
     private void validateSwap(JSONObject change, JSONObject swap) throws Exception {
@@ -353,7 +403,7 @@ final class DocumentStore implements AutoCloseable {
         }
     }
     @Override public void close() throws Exception {
-        try { if (lock.isValid()) { Uri owner = find(".atlas/android-owner.json"); if (owner != null && device.equals(new JSONObject(read(owner, 65536)).getString("device"))) delete(".atlas/android-owner.json"); } }
+        try { if (lock.isValid() && !operation.isStopped()) { Uri owner = find(".atlas/android-owner.json"); if (owner != null && device.equals(new JSONObject(read(owner, 65536)).getString("device"))) delete(".atlas/android-owner.json"); } }
         finally { lock.release(); lockChannel.close(); }
     }
 }

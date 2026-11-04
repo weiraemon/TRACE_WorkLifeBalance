@@ -20,6 +20,7 @@ test('电脑手动开启和关闭独立 Wi-Fi 会话，常规业务接口不对�
   test.skip(!status.addresses.length, '本机没有可绑定的私有 IPv4 接口');
   await wifi.getByLabel('电脑局域网地址').selectOption(status.addresses[0].address);
   await wifi.getByRole('button', { name: '开启 Wi-Fi 连接', exact: true }).click();
+  await expect(wifi.getByRole('img', { name: '电脑配对二维码' })).toBeVisible();
   await expect(wifi.getByLabel('电脑配对连接', { exact: true })).toHaveValue(
     /^http:.*#[a-f0-9]{32}$/,
   );

@@ -12,6 +12,7 @@ import {
 } from '../../../../../packages/domain/exchange';
 import type { Snapshot } from '../../../../../packages/domain/index';
 import { WifiExchange } from './WifiExchange';
+import { reportOperation, runOperation } from '../../platform/operations';
 
 export function Exchange({
   snapshot,
@@ -47,12 +48,12 @@ export function Exchange({
       setMessage('本机无法记住共同版本，请保存回执文件，下次发送前重新载入。');
     }
   }
-  async function run(task: () => Promise<void>) {
+  async function run(task: () => Promise<void>, label = '正在处理交换文件') {
     setBusy(true);
     setError('');
     setMessage('');
     try {
-      await task();
+      await runOperation(label, task);
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -68,6 +69,7 @@ export function Exchange({
       remember(document);
       setMessage('已载入共同版本回执。下次发送只包含与该版本不同的内容。');
     } else {
+      reportOperation('正在读取本机目录并检查导入冲突');
       const result = await command<ExchangePreview>({ type: 'exchange.preview', bundle: document });
       setBundle(document);
       setPreview(result);
@@ -93,7 +95,7 @@ export function Exchange({
                 void run(async () => {
                   setOutput(await command<ExchangeBundle>({ type: 'exchange.export', baseline }));
                   setMessage('已生成交换包，请保存并传给另一台设备。生成文件不会推进共同版本。');
-                })
+                }, '正在生成发送文件')
               }
             >
               生成发送包
@@ -190,7 +192,7 @@ export function Exchange({
                       `已导入 ${result.imported} 个对象，跳过 ${result.skipped} 个相同对象。请保存回执并传回发送端。`,
                     );
                     await reload();
-                  })
+                  }, '正在导入交换文件')
                 }
               >
                 确认导入并生成回执

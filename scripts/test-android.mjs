@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { spawnSync, fork } from 'node:child_process';
 import { once } from 'node:events';
 import { chromium } from '@playwright/test';
+import qrcode from 'qrcode-generator';
 
 const root = path.resolve(import.meta.dirname, '..');
 const sdk =
@@ -93,6 +94,15 @@ async function tapNative(pattern) {
 let browser;
 let wifiChild;
 function nativeTests() {
+  const qr = qrcode(0, 'M');
+  qr.addData(
+    'http://10.0.2.2:4321/chaos-exchange/00000000-0000-0000-0000-000000000000#00000000000000000000000000000000',
+  );
+  qr.make();
+  const image = path.join(output, 'pairing.gif');
+  fs.writeFileSync(image, Buffer.from(qr.createDataURL(5, 20).split(',')[1], 'base64'));
+  device('shell', 'mkdir', '-p', directory + '/instrumentation');
+  device('push', image, directory + '/instrumentation/pairing.gif');
   device(
     'install',
     '-r',
@@ -113,7 +123,7 @@ function nativeTests() {
     'com.chaos.workbench.test/androidx.test.runner.AndroidJUnitRunner',
   );
   fs.writeFileSync(path.join(output, 'instrumentation.txt'), instrumentation);
-  assert.match(instrumentation, /OK \(5 tests\)/);
+  assert.match(instrumentation, /OK \(8 tests\)/);
   assert.doesNotMatch(instrumentation, /FAILURES|INSTRUMENTATION_FAILED/);
   // Remove only the reserved synthetic fault fixtures before timing business UI operations.
   const fixtures = device('shell', 'readlink', '-f', directory + '/instrumentation');
@@ -153,6 +163,17 @@ try {
     await tapNative(/^CHAOS-Android-Test$/);
     await tapNative(/^(USE THIS FOLDER|使用此文件夹)$/i);
     await tapNative(/^(ALLOW|允许)$/i);
+    const needsTakeover = await eventually(
+      async () => {
+        if (await page.getByRole('heading', { name: '今天，先做什么', exact: true }).isVisible())
+          return false;
+        assert.ok(await page.getByText('等待确认重新授权旧目录', { exact: true }).isVisible());
+        return true;
+      },
+      '等待目录连接或旧授权确认',
+      45000,
+    );
+    if (needsTakeover) await tapNative(/^接管并恢复$/);
     await page
       .getByRole('heading', { name: '今天，先做什么', exact: true })
       .waitFor({ timeout: 45000 });
@@ -162,13 +183,29 @@ try {
   browser = null;
   device('shell', 'am', 'force-stop', 'com.chaos.workbench');
   nativeTests();
+  device('shell', 'am', 'force-stop', 'com.chaos.workbench');
+  const canonicalTestRoot = device('shell', 'readlink', '-f', directory);
+  assert.equal(canonicalTestRoot, '/storage/emulated/0/Documents/CHAOS-Android-Test');
+  const legacyOwner = path.join(output, 'legacy-owner.json');
+  fs.writeFileSync(
+    legacyOwner,
+    JSON.stringify({ device: 'legacy-installation-for-reinstall-test' }),
+  );
+  device('push', legacyOwner, directory + '/.atlas/android-owner.json');
+  device('shell', 'pm', 'clear', 'com.chaos.workbench');
   device('shell', 'am', 'start', '-n', 'com.chaos.workbench/.MainActivity');
   connection = await connectWebView();
   browser = connection.browser;
   page = connection.page;
+  await page.getByRole('button', { name: '选择文件夹', exact: true }).click();
+  await tapNative(/^CHAOS-Android-Test$/);
+  await tapNative(/^(USE THIS FOLDER|使用此文件夹)$/i);
+  await tapNative(/^(ALLOW|允许)$/i);
+  await tapNative(/^接管并恢复$/);
   await page
     .getByRole('heading', { name: '今天，先做什么', exact: true })
     .waitFor({ timeout: 45000 });
+  checks.push('模拟重装后重新授权旧目录，确认接管并保留原工作内容');
   const nav = (name) =>
     page
       .getByRole('navigation', { name: '手机导航' })
@@ -453,6 +490,50 @@ try {
   await exited;
   wifiChild = null;
   checks.push('Android 原生局域网密文传输：拉取电脑变化、手机确认、推送变化、电脑确认与自动回执');
+  wifiChild = fork('scripts/test-android-exchange-fixture.ts', [exchangeRoot, 'wifi-hang'], {
+    cwd: root,
+    execArgv: ['--import', 'tsx'],
+    silent: true,
+    windowsHide: true,
+  });
+  wifiChild.stdout.resume();
+  wifiChild.stderr.resume();
+  await wifiMessage('ready');
+  const stalled = JSON.parse(fs.readFileSync(path.join(exchangeRoot, 'wifi.json'), 'utf8'));
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  await wifiPanel.getByLabel('电脑配对连接', { exact: true }).fill(stalled.pairing);
+  await wifiPanel.getByRole('button', { name: '读取电脑变化', exact: true }).click();
+  const progress = page.getByRole('region', { name: '操作进度', exact: true });
+  await progress.getByText('请求已发送，正在等待电脑整理数据', { exact: true }).waitFor();
+  await progress.getByText(/已用 [1-9]\d* 秒/).waitFor();
+  const progressBounds = await progress.boundingBox();
+  assert.ok(
+    progressBounds &&
+      progressBounds.y >= 0 &&
+      progressBounds.y + progressBounds.height <= (await page.evaluate(() => innerHeight)),
+    '进度面板必须在当前可视区域',
+  );
+  device('shell', 'screencap', '-p', '/sdcard/chaos-progress.png');
+  device('pull', '/sdcard/chaos-progress.png', path.join(output, 'wifi-progress.png'));
+  await wifiPanel
+    .getByRole('alert')
+    .filter({ hasText: '连接电脑超时' })
+    .waitFor({ timeout: 40000 });
+  await progress.waitFor({ state: 'hidden' });
+  await wifiPanel.getByRole('button', { name: '读取电脑变化', exact: true }).click();
+  await progress.getByText('请求已发送，正在等待电脑整理数据', { exact: true }).waitFor();
+  await progress.getByRole('button', { name: '停止本次操作', exact: true }).click();
+  await progress.waitFor({ state: 'hidden', timeout: 10000 });
+  await eventually(
+    async () =>
+      assert.ok(
+        await wifiPanel.getByRole('button', { name: '读取电脑变化', exact: true }).isEnabled(),
+      ),
+    '取消后读取按钮未恢复',
+  );
+  await wifiPanel.getByRole('button', { name: '读取电脑变化', exact: true }).click();
+  await progress.getByText('请求已发送，正在等待电脑整理数据', { exact: true }).waitFor();
+  checks.push('电脑无响应时显示真实阶段与计时，超时提示、停止读取及重试均可恢复操作');
   await browser.close();
   browser = null;
   device('shell', 'am', 'force-stop', 'com.chaos.workbench');

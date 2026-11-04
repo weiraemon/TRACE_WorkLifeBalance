@@ -18,6 +18,7 @@ import { spaceSubtree } from '../../../packages/domain/workspace';
 import { Button, Modal, EmptyState, ErrorMessage } from './components/ui';
 import { Connect, Backup, Appearance } from './features/settings/VaultSettings';
 import { Exchange } from './features/settings/Exchange';
+import { OperationProgress } from './components/OperationProgress';
 import type { Editor } from './types/editor';
 import { WorkItemForm } from './features/workspace/WorkItemForm';
 import { ActualRecordForm } from './features/actual/ActualRecordForm';
@@ -499,6 +500,7 @@ export default function App() {
       )}
       {settings && (
         <Modal title="设置" onClose={() => setSettings(false)} wide>
+          <OperationProgress />
           <Appearance />
           <Connect
             defaultPath={snapshot?.root ?? defaultPath}

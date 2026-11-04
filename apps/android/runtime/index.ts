@@ -2,12 +2,15 @@ import { WorkspaceService } from '../../../packages/workspace/workspace-service'
 import { businessApiVersion } from '../../../packages/domain/business';
 import { AndroidWorkspace, type DirectorySession, type NativeCall } from './workspace';
 
-export function createAndroidTransport(native: NativeCall) {
+export function createAndroidTransport(
+  native: NativeCall,
+  report?: (phase: string, completed?: number, total?: number) => void,
+) {
   let vault: AndroidWorkspace | undefined;
   let service: WorkspaceService | undefined;
   let switching = false;
   const activate = async (directory: DirectorySession) => {
-    const next = new AndroidWorkspace(directory, native);
+    const next = new AndroidWorkspace(directory, native, report);
     const snapshot = await next.snapshot();
     vault = next;
     service = new WorkspaceService(next);
@@ -18,12 +21,13 @@ export function createAndroidTransport(native: NativeCall) {
     if (route === 'session') {
       try {
         const directory = await native<DirectorySession | null>('session');
-        if (directory) await activate(directory);
+        const snapshot = directory ? await activate(directory) : undefined;
         return {
           connected: Boolean(vault),
           root: directory?.root ?? '',
           vaultId: directory?.vaultId ?? '',
           token: '',
+          snapshot,
         };
       } catch (error) {
         return {

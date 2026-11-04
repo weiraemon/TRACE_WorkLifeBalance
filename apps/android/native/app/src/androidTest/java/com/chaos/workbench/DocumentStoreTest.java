@@ -15,6 +15,59 @@ import static org.junit.Assert.*;
 
 /** Real SAF tests. Run only against the explicitly selected synthetic emulator directory. */
 public class DocumentStoreTest {
+    @Test public void reinstallRequiresConsentAndRecoversOldDirectory() throws Exception {
+        String path = "instrumentation/" + UUID.randomUUID() + ".md";
+        try (DocumentStore original = new DocumentStore(context, tree, device)) {
+            original.commit(new JSONArray().put(change(path, null, "重装前的正文")));
+            NativeOperation terminated = new NativeOperation("", event -> {});
+            terminated.stop("模拟旧安装进程终止，保留授权标记");
+            original.operation(terminated);
+        }
+        String reinstalled = "reinstalled-" + UUID.randomUUID();
+        try (DocumentStore unexpected = new DocumentStore(context, tree, reinstalled)) { fail("需要确认旧目录授权"); }
+        catch (DocumentStore.OwnershipChanged expected) { }
+        try {
+            try (DocumentStore recovered = new DocumentStore(context, tree, reinstalled, true, new NativeOperation("", event -> {}))) {
+                assertEquals("重装前的正文", recovered.read(path));
+            }
+        } finally { try (DocumentStore restored = new DocumentStore(context, tree, device, true, new NativeOperation("", event -> {}))) { } }
+    }
+    @Test public void cancelledLargeImportResumesAndReportsRealCounts() throws Exception {
+        int count = 120;
+        String prefix = "instrumentation/" + UUID.randomUUID() + "/";
+        JSONArray changes = new JSONArray();
+        for (int i = 0; i < count; i++) changes.put(change(prefix + i + ".md", null, "文件正文 " + i));
+        DocumentStore store = new DocumentStore(context, tree, device);
+        NativeOperation[] active = new NativeOperation[1];
+        active[0] = new NativeOperation("cancelled-import", event -> {
+            if (event.optString("phase").equals("正在写入并恢复文件") && event.optInt("completed") >= 20)
+                active[0].stop("测试中止导入");
+        });
+        store.operation(active[0]);
+        try { store.commit(changes); fail("应该在部分文件发布后停止"); }
+        catch (Exception expected) { assertTrue(expected.getMessage().contains("测试中止")); }
+        finally { store.close(); }
+        int[] completed = { 0 };
+        try (DocumentStore recovered = new DocumentStore(context, tree, device, false,
+            new NativeOperation("restart", event -> {
+                if (event.optString("phase").equals("文件发布完成")) completed[0] = event.optInt("completed");
+            }))) {
+            assertEquals(count, completed[0]);
+            assertEquals("文件正文 0", recovered.read(prefix + "0.md"));
+            assertEquals("文件正文 119", recovered.read(prefix + "119.md"));
+        }
+    }
+    @Test public void decodesDesktopPairingQrOffline() throws Exception {
+        try (DocumentStore store = new DocumentStore(context, tree, device);
+             java.io.InputStream input = context.getContentResolver().openInputStream(store.resource("instrumentation/pairing.gif"))) {
+            android.graphics.Bitmap image = android.graphics.BitmapFactory.decodeStream(input);
+            assertNotNull(image);
+            int width = image.getWidth(), height = image.getHeight();
+            int[] pixels = new int[width * height]; image.getPixels(pixels, 0, width, 0, 0, width, height);
+            com.google.zxing.BinaryBitmap bitmap = new com.google.zxing.BinaryBitmap(new com.google.zxing.common.HybridBinarizer(new com.google.zxing.RGBLuminanceSource(width, height, pixels)));
+            assertEquals("http://10.0.2.2:4321/chaos-exchange/00000000-0000-0000-0000-000000000000#00000000000000000000000000000000", new com.google.zxing.MultiFormatReader().decode(bitmap).getText());
+        }
+    }
     @Test public void exchangeFilesAreBoundedAndStrictUtf8() throws Exception {
         try { ChaosFilesPlugin.wifiRequest("http://8.8.8.8:4317/chaos-exchange/00000000-0000-0000-0000-000000000000", "{}"); fail("应拒绝公网"); }
         catch (Exception expected) { assertTrue(expected.getMessage().contains("局域网")); }
