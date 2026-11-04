@@ -33,7 +33,7 @@ try {
           Write-Host "  $($i + 1). $($candidates[$i])"
         }
       }
-      $answer = (Read-Host '请输入微信 xwechat_files 或账号目录（也可输入上面的序号）').Trim().Trim('"')
+      $answer = (Read-Host '请输入微信数据根目录、账号目录或 db_storage（也可输入上面的序号）').Trim().Trim('"')
       if ($answer -match '^\d+$' -and [int]$answer -ge 1 -and [int]$answer -le $candidates.Count) {
         $DataDir = $candidates[[int]$answer - 1]
       } else {
@@ -42,7 +42,7 @@ try {
     }
   }
   if (-not $DataDir -or -not (Test-Path -LiteralPath $DataDir -PathType Container)) {
-    throw '微信数据目录不存在。可用 -DataDir 指定 xwechat_files、账号目录或 db_storage。'
+    throw '微信数据目录不存在。可用 -DataDir 指定微信数据根目录、账号目录或 db_storage。'
   }
   $DataDir = (Resolve-Path -LiteralPath $DataDir).Path
 
