@@ -962,6 +962,28 @@
 .mobile-app .today-node.today-row-done .today-task {
   color: var(--muted);
 }
+[data-surface='android'] .overdue-dialog .overdue-event-list {
+  max-height: none;
+  overflow: visible;
+  padding-bottom: 24px;
+}
+[data-surface='android'] .overdue-dialog .overdue-event-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+[data-surface='android'] .overdue-dialog .overdue-event-actions .button {
+  padding-inline: 0;
+}
+[data-surface='android'] .overdue-dialog .overdue-event-actions input[type='date'] {
+  grid-column: 1 / -1;
+  width: 100%;
+  background: transparent;
+  border-radius: 0;
+}
+[data-surface='android'] .overdue-dialog {
+  box-shadow: none;
+}
 @media (prefers-reduced-motion: reduce) {
   .mobile-app *,
   [data-surface='android'] .dialog * {

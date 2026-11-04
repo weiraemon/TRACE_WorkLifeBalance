@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { clock, localDay, type Snapshot } from '../../../../../packages/domain/index';
 import { createRecord, save } from '../../api';
 import { Modal, Field, Button, ErrorMessage, DatePicker } from '../../components/ui';
+import { useDraftState, useDraftSaving, clearDraft } from '../drafts/useDraftState';
 import type { Editor } from '../../types/editor';
 import type { RecordSource } from './types';
 import { useActualAssociations } from './useActualAssociations';
@@ -24,19 +25,30 @@ export function ActualRecordForm({
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const old = editor.entry?.data.type === 'actual' ? editor.entry.data : undefined;
+  const draftKey = `${snapshot.root}:actual:${old?.id ?? 'new'}`;
   const now = new Date(),
     minute = Math.min(1439, now.getHours() * 60 + now.getMinutes());
-  const [id] = useState(() => old?.id ?? crypto.randomUUID());
-  const [startTime, setStart] = useState(
+  const [baseRevision] = useDraftState(draftKey + ':revision', editor.entry?.revision ?? '');
+  const [id] = useDraftState(draftKey + ':id', () => old?.id ?? crypto.randomUUID());
+  const [startTime, setStart] = useDraftState(
+    draftKey + ':start',
     old?.startTime ?? String(editor.defaults?.startTime ?? clock(Math.max(0, minute - 30))),
   );
-  const [endTime, setEnd] = useState(
+  const [endTime, setEnd] = useDraftState(
+    draftKey + ':end',
     old?.endTime ?? String(editor.defaults?.endTime ?? clock(minute || 1)),
   );
-  const [description, setDescription] = useState(old?.description ?? '');
-  const [date, setDate] = useState(old?.date ?? String(editor.defaults?.date ?? localDay()));
-  const edited = useRef(false);
-  const selection = useActualAssociations(snapshot, old, source);
+  const [description, setDescription] = useDraftState(
+    draftKey + ':description',
+    old?.description ?? '',
+  );
+  const [date, setDate] = useDraftState(
+    draftKey + ':date',
+    old?.date ?? String(editor.defaults?.date ?? localDay()),
+  );
+  const [wasEdited, setEdited] = useDraftState(draftKey + ':edited', false);
+  const edited = useRef(wasEdited || Boolean(description));
+  const selection = useActualAssociations(snapshot, old, source, draftKey);
   const associationState = JSON.stringify([
     selection.itemIds,
     selection.milestoneIds,
@@ -48,10 +60,11 @@ export function ActualRecordForm({
     if (associationState !== previousAssociations.current) {
       previousAssociations.current = associationState;
       onDirtyChange?.(true);
+      setEdited(true);
     }
   }, [associationState, onDirtyChange]);
   const [error, setError] = useState(''),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useDraftSaving(draftKey);
   const defaultDate = String(editor.defaults?.date ?? localDay());
   useEffect(() => {
     if (old || edited.current || selection.itemIds.length || selection.milestoneIds.length || busy)
@@ -71,9 +84,11 @@ export function ActualRecordForm({
   ]);
   const form = (
     <form
+      inert={busy}
       aria-label="实际工作录入"
       onChangeCapture={() => {
         edited.current = true;
+        setEdited(true);
         onDirtyChange?.(true);
       }}
       onSubmit={async (e) => {
@@ -92,7 +107,7 @@ export function ActualRecordForm({
               itemIds: selection.itemIds,
               milestoneIds: selection.milestoneIds,
             }),
-            editor.entry,
+            editor.entry ? { ...editor.entry, revision: baseRevision } : undefined,
             {
               completeIds: selection.completeIds.filter(
                 (target) =>
@@ -109,6 +124,7 @@ export function ActualRecordForm({
             },
           );
           await reload();
+          clearDraft(draftKey);
           onDirtyChange?.(false);
           close();
         } catch (e) {
@@ -150,17 +166,27 @@ export function ActualRecordForm({
         </Field>
         <Field label="结束时间">
           <input
+            type="time"
             required
-            pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]|24:00"
-            value={endTime}
-            onChange={(e) => setEnd(e.target.value)}
+            value={endTime === '24:00' ? '00:00' : endTime}
+            onChange={(e) => setEnd(e.target.value === '00:00' ? '24:00' : e.target.value)}
           />
+          {endTime === '24:00' && <small>当日 24:00</small>}
         </Field>
       </div>
-      <ActualAssociationPicker snapshot={snapshot} selection={selection} />
+      <ActualAssociationPicker snapshot={snapshot} selection={selection} date={date} />
       <ErrorMessage message={error} />
       <div className="form-actions">
-        <Button type="button" onClick={close}>
+        <Button
+          type="button"
+          onClick={() => {
+            if (embedded || !wasEdited) {
+              clearDraft(draftKey);
+              onDirtyChange?.(false);
+            }
+            close();
+          }}
+        >
           {embedded ? '清空' : '取消'}
         </Button>
         <Button type="submit" className="primary" disabled={busy}>
@@ -175,7 +201,10 @@ export function ActualRecordForm({
     <Modal
       className="editor-dialog"
       title={`${old ? '编辑' : '记录'}实际工作 · ${date}`}
-      onClose={close}
+      onClose={() => {
+        if (!wasEdited) clearDraft(draftKey);
+        close();
+      }}
     >
       {form}
     </Modal>

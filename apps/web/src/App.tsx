@@ -13,6 +13,7 @@ import {
   type Snapshot,
   type DeleteResult,
 } from '../../../packages/domain/index';
+import { draftsAreDurable } from './features/drafts/useDraftState';
 import { api, load, session, removeSpace } from './api';
 import { spaceSubtree } from '../../../packages/domain/workspace';
 import { Button, Modal, EmptyState, ErrorMessage } from './components/ui';
@@ -66,7 +67,8 @@ export default function App() {
   const [pastePanel, setPastePanel] = useState(false);
   const [deleting, setDeleting] = useState<Entry | null>(null);
   const [deletion, setDeletion] = useState<DeleteResult | null>(null);
-  const canLeaveContent = () => !contentDirty || window.confirm('正文尚未保存，确定放弃并离开？');
+  const canLeaveContent = () =>
+    !contentDirty || draftsAreDurable() || window.confirm('正文尚未保存，确定放弃并离开？');
   const snapshotRequest = useRef(0);
   const acceptConnection = useCallback((next: Snapshot) => {
     snapshotRequest.current++;
@@ -361,6 +363,7 @@ export default function App() {
                   date={reviewDate}
                   setDate={setReviewDate}
                   edit={setEditor}
+                  reload={reload}
                 />
               )}
             </>
@@ -388,9 +391,10 @@ export default function App() {
         snapshot &&
         (editor.defaults?.comment && editor.entry ? (
           <CommentForm
+            draftScope={snapshot.root}
             key={editor.entry.data.id}
             entry={editor.entry}
-            close={() => setEditor(null)}
+            close={() => setEditor((current) => (current === editor ? null : current))}
             reload={reload}
           />
         ) : ['project', 'workline', 'milestone', 'todo'].includes(editor.type) ? (
@@ -398,7 +402,7 @@ export default function App() {
             key={editor.entry?.revision ?? JSON.stringify(editor)}
             editor={editor}
             snapshot={snapshot}
-            close={() => setEditor(null)}
+            close={() => setEditor((current) => (current === editor ? null : current))}
             reload={reload}
           />
         ) : editor.type === 'actual' ? (
@@ -407,7 +411,7 @@ export default function App() {
               key={editor.entry?.revision ?? JSON.stringify(editor)}
               editor={editor}
               snapshot={snapshot}
-              close={() => setEditor(null)}
+              close={() => setEditor((current) => (current === editor ? null : current))}
               reload={reload}
             />
           ) : null

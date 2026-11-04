@@ -5,6 +5,7 @@ import {
   cloneElement,
   isValidElement,
   useEffect,
+  useRef,
   type ButtonHTMLAttributes,
   type ReactNode,
   type ReactElement,
@@ -25,6 +26,17 @@ export function Modal({
   wide?: boolean;
   className?: string;
 }) {
+  const content = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const back = (event: Event) => {
+      const dialogs = document.querySelectorAll('[role="dialog"]');
+      if (dialogs[dialogs.length - 1] !== content.current) return;
+      event.stopImmediatePropagation();
+      onClose();
+    };
+    window.addEventListener('chaos-back', back, true);
+    return () => window.removeEventListener('chaos-back', back, true);
+  }, [onClose]);
   useEffect(() => {
     const closePicker = (event: KeyboardEvent) => {
       if (
@@ -47,6 +59,7 @@ export function Modal({
       <Dialog.Portal>
         <Dialog.Overlay className="overlay" />
         <Dialog.Content
+          ref={content}
           className={`dialog ${wide ? 'wide' : ''} ${className}`}
           onInteractOutside={(event) => event.preventDefault()}
         >
@@ -59,7 +72,7 @@ export function Modal({
             </Dialog.Close>
           </div>
           <Dialog.Description className="sr-only">
-            保存到当前 Obsidian Vault。未保存的内容在关闭后放弃。
+            在当前 Markdown 工作目录中查看或编辑内容。
           </Dialog.Description>
           {children}
         </Dialog.Content>

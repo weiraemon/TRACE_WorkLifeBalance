@@ -1,17 +1,25 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import type { ActualRecord, Snapshot, Todo, Milestone } from '../../../../../packages/domain/index';
 import { isComplete, todoContexts } from '../../../../../packages/domain/workspace';
+import { useDraftState } from '../drafts/useDraftState';
 import type { RecordSource } from './types';
 
 export function useActualAssociations(
   snapshot: Snapshot,
   old?: ActualRecord,
   source?: RecordSource,
+  draftKey = `${snapshot.root}:actual:${old?.id ?? 'new'}`,
 ) {
-  const [milestoneIds, setMilestoneIds] = useState<string[]>(old?.milestoneIds ?? []);
-  const [itemIds, setItemIds] = useState<string[]>(old?.itemIds ?? []);
-  const [completeIds, setCompleteIds] = useState<string[]>([]);
-  const [comments, setComments] = useState<Record<string, { id: string; text: string }>>({});
+  const [milestoneIds, setMilestoneIds] = useDraftState<string[]>(
+    draftKey + ':nodes',
+    old?.milestoneIds ?? [],
+  );
+  const [itemIds, setItemIds] = useDraftState<string[]>(draftKey + ':items', old?.itemIds ?? []);
+  const [completeIds, setCompleteIds] = useDraftState<string[]>(draftKey + ':complete', []);
+  const [comments, setComments] = useDraftState<Record<string, { id: string; text: string }>>(
+    draftKey + ':comments',
+    {},
+  );
   const addNode = (id: string) => setMilestoneIds((ids) => (ids.includes(id) ? ids : [...ids, id]));
   const addItem = (id: string) => setItemIds((ids) => (ids.includes(id) ? ids : [...ids, id]));
   useEffect(() => {
@@ -24,6 +32,16 @@ export function useActualAssociations(
   const nodes = entries.flatMap(({ data }) =>
     data.type === 'milestone' && !data.pool ? [data] : [],
   );
+  useEffect(() => {
+    const nodeIds = new Set(nodes.map((node) => node.id));
+    const todoIds = new Set(contexts.map((context) => context.todo.id));
+    setMilestoneIds((ids) =>
+      ids.every((id) => nodeIds.has(id)) ? ids : ids.filter((id) => nodeIds.has(id)),
+    );
+    setItemIds((ids) =>
+      ids.every((id) => todoIds.has(id)) ? ids : ids.filter((id) => todoIds.has(id)),
+    );
+  }, [snapshot]);
   const remove = (id: string, type: 'milestone' | 'todo') => {
     (type === 'milestone' ? setMilestoneIds : setItemIds)((ids) =>
       ids.filter((value) => value !== id),

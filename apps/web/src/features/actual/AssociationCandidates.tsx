@@ -8,11 +8,13 @@ import type { ActualAssociations } from './useActualAssociations';
 export function AssociationCandidates({
   snapshot,
   selection,
+  date,
   lineId,
   setLineId,
 }: {
   snapshot: Snapshot;
   selection: ActualAssociations;
+  date: string;
   lineId: string;
   setLineId: (id: string) => void;
 }) {
@@ -28,12 +30,18 @@ export function AssociationCandidates({
       const project = line ? records.get(line.projectId) : undefined;
       return (
         line &&
+        records.get(node.id)?.type === 'milestone' &&
+        project?.type === 'project' &&
+        !project.completedAt &&
+        !isComplete(line, snapshot.entries) &&
         (!lineId || line.id === lineId) &&
         !selection.milestoneIds.includes(node.id) &&
         matches(`${project && 'title' in project ? project.title : ''} ${line.title} ${node.title}`)
       );
     })
-    .sort(compareMilestones);
+    .sort(
+      (a, b) => Number(b.dueDate === date) - Number(a.dueDate === date) || compareMilestones(a, b),
+    );
   const todos = selection.contexts
     .filter(
       (context) =>
@@ -48,7 +56,9 @@ export function AssociationCandidates({
     )
     .sort(
       (a, b) =>
-        Number(b.milestone.pool) - Number(a.milestone.pool) ||
+        Number((b.todo.dueDate ?? b.milestone.dueDate) === date) -
+          Number((a.todo.dueDate ?? a.milestone.dueDate) === date) ||
+        Number(a.milestone.pool) - Number(b.milestone.pool) ||
         compareMilestones(a.milestone, b.milestone) ||
         a.todo.title.localeCompare(b.todo.title),
     );

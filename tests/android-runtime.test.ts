@@ -60,6 +60,93 @@ async function fixture() {
   return { files, native, workspace, service, project, line };
 }
 
+it('Android 保存只完整扫描一次，读取仍按真实内容指纹识别外部修改', async () => {
+  const { native, files, project } = await fixture();
+  let scans = 0;
+  const measured: NativeCall = (method, input) => {
+    if (method === 'scan') scans++;
+    return native(method, input);
+  };
+  const workspace = new AndroidWorkspace(
+    { root: 'content://test/tree/local', vaultId: 'session' },
+    measured,
+  );
+  const service = new WorkspaceService(workspace);
+  await service.saveRecord({ ...project.data, title: '一次扫描完成保存' }, project.revision);
+  expect(scans).toBe(1);
+  expect(
+    workspace.takePublishedSnapshot()?.entries.find((entry) => entry.data.id === project.data.id)
+      ?.data,
+  ).toMatchObject({ title: '一次扫描完成保存' });
+  expect(workspace.takePublishedSnapshot()).toBeUndefined();
+  const first = await service.snapshot();
+  expect(await service.snapshot()).toBe(first);
+  files.set(project.path, files.get(project.path)!.replace('一次扫描完成保存', '外部编辑'));
+  expect(
+    (await service.snapshot()).entries.find((entry) => entry.data.id === project.data.id)?.data,
+  ).toMatchObject({ title: '外部编辑' });
+});
+
+it('删除实际记录保留完成事实和 Notes，并拒绝陈旧版本及其他对象类型', async () => {
+  const { service, files, line, project } = await fixture();
+  const node = await service.saveRecord(
+    createRecord('milestone', { title: '已有节点', lineId: line.data.id }),
+  );
+  const todo = await service.saveRecord(
+    createRecord('todo', { title: '已有行动', milestoneId: node.data.id }),
+  );
+  const actual = await service.saveRecord(
+    createRecord('actual', {
+      date: localDay(),
+      startTime: '08:00',
+      endTime: '09:00',
+      description: '真实记录',
+      itemIds: [todo.data.id],
+    }),
+    undefined,
+    {
+      completeIds: [todo.data.id],
+      comments: [{ id: crypto.randomUUID(), targetId: todo.data.id, text: '保留纪要正文' }],
+    },
+  );
+  await expect(
+    service.execute({ type: 'actual.delete', id: actual.data.id, revision: project.revision }),
+  ).rejects.toThrow();
+  await expect(
+    service.execute({ type: 'actual.delete', id: project.data.id, revision: project.revision }),
+  ).rejects.toThrow();
+  const preserved = new Map(files);
+  await service.execute({ type: 'actual.delete', id: actual.data.id, revision: actual.revision });
+  preserved.delete(actual.path);
+  expect(files).toEqual(preserved);
+  const snapshot = await service.snapshot();
+  expect(snapshot.entries.some((entry) => entry.data.id === actual.data.id)).toBe(false);
+  expect(
+    isComplete(
+      snapshot.entries.find((entry) => entry.data.id === todo.data.id)!.data as any,
+      snapshot.entries,
+    ),
+  ).toBe(true);
+});
+
+it('写入后读回发现外部更改时丢弃待交付快照', async () => {
+  const { native, files, project } = await fixture();
+  const changedAfterCommit: NativeCall = async <T>(method: string, input?: unknown): Promise<T> => {
+    const result = await native<T>(method, input);
+    if (method === 'commit')
+      files.set(project.path, files.get(project.path)!.replace('本次修改', '发布后外部修改'));
+    return result;
+  };
+  const workspace = new AndroidWorkspace(
+    { root: 'content://test/tree/local', vaultId: 'session' },
+    changedAfterCommit,
+  );
+  const service = new WorkspaceService(workspace);
+  const result = await service.saveRecord({ ...project.data, title: '本次修改' }, project.revision);
+  expect(result.data).toMatchObject({ title: '发布后外部修改' });
+  expect(workspace.takePublishedSnapshot()).toBeUndefined();
+});
+
 it('Android adapter uses the shared complete, actual, Notes, reschedule and promote operations', async () => {
   const { service, line } = await fixture();
   const node = await service.saveRecord(

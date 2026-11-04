@@ -37,11 +37,11 @@ import { SpaceDetails } from '../workspace/SpaceDetails';
 import { workspaceGroups } from '../workspace/workspaceGroups';
 import type { Editor } from '../../types/editor';
 import type { RecordSource } from '../actual/types';
+import { draftsAreDurable } from '../drafts/useDraftState';
 import { ProjectList } from './ProjectList';
 import { VerticalLine } from './VerticalLine';
 import { MobileActions } from './MobileActions';
 import { MobileNotes } from './MobileNotes';
-import '@fontsource-variable/noto-serif-sc';
 import './mobile.css';
 import { OperationProgress } from '../../components/OperationProgress';
 import { operationSnapshot, runOperation } from '../../platform/operations';
@@ -116,10 +116,15 @@ export default function MobileApp() {
     void task().catch((error) => setError(error instanceof Error ? error.message : String(error)));
   }, []);
   const canLeave = () => {
-    if (dirty.current.size && !window.confirm('还有未保存的内容，确定放弃并离开？')) return false;
-    if (dirty.current.size) setFormVersion((version) => version + 1);
-    dirty.current.clear();
-    setIsDirty(false);
+    if (
+      dirty.current.size > 0 &&
+      !draftsAreDurable() &&
+      !window.confirm('本机草稿无法保存，确定放弃当前输入并离开？')
+    )
+      return false;
+    dirty.current.delete('notes');
+    dirty.current.delete('detail');
+    setIsDirty(Boolean(dirty.current.size));
     return true;
   };
   const navigate = (page: Page, lineId = '', historyEntry = true) => {
@@ -191,14 +196,14 @@ export default function MobileApp() {
     if (!snapshot) return;
     let previousDay = localDay(),
       pending = false;
-    const refresh = () => {
+    const refresh = (read = true) => {
       const today = localDay();
       if (today !== previousDay) {
         const previous = previousDay;
         setDate((date) => (date === previous ? today : date));
         previousDay = today;
       }
-      if (document.hidden || pending || operationSnapshot()) return;
+      if (!read || document.hidden || pending || operationSnapshot()) return;
       pending = true;
       void reload()
         .catch((error) => setError(String(error)))
@@ -206,13 +211,14 @@ export default function MobileApp() {
           pending = false;
         });
     };
-    const timer = setInterval(refresh, 5000);
-    window.addEventListener('focus', refresh);
-    document.addEventListener('visibilitychange', refresh);
+    const activate = () => refresh();
+    const timer = setInterval(() => refresh(!isAndroid()), 5000);
+    if (!isAndroid()) window.addEventListener('focus', activate);
+    document.addEventListener('visibilitychange', activate);
     return () => {
       clearInterval(timer);
-      window.removeEventListener('focus', refresh);
-      document.removeEventListener('visibilitychange', refresh);
+      window.removeEventListener('focus', activate);
+      document.removeEventListener('visibilitychange', activate);
     };
   }, [Boolean(snapshot), reload]);
   const back = () => {
@@ -225,7 +231,7 @@ export default function MobileApp() {
       return;
     }
     if (editor) {
-      if (canLeave()) setEditor(null);
+      if (canLeave()) setEditor((current) => (current === editor ? null : current));
       return;
     }
     if (selected) {
@@ -440,6 +446,7 @@ export default function MobileApp() {
                     )}
                   snapshot={snapshot}
                   edit={openEditor}
+                  reload={reload}
                 />
                 {!snapshot.entries.some(
                   (entry) => entry.data.type === 'actual' && entry.data.date === date,
@@ -470,7 +477,6 @@ export default function MobileApp() {
                       onClick={() => {
                         if (canLeave()) {
                           setEditMode(mode.id);
-                          setFormVersion((version) => version + 1);
                           setSource(undefined);
                         }
                       }}
@@ -585,6 +591,7 @@ export default function MobileApp() {
                   date={reviewDate}
                   setDate={setReviewDate}
                   edit={openEditor}
+                  reload={reload}
                 />
               </Suspense>
             )}
@@ -674,9 +681,10 @@ export default function MobileApp() {
         editor &&
         (editor.defaults?.comment && editor.entry ? (
           <CommentForm
+            draftScope={snapshot.root}
             entry={editor.entry}
             close={() => {
-              if (canLeave()) setEditor(null);
+              if (canLeave()) setEditor((current) => (current === editor ? null : current));
             }}
             reload={reload}
             onDirtyChange={workDirty}
@@ -689,7 +697,7 @@ export default function MobileApp() {
             reload={reload}
             onDirtyChange={actualDirty}
             close={() => {
-              if (canLeave()) setEditor(null);
+              if (canLeave()) setEditor((current) => (current === editor ? null : current));
             }}
           />
         ) : (
@@ -700,7 +708,7 @@ export default function MobileApp() {
             reload={reload}
             onDirtyChange={workDirty}
             close={() => {
-              if (canLeave()) setEditor(null);
+              if (canLeave()) setEditor((current) => (current === editor ? null : current));
             }}
           />
         ))}

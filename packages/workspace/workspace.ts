@@ -30,7 +30,7 @@ import {
 
 import { VaultError } from './errors';
 import type { FileChange } from './file-change';
-import { frontmatter, newNote, updateNote } from './markdown';
+import { decodeNote, frontmatter, newNote, updateNote } from './markdown';
 
 // Platform adapters implement file safety and publication; business rules stay here.
 export abstract class Workspace {
@@ -444,9 +444,15 @@ export abstract class Workspace {
       }
       const changes = await this.prepareChanges(snapshot.entries, [...changed.values()], bodies);
       await this.commitChanges([...changes, ...companions]);
-      const result = (await this.scan()).entries.find((e) => e.data.id === data.id);
-      if (!result) throw new VaultError('记录已发布但无法读取，请检查诊断', 409);
-      return result;
+      const published = changes.find(
+        (change) => change.content !== null && decodeNote(change.content)?.data.id === data.id,
+      );
+      if (!published && existing) return existing;
+      if (!published) throw new VaultError('记录已发布但无法读取，请检查诊断', 409);
+      const source = await this.readSource(published.path);
+      const note = decodeNote(source);
+      if (note?.data.id !== data.id) throw new VaultError('记录已发布但无法读取，请检查诊断', 409);
+      return { data: note.data, path: published.path, revision: await this.contentHash(source) };
     });
   }
 
@@ -712,6 +718,18 @@ export abstract class Workspace {
         changes.push({ path: entry.path, expected: entry.revision, content: null });
       await this.commitChanges(changes);
       return { deletedIds: [...ids] };
+    });
+  }
+
+  async deleteActual(id: string, revision: string): Promise<DeleteResult> {
+    return this.serialized(async () => {
+      const snapshot = await this.scan();
+      const entries = snapshot.entries.filter((entry) => entry.data.id === id);
+      const entry = entries[0];
+      if (entries.length !== 1 || entry.data.type !== 'actual' || entry.revision !== revision)
+        throw new VaultError('实际记录已更改或不存在，请重新加载后再删除', 409);
+      await this.commitChanges([{ path: entry.path, expected: revision, content: null }]);
+      return { deletedIds: [id] };
     });
   }
 }

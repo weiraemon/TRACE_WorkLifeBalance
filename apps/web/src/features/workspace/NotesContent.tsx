@@ -2,12 +2,14 @@ import { useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { CheckIcon, Cross2Icon, Pencil2Icon } from '@radix-ui/react-icons';
 import { readContent, saveContent } from '../../api';
 import { Button, ErrorMessage, Field } from '../../components/ui';
+import { useDraftState, useDraftSaving } from '../drafts/useDraftState';
 const Markdown = lazy(() => import('react-markdown'));
 export function NotesContent({
   id,
   revision,
   editable = false,
   compact = false,
+  draftScope,
   reload,
   onDirtyChange,
 }: {
@@ -15,18 +17,32 @@ export function NotesContent({
   revision?: string;
   editable?: boolean;
   compact?: boolean;
+  draftScope: string;
   reload?: () => Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const [body, setBody] = useState(''),
-    [loadedRevision, setLoadedRevision] = useState('');
-  const [editing, setEditing] = useState(false),
+  const [draft, setDraft] = useDraftState<{ body: string; revision: string } | null>(
+    `${draftScope}:notes:${id}`,
+    null,
+  );
+  const [body, setBody] = useState(draft?.body ?? ''),
+    [loadedRevision, setLoadedRevision] = useState(draft?.revision ?? '');
+  const [editing, setEditing] = useState(Boolean(draft)),
     [error, setError] = useState(''),
-    [busy, setBusy] = useState(false);
-  const dirty = useRef(false);
+    [busy, setBusy] = useDraftSaving(`${draftScope}:notes:${id}`);
+  const dirty = useRef(Boolean(draft));
   useEffect(() => {
     let active = true;
-    if (dirty.current) return;
+    if (busy) return;
+    if (dirty.current && draft === null) {
+      dirty.current = false;
+      setEditing(false);
+      onDirtyChange?.(false);
+    }
+    if (dirty.current) {
+      onDirtyChange?.(true);
+      return;
+    }
     void readContent(id)
       .then((value) => {
         if (active && !dirty.current) {
@@ -41,10 +57,10 @@ export function NotesContent({
     return () => {
       active = false;
     };
-  }, [id, revision]);
+  }, [id, revision, draft, busy]);
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
   return (
-    <section className="detail-section notes-content">
+    <section inert={busy} className="detail-section notes-content">
       <div className="section-heading">
         <h3>Notes</h3>
         {editable && !editing && (
@@ -61,6 +77,7 @@ export function NotesContent({
               value={body}
               onChange={(e) => {
                 setBody(e.target.value);
+                setDraft({ body: e.target.value, revision: loadedRevision });
                 dirty.current = true;
                 onDirtyChange?.(true);
               }}
@@ -73,6 +90,7 @@ export function NotesContent({
               onClick={() => {
                 if (dirty.current && !window.confirm('放弃尚未保存的正文？')) return;
                 dirty.current = false;
+                setDraft(null);
                 onDirtyChange?.(false);
                 setEditing(false);
                 void readContent(id)
@@ -97,6 +115,7 @@ export function NotesContent({
                   .then(async (value) => {
                     setLoadedRevision(value.revision);
                     dirty.current = false;
+                    setDraft(null);
                     onDirtyChange?.(false);
                     setEditing(false);
                     await reload?.();

@@ -241,6 +241,8 @@ export class WorkspaceService {
         return applyExchange(this.vault, command.bundle, command.revision);
       case 'record.save':
         return this.saveRecord(command.data, command.revision, command.options);
+      case 'actual.delete':
+        return this.vault.deleteActual(command.id, command.revision);
       case 'work.complete':
         return this.complete(command.id, command.revision, command.completed);
       case 'work.reschedule':

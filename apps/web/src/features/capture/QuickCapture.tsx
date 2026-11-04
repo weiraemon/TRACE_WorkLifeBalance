@@ -4,6 +4,7 @@ import { activeLines } from '../../../../../packages/domain/workspace';
 import { createRecord } from '../../api';
 import { Button, Field, ErrorMessage } from '../../components/ui';
 import { ImportancePicker } from '../../components/Importance';
+import { useDraftState, useDraftSaving, clearDraft } from '../drafts/useDraftState';
 import { parseQuickCapture } from './quickCaptureParser';
 export function QuickCapture({
   snapshot,
@@ -14,19 +15,23 @@ export function QuickCapture({
   onCreate: (item: Todo | Milestone, comment: string) => Promise<void>;
   today: string;
 }) {
-  const [importance, setImportance] = useState(1);
-  const [title, setTitle] = useState(''),
-    [captureType, setCaptureType] = useState<'milestone' | 'todo' | 'idea'>('todo');
-  const [lineId, setLineId] = useState(''),
-    [nodeId, setNodeId] = useState('');
-  const [dueDate, setDueDate] = useState(''),
-    [dueTime, setDueTime] = useState(''),
-    [tags, setTags] = useState('');
-  const [sourceText, setSourceText] = useState('');
+  const draftKey = `${snapshot.root}:quick-capture`;
+  const [importance, setImportance] = useDraftState(draftKey + ':importance', 1);
+  const [title, setTitle] = useDraftState(draftKey + ':title', ''),
+    [captureType, setCaptureType] = useDraftState<'milestone' | 'todo' | 'idea'>(
+      draftKey + ':captureType',
+      'todo',
+    );
+  const [lineId, setLineId] = useDraftState(draftKey + ':lineId', ''),
+    [nodeId, setNodeId] = useDraftState(draftKey + ':nodeId', '');
+  const [dueDate, setDueDate] = useDraftState(draftKey + ':dueDate', ''),
+    [dueTime, setDueTime] = useDraftState(draftKey + ':dueTime', ''),
+    [tags, setTags] = useDraftState(draftKey + ':tags', '');
+  const [sourceText, setSourceText] = useDraftState(draftKey + ':sourceText', '');
   const sourceInput = useRef<HTMLTextAreaElement>(null);
-  const [comment, setComment] = useState(''),
-    [id, setId] = useState(() => crypto.randomUUID());
-  const [busy, setBusy] = useState(false),
+  const [comment, setComment] = useDraftState(draftKey + ':comment', ''),
+    [id, setId] = useDraftState(draftKey + ':id', () => crypto.randomUUID());
+  const [busy, setBusy] = useDraftSaving(draftKey),
     [error, setError] = useState('');
   const lines = activeLines(snapshot.entries);
   const nodes = snapshot.entries
@@ -38,8 +43,10 @@ export function QuickCapture({
     setTitle(parsed.title);
     setCaptureType('milestone');
     setImportance(parsed.importance);
-    setLineId(parsed.lineId);
-    setNodeId('');
+    if (!lineId && parsed.lineId) {
+      setLineId(parsed.lineId);
+      setNodeId('');
+    }
     setDueDate(parsed.dueDate ?? '');
     setDueTime(parsed.dueTime ?? '');
     setTags(parsed.tags.join('，'));
@@ -86,6 +93,10 @@ export function QuickCapture({
               dueDate: dueDate || (captureType === 'todo' ? today : null),
             }) as Todo);
       await onCreate(item, comment);
+      clearDraft(draftKey);
+      setLineId(lineId);
+      setNodeId(chosen);
+      setCaptureType(captureType);
       setTitle('');
       setImportance(1);
       setComment('');
@@ -126,7 +137,11 @@ export function QuickCapture({
     </div>
   );
   return (
-    <section className="quick-capture compact-capture" aria-label="快速创建 TODO / IDEA">
+    <section
+      inert={busy}
+      className="quick-capture compact-capture"
+      aria-label="快速创建 TODO / IDEA"
+    >
       <h2 className="capture-recognition-heading">自动匹配与识别</h2>
       {pasteCapture}
       <div className="quick-capture-controls">

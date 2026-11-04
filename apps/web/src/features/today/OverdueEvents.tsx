@@ -51,7 +51,7 @@ export function OverdueEvents({
         <Button onClick={() => setOpen(true)}>查看</Button>
       </div>
       {open && (
-        <Modal title="过期事件" onClose={() => !busyId && setOpen(false)} wide>
+        <Modal title="过期事件" onClose={() => setOpen(false)} className="overdue-dialog" wide>
           {!overdue.length ? (
             <p className="hint">没有过期事件。</p>
           ) : (

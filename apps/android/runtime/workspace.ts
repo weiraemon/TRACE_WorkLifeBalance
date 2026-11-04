@@ -16,6 +16,14 @@ type ScannedFile = {
 // This adapter supplies persistence only. Every work operation is inherited unchanged.
 export class AndroidWorkspace extends Workspace {
   private tail: Promise<unknown> = Promise.resolve();
+  private lastScan?: { fingerprint: string; snapshot: Snapshot };
+  private scannedFiles?: ScannedFile[];
+  private publishedSnapshot?: Snapshot;
+  takePublishedSnapshot() {
+    const snapshot = this.publishedSnapshot;
+    this.publishedSnapshot = undefined;
+    return snapshot;
+  }
   constructor(
     readonly directory: DirectorySession,
     readonly native: NativeCall,
@@ -37,7 +45,16 @@ export class AndroidWorkspace extends Workspace {
     return this.native<T>(method, { ...input, vaultId: this.directory.vaultId });
   }
   async scan(): Promise<Snapshot> {
+    this.publishedSnapshot = undefined;
     const files = await this.call<ScannedFile[]>('scan');
+    this.scannedFiles = files;
+    return this.decodeFiles(files);
+  }
+  private async decodeFiles(files: ScannedFile[]): Promise<Snapshot> {
+    const fingerprint = JSON.stringify(
+      files.map(({ path, directory, revision, error }) => [path, directory, revision, error]),
+    );
+    if (this.lastScan?.fingerprint === fingerprint) return this.lastScan.snapshot;
     const entries: Entry[] = [];
     const issues: Snapshot['issues'] = [];
     for (const [index, file] of files.entries()) {
@@ -69,15 +86,24 @@ export class AndroidWorkspace extends Workspace {
         issues.push({ path: entry.path, message: '关联或时间诊断：' + String(error) });
       }
     }
-    return {
+    const snapshot = {
       ...this.directory,
       entries,
       files: files.map(({ path, directory }) => ({ path, directory })),
       issues,
     };
+    this.lastScan = { fingerprint, snapshot };
+    return snapshot;
   }
-  protected readSource(path: string) {
-    return this.call<string>('read', { path });
+  protected async readSource(path: string) {
+    const source = await this.call<string>('read', { path });
+    if (
+      this.publishedSnapshot &&
+      this.scannedFiles?.find((file) => file.path === path)?.revision !==
+        (await this.contentHash(source))
+    )
+      this.publishedSnapshot = undefined;
+    return source;
   }
   protected async contentHash(source: string) {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(source));
@@ -93,7 +119,38 @@ export class AndroidWorkspace extends Workspace {
   }
   protected async commitChanges(changes: FileChange[]) {
     const parsed = changesSchema.parse(changes);
-    if (parsed.length) await this.call('commit', { changes: parsed });
+    this.publishedSnapshot = undefined;
+    if (!parsed.length) return;
+    await this.call('commit', { changes: parsed });
+    if (!this.scannedFiles) return;
+    const files = new Map(this.scannedFiles.map((file) => [file.path, file]));
+    for (const change of parsed) {
+      const parts = change.path.split('/');
+      if (
+        parts.some(
+          (part) =>
+            ['.git', '.obsidian', '.atlas', 'node_modules'].includes(part) ||
+            part.startsWith('.chaos-'),
+        )
+      )
+        continue;
+      if (change.content === null) files.delete(change.path);
+      else {
+        files.set(change.path, {
+          path: change.path,
+          directory: false,
+          ...(change.path.toLowerCase().endsWith('.md')
+            ? { source: change.content, revision: await this.contentHash(change.content) }
+            : {}),
+        });
+        for (let depth = 1; depth < parts.length; depth++) {
+          const path = parts.slice(0, depth).join('/');
+          if (!files.has(path)) files.set(path, { path, directory: true });
+        }
+      }
+    }
+    this.scannedFiles = [...files.values()];
+    this.publishedSnapshot = await this.decodeFiles(this.scannedFiles);
   }
   backups() {
     return this.serialized(() =>

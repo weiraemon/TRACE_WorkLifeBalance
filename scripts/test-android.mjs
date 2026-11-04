@@ -37,6 +37,7 @@ const output = path.join(root, 'test-results/android');
 fs.mkdirSync(output, { recursive: true });
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const checks = [];
+const timings = {};
 async function eventually(fn, description, timeout = 20000) {
   const deadline = Date.now() + timeout;
   let last;
@@ -209,6 +210,70 @@ try {
       .getByRole('navigation', { name: '手机导航' })
       .getByRole('button', { name, exact: true })
       .click();
+  await page.evaluate(async () => {
+    globalThis.chaosIdleScans = 0;
+    globalThis.chaosScanListener = await globalThis.Capacitor.Plugins.ChaosFiles.addListener(
+      'operationProgress',
+      (event) => {
+        if (event.phase === '正在扫描工作目录' && event.completed === 0)
+          globalThis.chaosIdleScans++;
+      },
+    );
+  });
+  await pause(5500);
+  assert.equal(
+    await page.evaluate(() => globalThis.chaosIdleScans),
+    0,
+    '手机空闲时不应重复扫描目录',
+  );
+  await nav('编辑');
+  await page.getByLabel('具体事件', { exact: true }).fill('切页后保留的手机草稿');
+  await page.getByLabel('结束时间', { exact: true }).click();
+  await tapNative(/^(CANCEL|取消)$/i);
+  assert.equal(
+    await page.evaluate(() => globalThis.chaosIdleScans),
+    0,
+    '时间选择不应触发完整目录读取',
+  );
+  await page.evaluate(() => globalThis.chaosScanListener.remove());
+  await nav('工作空间');
+  await nav('编辑');
+  assert.equal(
+    await page.getByLabel('具体事件', { exact: true }).inputValue(),
+    '切页后保留的手机草稿',
+  );
+  await page.getByRole('button', { name: '清空', exact: true }).click();
+  checks.push('空闲与打开原生时间选择器不扫描目录，实际录入草稿跨页保留');
+  await nav('今日已做');
+  const simpleEditor = page
+    .getByRole('button', { name: '编辑记录 · 单文件保存性能验收', exact: true })
+    .first();
+  const existingSimple = Boolean(await simpleEditor.count());
+  if (existingSimple) await simpleEditor.click();
+  else await nav('编辑');
+  await page.getByLabel('具体事件', { exact: true }).fill('单文件保存性能验收');
+  await page.getByLabel('开始时间', { exact: true }).fill('03:00');
+  await page.getByLabel('结束时间', { exact: true }).fill('03:15');
+  const simpleStarted = Date.now();
+  await page.getByRole('button', { name: '保存实际工作', exact: true }).click();
+  if (existingSimple) await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  else
+    await eventually(
+      async () => assert.equal(await page.getByLabel('具体事件', { exact: true }).inputValue(), ''),
+      '单文件实际保存失败',
+    );
+  timings.simpleActualSaveMs = Date.now() - simpleStarted;
+  await nav('今日已做');
+  const simpleRecord = page.locator('[data-actual-id]').filter({ hasText: '单文件保存性能验收' });
+  await simpleRecord.dispatchEvent('pointerdown', {
+    pointerType: 'touch',
+    clientX: 100,
+    clientY: 200,
+  });
+  await page.getByRole('dialog', { name: '实际记录操作' }).waitFor();
+  await page.getByRole('button', { name: '删除记录', exact: true }).click();
+  await simpleRecord.waitFor({ state: 'hidden' });
+  checks.push('真实 WebView 长按删除实际记录，调用共享版本校验命令');
   await nav('工作空间');
   if (!(await page.getByRole('heading', { name: '移动端验收', exact: true }).count())) {
     await page.getByRole('button', { name: '新建项目', exact: true }).click();
@@ -300,6 +365,7 @@ try {
   }
   const completion = page.getByLabel('本次完成 整理讨论材料', { exact: true });
   if (await completion.isEnabled()) await completion.check();
+  const saveStarted = Date.now();
   await page.getByRole('button', { name: '保存实际工作', exact: true }).click();
   if (updatingActual) await page.getByRole('dialog').waitFor({ state: 'hidden' });
   else
@@ -307,6 +373,7 @@ try {
       async () => assert.equal(await page.getByLabel('具体事件', { exact: true }).inputValue(), ''),
       '离线实际记录保存失败',
     );
+  timings.actualSaveMs = Date.now() - saveStarted;
   await nav('今日已做');
   await page.getByText('离线整理讨论材料', { exact: true }).first().waitFor();
   await page.screenshot({ path: path.join(output, 'actuals.png') });
@@ -549,7 +616,7 @@ try {
   device('shell', 'am', 'force-stop', 'com.chaos.workbench');
   fs.writeFileSync(
     path.join(output, 'report.json'),
-    JSON.stringify({ serial, checks, date: new Date().toISOString() }, null, 2),
+    JSON.stringify({ serial, checks, timings, date: new Date().toISOString() }, null, 2),
   );
   console.log(checks.join('\n'));
   device('shell', 'am', 'start', '-n', 'com.chaos.workbench/.MainActivity');

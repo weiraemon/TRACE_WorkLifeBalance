@@ -112,6 +112,7 @@ export type CreatePlan = z.infer<typeof planSchema>;
 const revision = z.string().regex(/^[a-f0-9]{64}$/);
 const target = { id: z.string().uuid(), revision };
 export const businessCommandSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('actual.delete'), ...target }).strict(),
   z
     .object({
       type: z.literal('exchange.export'),

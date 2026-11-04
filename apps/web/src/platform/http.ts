@@ -4,6 +4,8 @@ import { operationSignal, checkOperation } from './operations';
 
 let token = '';
 let vaultId = '';
+let publicationSequence = 0;
+let publication: { version: string; snapshot: Snapshot } | undefined;
 type PlatformTransport = (route: string, body?: unknown) => Promise<unknown>;
 let platformTransport: PlatformTransport | undefined;
 // Installed by the Android application runtime, never by a page or a storage component.
@@ -12,7 +14,15 @@ export function installPlatformTransport(transport: PlatformTransport) {
 }
 export async function api<T>(route: string, body?: unknown): Promise<T> {
   checkOperation();
-  if (platformTransport) return platformTransport(route, body) as Promise<T>;
+  if (route === 'session' || route === 'connect') {
+    publicationSequence++;
+    publication = undefined;
+  }
+  if (platformTransport) {
+    const value = await platformTransport(route, body);
+    if (route === 'connect') vaultId = (value as Snapshot).vaultId;
+    return value as T;
+  }
   const response = await fetch('/api/' + route, {
     method: body === undefined ? 'GET' : 'POST',
     cache: 'no-store',
@@ -48,8 +58,25 @@ export async function session() {
 }
 
 export async function businessRequest<T>(route: 'workspace' | 'commands', input?: BusinessCommand) {
-  const response = await api<T & { version: string }>('business/v1/' + route, input);
+  checkOperation();
+  if (route === 'workspace' && publication?.snapshot.vaultId === vaultId) {
+    const frame = publication;
+    publication = undefined;
+    return frame as unknown as T & { version: string };
+  }
+  const sequence = route === 'commands' ? ++publicationSequence : publicationSequence;
+  if (route === 'commands') publication = undefined;
+  const response = await api<T & { version: string; snapshot?: Snapshot }>(
+    'business/v1/' + route,
+    input,
+  );
   if (response.version !== businessApiVersion)
     throw new Error('业务接口版本不一致，请更新应用并刷新页面');
+  if (
+    route === 'commands' &&
+    sequence === publicationSequence &&
+    response.snapshot?.vaultId === vaultId
+  )
+    publication = { version: response.version, snapshot: response.snapshot };
   return response;
 }

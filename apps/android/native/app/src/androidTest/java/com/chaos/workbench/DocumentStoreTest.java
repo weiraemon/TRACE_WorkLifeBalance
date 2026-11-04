@@ -16,6 +16,7 @@ import static org.junit.Assert.*;
 /** Real SAF tests. Run only against the explicitly selected synthetic emulator directory. */
 public class DocumentStoreTest {
     @Test public void reinstallRequiresConsentAndRecoversOldDirectory() throws Exception {
+        assertEquals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", DocumentStore.sha("abc"));
         String path = "instrumentation/" + UUID.randomUUID() + ".md";
         try (DocumentStore original = new DocumentStore(context, tree, device)) {
             original.commit(new JSONArray().put(change(path, null, "重装前的正文")));

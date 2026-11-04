@@ -88,6 +88,7 @@ export function SpaceDetails({
       )}
       {line && (
         <NotesContent
+          draftScope={snapshot.root}
           key={snapshot.vaultId + item.id}
           id={item.id}
           revision={note?.revision}

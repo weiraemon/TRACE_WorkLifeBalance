@@ -29,6 +29,8 @@ export const complete = (entry: Entry, completed: boolean) =>
   command<Entry>({ type: 'work.complete', id: entry.data.id, revision: entry.revision, completed });
 export const save = (data: RecordData, entry?: Entry, options?: SaveOptions) =>
   command<Entry>({ type: 'record.save', data, revision: entry?.revision, options });
+export const deleteActual = (entry: Entry) =>
+  command<DeleteResult>({ type: 'actual.delete', id: entry.data.id, revision: entry.revision });
 export async function removeSpace(entry: Entry) {
   const id = entry.data.id;
   const preview = await deletePreview(id);

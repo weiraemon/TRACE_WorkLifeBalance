@@ -35,6 +35,7 @@ export function Knowledge({
       <div className="workspace-content knowledge-content" role="region" aria-label="业务线 Notes">
         {line ? (
           <NotesContent
+            draftScope={snapshot.root}
             key={snapshot.vaultId + line.id}
             id={line.id}
             revision={note?.revision}

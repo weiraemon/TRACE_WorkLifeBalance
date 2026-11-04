@@ -27,7 +27,7 @@
   --actual-bg: #dfe7eb;
   --actual-border: #8b9eaf;
   --actual-text: #3b5260;
-  font-family: 'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC', sans-serif;
+  font-family: 'Noto Serif SC Variable', 'Source Han Serif SC', 'Songti SC', serif;
   color: var(--text);
   background: var(--paper);
   font-synthesis: none;
@@ -38,6 +38,7 @@
   --radius: 8px;
   line-height: 1.65;
   font-size: 14px;
+  --ui-font: 'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC', sans-serif;
 }
 :root[data-theme='blue'] {
   --paper: #f1f5f8;
@@ -86,6 +87,11 @@ textarea {
   font: inherit;
   color: inherit;
 }
+button,
+input,
+select {
+  font-family: var(--ui-font);
+}
 button {
   cursor: pointer;
 }
@@ -111,6 +117,11 @@ textarea {
 }
 a {
   color: inherit;
+}
+h1,
+h2,
+h3 {
+  font-weight: 650;
 }
 h1,
 h2,

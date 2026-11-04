@@ -7,9 +7,11 @@ import type { ActualAssociations } from './useActualAssociations';
 export function ActualAssociationPicker({
   snapshot,
   selection,
+  date,
 }: {
   snapshot: Snapshot;
   selection: ActualAssociations;
+  date: string;
 }) {
   const [lineId, setLineId] = useState('');
   return (
@@ -19,6 +21,7 @@ export function ActualAssociationPicker({
         <AssociationCandidates
           snapshot={snapshot}
           selection={selection}
+          date={date}
           lineId={lineId}
           setLineId={setLineId}
         />

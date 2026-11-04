@@ -79,6 +79,7 @@ export function Today({
           lineId={lineId}
           goWorkspace={goWorkspace}
           editActual={editActual}
+          reload={reload}
         />
         <TodayAgenda
           snapshot={snapshot}

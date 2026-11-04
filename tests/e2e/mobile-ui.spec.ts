@@ -70,14 +70,19 @@ test('笔记复用导览，随手记保留原正文且未保存内容有离开�
   await nav(page, '笔记');
   await page.getByRole('button', { name: '打开业务线 论文研究', exact: true }).click();
   await page.getByLabel('随手记', { exact: true }).fill('手机上的一个新想法');
-  page.once('dialog', (dialog) => dialog.dismiss());
   await nav(page, '工作空间');
+  await nav(page, '笔记');
+  await page.getByRole('button', { name: '打开业务线 论文研究', exact: true }).click();
   await expect(page.getByLabel('随手记', { exact: true })).toHaveValue('手机上的一个新想法');
   await page.getByRole('button', { name: '记到笔记', exact: true }).click();
   await expect(page.getByLabel('随手记', { exact: true })).toHaveValue('');
   expect(await notes(page, line.data.id)).toContain('手机上的一个新想法');
   await page.getByRole('button', { name: '编辑正文', exact: true }).click();
   await page.getByLabel('Notes 正文', { exact: true }).fill('原有正文与手机编辑');
+  await nav(page, '工作空间');
+  await nav(page, '笔记');
+  await page.getByRole('button', { name: '打开业务线 论文研究', exact: true }).click();
+  await expect(page.getByLabel('Notes 正文', { exact: true })).toHaveValue('原有正文与手机编辑');
   await page.getByRole('button', { name: '保存正文', exact: true }).click();
   await expect(page.getByText('原有正文与手机编辑', { exact: true })).toBeVisible();
 });
@@ -104,13 +109,12 @@ test('新增节点和待办沿用同一表单；手机样式不影响桌面四�
   await expect(page.locator('html')).not.toHaveAttribute('data-surface', 'android');
 });
 
-test('确认放弃草稿后打开设置，返回表单已清空，不留下无保护的旧输入', async ({ page }) => {
+test('打开设置后返回，实际录入草稿继续保留', async ({ page }) => {
   await nav(page, '编辑');
-  await page.getByLabel('具体事件', { exact: true }).fill('明确放弃的草稿');
-  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByLabel('具体事件', { exact: true }).fill('设置前的草稿');
   await page.getByRole('button', { name: '设置', exact: true }).click();
   await page.getByRole('button', { name: '关闭对话框', exact: true }).click();
-  await expect(page.getByLabel('具体事件', { exact: true })).toHaveValue('');
+  await expect(page.getByLabel('具体事件', { exact: true })).toHaveValue('设置前的草稿');
 });
 
 test('窄屏时间并排、轻量输入和日期、默认展开的可选内容支持两种主题', async ({ page }) => {

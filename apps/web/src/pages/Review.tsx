@@ -14,11 +14,13 @@ export function Review({
   date,
   setDate,
   edit,
+  reload,
 }: {
   snapshot: Snapshot;
   date: string;
   setDate: (date: string) => void;
   edit: (editor: Editor) => void;
+  reload: () => Promise<void>;
 }) {
   const data = reviewData(snapshot, date);
   const { week, last } = data;
@@ -38,7 +40,14 @@ export function Review({
         />
       </div>
       <ReviewOverview data={data} date={date} setDate={setDate} />
-      <ReviewActuals data={data} date={date} snapshot={snapshot} edit={edit} setDate={setDate} />
+      <ReviewActuals
+        data={data}
+        date={date}
+        snapshot={snapshot}
+        edit={edit}
+        reload={reload}
+        setDate={setDate}
+      />
       <Suspense fallback={<EmptyState>正在加载时间线…</EmptyState>}>
         <Timeline date={date} snapshot={snapshot} />
       </Suspense>

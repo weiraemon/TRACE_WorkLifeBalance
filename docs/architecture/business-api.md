@@ -42,26 +42,29 @@ Android 经 `api.ts` 的平台传输入口在本机调用同一版本的 `Worksp
 | GET  | /api/business/v1/workspace | version 与 snapshot                |
 | POST | /api/business/v1/commands  | version 与 result                  |
 
+Android 的写入命令响应可附带 `snapshot`，表示该批文件成功发布后的同一份工作快照。前端只将其交付给紧随写入的一次刷新，后续刷新仍重新读取目录。连续命令按请求顺序丢弃迟到响应，连接或切换目录会使待交付快照失效。发布失败不附带快照，Markdown 内容及 SHA-256 revision 继续作为权威事实。
+
 除 session 外需要 X-Atlas-Token、X-Atlas-Vault；POST 使用 application/json。客户端必须读取最新快照中的 revision，修改前传回该版本。版本过期返回 409，输入不合法返回 400，会话不合法返回 403。JSON Schema 负责描述输入结构，跨对象关系和完成规则仍由服务端校验。
 
 业务接口版本是字符串 1；X-Atlas-Contract 继续负责整套网页／服务兼容校验，当前为 atlas-lines-26。升级后需重启服务并刷新网页。旧的 snapshot、records、content、notes、promote、delete-preview、delete-space 网页路由已移除，不保留兼容转发；读取工作快照和执行工作命令统一走 /api/business/v1。新增 notes.create 承接原有普通 Markdown 笔记创建能力。会话、连接目录、备份、本机打开与消息接入仍使用各自的应用／平台接口。
 
-| 命令 type          | 关键输入                                       | 用途                                                                 |
-| ------------------ | ---------------------------------------------- | -------------------------------------------------------------------- |
-| record.save        | data、可选 revision / options                  | 创建或编辑项目、业务线、节点、条目及实际记录；结构与现有记录契约一致 |
-| plan.create        | plan                                           | 原子创建计划、必要项目／业务线、节点、条目及来源 Notes               |
-| work.complete      | id、revision、completed                        | 完成或重新打开，节点按既有规则处理下属条目                           |
-| work.reschedule    | id、revision、dueDate、可选 dueTime / location | 改期；TODO 不允许独立时刻                                            |
-| work.comment       | id、revision、text、可选 date                  | 批注或纪要写入所属 Notes                                             |
-| work.promote       | id、revision                                   | 升为独立业务线                                                       |
-| work.deletePreview | id                                             | 查看删除范围                                                         |
-| work.delete        | id、expectations                               | 按确认过的版本删除                                                   |
-| notes.create       | note（title、可选 kind / tag）                 | 创建普通 Markdown 笔记，保留原有文件名与标签校验                     |
-| notes.read         | id                                             | 读取同一份 Notes 正文                                                |
-| notes.save         | id、revision、body                             | 保存业务线 Notes 全文                                                |
-| exchange.export    | 可选 baseline（回执）                          | 生成全量首次包或相对于回执的新增／更新增量包                         |
-| exchange.preview   | bundle                                         | 验证 JSON 包，匹配 UUID，返回冲突和绑定当前状态的预览版本            |
-| exchange.apply     | bundle、revision（预览版本）                   | 整包原子导入并生成确认回执，不直接接受文件变更                       |
+| 命令 type          | 关键输入                                       | 用途                                                                  |
+| ------------------ | ---------------------------------------------- | --------------------------------------------------------------------- |
+| record.save        | data、可选 revision / options                  | 创建或编辑项目、业务线、节点、条目及实际记录；结构与现有记录契约一致  |
+| actual.delete      | id、revision                                   | 删除一条实际记录，核对当前内容版本，保留已发布的完成事实和 Notes 正文 |
+| plan.create        | plan                                           | 原子创建计划、必要项目／业务线、节点、条目及来源 Notes                |
+| work.complete      | id、revision、completed                        | 完成或重新打开，节点按既有规则处理下属条目                            |
+| work.reschedule    | id、revision、dueDate、可选 dueTime / location | 改期；TODO 不允许独立时刻                                             |
+| work.comment       | id、revision、text、可选 date                  | 批注或纪要写入所属 Notes                                              |
+| work.promote       | id、revision                                   | 升为独立业务线                                                        |
+| work.deletePreview | id                                             | 查看删除范围                                                          |
+| work.delete        | id、expectations                               | 按确认过的版本删除                                                    |
+| notes.create       | note（title、可选 kind / tag）                 | 创建普通 Markdown 笔记，保留原有文件名与标签校验                      |
+| notes.read         | id                                             | 读取同一份 Notes 正文                                                 |
+| notes.save         | id、revision、body                             | 保存业务线 Notes 全文                                                 |
+| exchange.export    | 可选 baseline（回执）                          | 生成全量首次包或相对于回执的新增／更新增量包                          |
+| exchange.preview   | bundle                                         | 验证 JSON 包，匹配 UUID，返回冲突和绑定当前状态的预览版本             |
+| exchange.apply     | bundle、revision（预览版本）                   | 整包原子导入并生成确认回执，不直接接受文件变更                        |
 
 JSON 格式、机器可读 Schema、共同版本与冲突语义见[增量交换协议](exchange.md)。Windows 和 Android 调用同一命令，系统文件选择与保存只负责传递 JSON。删除、附件与后台联网不在首版交换范围内。
 

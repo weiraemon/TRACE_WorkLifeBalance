@@ -1,3 +1,4 @@
+@import '@fontsource-variable/noto-serif-sc';
 @import './styles/base.css';
 @import './components/Importance.css';
 @import './features/workspace/workspace.css';

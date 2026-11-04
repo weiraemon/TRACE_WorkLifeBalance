@@ -9,12 +9,14 @@ export function TodaySidebar({
   lineId,
   goWorkspace,
   editActual,
+  reload,
 }: {
   snapshot: Snapshot;
   date: string;
   lineId: string;
   goWorkspace: (id: string) => void;
   editActual: (editor: Editor) => void;
+  reload: () => Promise<void>;
 }) {
   const contacts = contactsForDay(snapshot.entries, date)
     .flatMap((group) => group.todos)
@@ -50,7 +52,7 @@ export function TodaySidebar({
           已记录 · {actuals.length} 段{' '}
           <small>{(timeTotals(snapshot.entries, date, date).total / 60).toFixed(1)} h</small>
         </h3>
-        <ActualRecordList entries={actuals} snapshot={snapshot} edit={editActual} />
+        <ActualRecordList entries={actuals} snapshot={snapshot} edit={editActual} reload={reload} />
         {!actuals.length && <p className="hint">当天还没有实际记录。</p>}
       </section>
     </aside>

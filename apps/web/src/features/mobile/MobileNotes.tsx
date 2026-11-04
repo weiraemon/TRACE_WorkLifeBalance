@@ -3,6 +3,7 @@ import { CheckIcon } from '@radix-ui/react-icons';
 import { localDay, type BusinessLine, type Snapshot } from '../../../../../packages/domain/index';
 import { readContent, saveContent } from '../../api';
 import { Button, ErrorMessage, Field } from '../../components/ui';
+import { useDraftState, useDraftSaving } from '../drafts/useDraftState';
 import { NotesContent } from '../workspace/NotesContent';
 
 export function MobileNotes({
@@ -16,9 +17,9 @@ export function MobileNotes({
   reload: () => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
 }) {
-  const [memo, setMemo] = useState(''),
+  const [memo, setMemo] = useDraftState(`${snapshot.root}:memo:${line.id}`, ''),
     [error, setError] = useState(''),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useDraftSaving(`${snapshot.root}:memo:${line.id}`);
   const [bodyDirty, setBodyDirty] = useState(false);
   const memoRef = useRef(memo);
   memoRef.current = memo;
@@ -34,6 +35,7 @@ export function MobileNotes({
     <section className="mobile-notes" aria-label={`笔记 · ${line.title}`}>
       <h1>{line.title}</h1>
       <form
+        inert={busy}
         className="mobile-memo"
         onSubmit={async (event) => {
           event.preventDefault();
@@ -82,6 +84,7 @@ export function MobileNotes({
       </form>
       <NotesContent
         id={line.id}
+        draftScope={snapshot.root}
         revision={resource?.revision}
         editable
         compact

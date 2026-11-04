@@ -7,19 +7,21 @@ export function ReviewActuals({
   date,
   snapshot,
   edit,
+  reload,
   setDate,
 }: {
   data: ReviewData;
   date: string;
   snapshot: Snapshot;
   edit: (editor: Editor) => void;
+  reload: () => Promise<void>;
   setDate: (date: string) => void;
 }) {
   const { dayActuals, recordedDays } = data;
   return (
     <section className="review-actuals" aria-label="回顾实际记录">
       <h2>当天做过 · {date}</h2>
-      <ActualRecordList entries={dayActuals} snapshot={snapshot} edit={edit} />
+      <ActualRecordList entries={dayActuals} snapshot={snapshot} edit={edit} reload={reload} />
       {!dayActuals.length && <p className="hint">这一天没有实际记录。</p>}
       {recordedDays.some((day) => day.date !== date) && (
         <div className="recorded-days">

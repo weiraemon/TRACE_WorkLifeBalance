@@ -39,10 +39,17 @@ final class DocumentStore implements AutoCloseable {
     private int boundaries;
 
     static String sha(byte[] bytes) throws Exception {
-        byte[] digest = MessageDigest.getInstance("SHA-256").digest(bytes);
-        StringBuilder result = new StringBuilder();
-        for (byte value : digest) result.append(String.format(Locale.ROOT, "%02x", value & 255));
-        return result.toString();
+        return hex(MessageDigest.getInstance("SHA-256").digest(bytes));
+    }
+    private static String hex(byte[] bytes) {
+        char[] result = new char[bytes.length * 2];
+        String digits = "0123456789abcdef";
+        for (int i = 0; i < bytes.length; i++) {
+            int value = bytes[i] & 255;
+            result[i * 2] = digits.charAt(value >>> 4);
+            result[i * 2 + 1] = digits.charAt(value & 15);
+        }
+        return new String(result);
     }
     static String sha(String text) throws Exception { return sha(text.getBytes(StandardCharsets.UTF_8)); }
     private static String text(byte[] bytes) throws Exception {
@@ -140,8 +147,22 @@ final class DocumentStore implements AutoCloseable {
         }
     }
     private Uri find(String path) throws Exception {
+        String[] segments = parts(path);
+        Uri direct = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree) + "/" + path);
+        operation.check();
+        try (Cursor cursor = context.getContentResolver().query(direct, new String[]{
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_FLAGS
+        }, null, null, null, operation.signal)) {
+            if (cursor == null) throw new IOException("无法读取文件，授权可能已撤销");
+            if (!cursor.moveToFirst()) return null;
+            if (!segments[segments.length - 1].equals(cursor.getString(0))) throw new IOException("文件提供方返回了不同名称，停止访问");
+            if ((cursor.getLong(1) & DocumentsContract.Document.FLAG_VIRTUAL_DOCUMENT) != 0) throw new IOException("不支持虚拟文档");
+            return direct;
+        } catch (RuntimeException error) {
+            // Missing descendants can raise a provider permission error. Walk only to distinguish absence from a revoked grant.
+        }
         Uri current = root();
-        for (String part : parts(path)) { current = child(current, part); if (current == null) return null; }
+        for (String part : segments) { current = child(current, part); if (current == null) return null; }
         return current;
     }
     private String name(Uri uri) throws Exception {
@@ -201,9 +222,7 @@ final class DocumentStore implements AutoCloseable {
             byte[] buffer = new byte[16384]; int count;
             while ((count = input.read(buffer)) >= 0) { operation.check(); digest.update(buffer, 0, count); }
         } finally { operation.onCancel(null); }
-        StringBuilder result = new StringBuilder();
-        for (byte value : digest.digest()) result.append(String.format(Locale.ROOT, "%02x", value & 255));
-        return result.toString();
+        return hex(digest.digest());
     }
     private void writeNew(String path, String source) throws Exception {
         Uri directory = parent(path); String[] pieces = parts(path);

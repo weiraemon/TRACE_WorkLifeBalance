@@ -10,6 +10,7 @@ import { createRecord, save } from '../../api';
 import { ImportancePicker } from '../../components/Importance';
 import type { Editor } from '../../types/editor';
 import { WorkLocationPicker, initialLocation } from './WorkLocationPicker';
+import { useDraftState, useDraftSaving, clearDraft } from '../drafts/useDraftState';
 import { parseQuickCapture } from '../capture/quickCaptureParser';
 export const spaceLabel = { project: '项目', workline: '业务线', milestone: '节点', todo: '条目' };
 export function WorkItemForm({
@@ -28,25 +29,54 @@ export function WorkItemForm({
   const type = editor.type as keyof typeof spaceLabel;
   const item = editor.entry && isSpaceItem(editor.entry.data) ? editor.entry.data : undefined;
   const defaults = editor.defaults ?? {};
-  const [title, setTitle] = useState(item?.title ?? String(defaults.title ?? ''));
-  const [sourceText, setSourceText] = useState('');
-  const [kind, setKind] = useState<'todo' | 'idea'>(
+  const draftKey = `${snapshot.root}:work:${item?.id ?? JSON.stringify([type, defaults])}`;
+  const [baseRevision] = useDraftState(draftKey + ':revision', editor.entry?.revision ?? '');
+  const [wasEdited, setEdited] = useDraftState(draftKey + ':edited', false);
+  const closeForm = () => {
+    if (!wasEdited) clearDraft(draftKey);
+    close();
+  };
+  const [title, setTitle] = useDraftState(
+    draftKey + ':title',
+    item?.title ?? String(defaults.title ?? ''),
+  );
+  const [sourceText, setSourceText] = useDraftState(draftKey + ':sourceText', '');
+  const [kind, setKind] = useDraftState<'todo' | 'idea'>(
+    draftKey + ':kind',
     item?.type === 'todo' ? item.kind : defaults.kind === 'idea' ? 'idea' : 'todo',
   );
-  const [location, setLocation] = useState(() => initialLocation(snapshot.entries, item, defaults));
-  const [importance, setImportance] = useState(item?.importance ?? 1);
-  const [dueDate, setDueDate] = useState(
+  const [location, setLocation] = useDraftState(draftKey + ':location', () =>
+    initialLocation(snapshot.entries, item, defaults),
+  );
+  const [importance, setImportance] = useDraftState(
+    draftKey + ':importance',
+    item?.importance ?? 1,
+  );
+  const [dueDate, setDueDate] = useDraftState(
+    draftKey + ':dueDate',
     item?.type === 'milestone' || item?.type === 'todo' ? (item.dueDate ?? '') : '',
   );
-  const [dueTime, setDueTime] = useState(item?.type === 'milestone' ? (item.dueTime ?? '') : '');
-  const [tags, setTags] = useState(item?.type === 'milestone' ? item.tags.join('，') : '');
-  const [direction, setDirection] = useState(item?.type === 'todo' ? item.direction : 'self');
-  const [person, setPerson] = useState(item?.type === 'todo' ? item.person : '');
-  const [comment, setComment] = useState('');
-  const [commentId] = useState(() => crypto.randomUUID());
-  const [recordId] = useState(() => item?.id ?? crypto.randomUUID());
+  const [dueTime, setDueTime] = useDraftState(
+    draftKey + ':dueTime',
+    item?.type === 'milestone' ? (item.dueTime ?? '') : '',
+  );
+  const [tags, setTags] = useDraftState(
+    draftKey + ':tags',
+    item?.type === 'milestone' ? item.tags.join('，') : '',
+  );
+  const [direction, setDirection] = useDraftState(
+    draftKey + ':direction',
+    item?.type === 'todo' ? item.direction : 'self',
+  );
+  const [person, setPerson] = useDraftState(
+    draftKey + ':person',
+    item?.type === 'todo' ? item.person : '',
+  );
+  const [comment, setComment] = useDraftState(draftKey + ':comment', '');
+  const [commentId] = useDraftState(draftKey + ':commentId', () => crypto.randomUUID());
+  const [recordId] = useDraftState(draftKey + ':recordId', () => item?.id ?? crypto.randomUUID());
   const [error, setError] = useState(''),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useDraftSaving(draftKey);
   const pool = item?.type === 'milestone' && item.pool;
   const knownTags = [
     ...new Set([
@@ -55,6 +85,7 @@ export function WorkItemForm({
     ]),
   ];
   const applyParsedText = (value: string) => {
+    setEdited(true);
     onDirtyChange?.(true);
     const parsed = parseQuickCapture(value, snapshot.entries);
     const line = snapshot.entries.find(
@@ -65,22 +96,26 @@ export function WorkItemForm({
     setDueDate(parsed.dueDate ?? '');
     setDueTime(parsed.dueTime ?? '');
     setTags(parsed.tags.join('，'));
-    setLocation(
-      line?.data.type === 'workline'
-        ? { projectId: line.data.projectId, lineId: line.data.id, milestoneId: '' }
-        : { projectId: '', lineId: '', milestoneId: '' },
-    );
+    if (!location.lineId && line?.data.type === 'workline')
+      setLocation({ projectId: line.data.projectId, lineId: line.data.id, milestoneId: '' });
   };
   return (
     <Modal
       className="editor-dialog"
       title={`${item ? '编辑' : '新增'}${type === 'todo' ? kind.toUpperCase() : spaceLabel[type]}`}
-      onClose={close}
+      onClose={closeForm}
     >
       <form
-        onChangeCapture={() => onDirtyChange?.(true)}
+        inert={busy}
+        onChangeCapture={() => {
+          setEdited(true);
+          onDirtyChange?.(true);
+        }}
         onClickCapture={(event) => {
-          if ((event.target as Element).closest('.importance-picker')) onDirtyChange?.(true);
+          if ((event.target as Element).closest('.importance-picker')) {
+            setEdited(true);
+            onDirtyChange?.(true);
+          }
         }}
         onSubmit={async (event) => {
           event.preventDefault();
@@ -118,12 +153,17 @@ export function WorkItemForm({
                   }
                 : {}),
             });
-            await save(data, editor.entry, {
-              comments: comment.trim()
-                ? [{ id: commentId, targetId: recordId, text: comment }]
-                : [],
-            });
+            await save(
+              data,
+              editor.entry ? { ...editor.entry, revision: baseRevision } : undefined,
+              {
+                comments: comment.trim()
+                  ? [{ id: commentId, targetId: recordId, text: comment }]
+                  : [],
+              },
+            );
             await reload();
+            clearDraft(draftKey);
             onDirtyChange?.(false);
             close();
           } catch (e) {
@@ -251,7 +291,7 @@ export function WorkItemForm({
         </div>
         <ErrorMessage message={error} />
         <div className="form-actions">
-          <Button type="button" onClick={close}>
+          <Button type="button" onClick={closeForm}>
             取消
           </Button>
           <Button type="submit" className="primary" disabled={busy}>

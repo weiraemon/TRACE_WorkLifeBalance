@@ -57,8 +57,10 @@ export function createAndroidTransport(
     switch (route) {
       case 'business/v1/workspace':
         return { version: businessApiVersion, snapshot: await service.snapshot() };
-      case 'business/v1/commands':
-        return { version: businessApiVersion, result: await service.execute(input) };
+      case 'business/v1/commands': {
+        const result = await service.execute(input);
+        return { version: businessApiVersion, result, snapshot: vault.takePublishedSnapshot() };
+      }
       case 'backups':
         return vault.backups();
       case 'backup':
