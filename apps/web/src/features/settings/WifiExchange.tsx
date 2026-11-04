@@ -185,9 +185,11 @@ export function WifiExchange({
   return (
     <section className="wifi-exchange" aria-label="Wi-Fi 直连">
       <h3>Wi-Fi 直连</h3>
-      <p className="hint">
-        电脑和手机连接同一 Wi-Fi。电脑开启连接后，手机扫码配对，连接可使用 30 分钟。
-      </p>
+      {!mobile && (
+        <p className="hint">
+          电脑和手机连接同一 Wi-Fi。电脑开启连接后，手机扫码配对，连接可使用 30 分钟。
+        </p>
+      )}
       {mobile ? (
         <>
           {isAndroid() && (

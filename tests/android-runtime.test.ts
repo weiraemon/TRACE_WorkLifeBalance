@@ -87,6 +87,55 @@ it('Android 保存只完整扫描一次，读取仍按真实内容指纹识别�
   ).toMatchObject({ title: '外部编辑' });
 });
 
+it('Android 同次扫描复用原文，Notes 和交换不逐文件再跨桥读取，下一次请求仍识别外部修改', async () => {
+  const { native, files, line } = await fixture();
+  const calls: string[] = [];
+  const measured: NativeCall = (method, input) => {
+    calls.push(method);
+    return native(method, input);
+  };
+  const workspace = new AndroidWorkspace(
+    { root: 'content://test/tree/local', vaultId: 'session' },
+    measured,
+  );
+  const service = new WorkspaceService(workspace);
+  const note = (await service.execute({ type: 'notes.read', id: line.data.id })) as {
+    body: string;
+    path: string;
+  };
+  expect(note.body).toContain('手机业务线');
+  expect(calls).toEqual(['scan']);
+  files.set(note.path, files.get(note.path)! + '\n外部新增正文\n');
+  calls.length = 0;
+  expect(await service.execute({ type: 'notes.read', id: line.data.id })).toMatchObject({
+    body: expect.stringContaining('外部新增正文'),
+  });
+  expect(calls).toEqual(['scan']);
+  calls.length = 0;
+  await service.execute({ type: 'exchange.export' });
+  expect(calls).toEqual(['scan']);
+});
+
+it('复用扫描原文仍由原生发布拒绝扫描后发生的外部修改', async () => {
+  const { native, files, project } = await fixture();
+  const changedAfterScan: NativeCall = async <T>(method: string, input?: unknown): Promise<T> => {
+    const result = await native<T>(method, input);
+    if (method === 'scan') files.set(project.path, files.get(project.path)! + '\n外部原文\n');
+    return result;
+  };
+  const service = new WorkspaceService(
+    new AndroidWorkspace(
+      { root: 'content://test/tree/local', vaultId: 'session' },
+      changedAfterScan,
+    ),
+  );
+  await expect(
+    service.saveRecord({ ...project.data, title: '不应覆盖' }, project.revision),
+  ).rejects.toThrow('revision conflict');
+  expect(files.get(project.path)).toContain('外部原文');
+  expect(files.get(project.path)).not.toContain('不应覆盖');
+});
+
 it('删除实际记录保留完成事实和 Notes，并拒绝陈旧版本及其他对象类型', async () => {
   const { service, files, line, project } = await fixture();
   const node = await service.saveRecord(

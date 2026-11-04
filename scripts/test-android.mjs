@@ -17,7 +17,7 @@ const executable = path.join(
 function adb(...args) {
   const result = spawnSync(executable, args, {
     encoding: 'utf8',
-    timeout: args.includes('instrument') ? 300000 : 120000,
+    timeout: args.includes('instrument') ? 600000 : 120000,
   });
   if (result.status !== 0)
     throw new Error(`adb ${args[0]} failed: ${result.stderr || result.stdout}`);
@@ -124,13 +124,19 @@ function nativeTests() {
     'com.chaos.workbench.test/androidx.test.runner.AndroidJUnitRunner',
   );
   fs.writeFileSync(path.join(output, 'instrumentation.txt'), instrumentation);
-  assert.match(instrumentation, /OK \(8 tests\)/);
+  assert.match(instrumentation, /OK \(12 tests\)/);
   assert.doesNotMatch(instrumentation, /FAILURES|INSTRUMENTATION_FAILED/);
   // Remove only the reserved synthetic fault fixtures before timing business UI operations.
   const fixtures = device('shell', 'readlink', '-f', directory + '/instrumentation');
   assert.equal(fixtures, '/storage/emulated/0/Documents/CHAOS-Android-Test/instrumentation');
   device('shell', 'rm', '-rf', '--', fixtures);
-  checks.push('真实 SAF：15 个发布中断位置恢复、冲突拒绝、路径防护、严格 UTF-8、目录独占');
+  timings.storage = JSON.parse(
+    /INSTRUMENTATION_STATUS: chaosPerformance=(.+)/.exec(instrumentation)?.[1] || 'null',
+  );
+  assert.equal(timings.storage?.files, 291);
+  checks.push(
+    '真实 SAF：13 个发布中断位置恢复、旧日志升级恢复、并行扫描取消、外部新增文件冲突、路径防护、严格 UTF-8、目录独占',
+  );
 }
 try {
   device(
@@ -335,7 +341,13 @@ try {
   await page.screenshot({ path: path.join(output, 'vertical-line.png') });
   checks.push('项目、业务线、节点和待办创建；竖向业务线与切线');
   await nav('笔记');
+  const notesOpened = Date.now();
   await page.getByRole('button', { name: '打开业务线 下一步研究', exact: true }).click();
+  await page
+    .locator('.notes-content .markdown-body')
+    .getByRole('heading', { name: '下一步研究', exact: true })
+    .waitFor();
+  timings.notesOpenMs = Date.now() - notesOpened;
   await page.getByLabel('随手记', { exact: true }).fill('先验证关键假设，再决定下一步。');
   await page.getByRole('button', { name: '记到笔记', exact: true }).click();
   await eventually(

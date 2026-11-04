@@ -53,6 +53,7 @@ test('午夜自动换日，空白记录更新时间，快速收集草稿保留',
   await expect(page.getByLabel('要做什么', { exact: true })).toHaveValue('留到明天继续安排');
   await page.getByRole('tab', { name: '今日已做', exact: true }).click();
   await expect(form.locator('.capture-date')).toHaveText('记录日期 · 2026-11-02');
+  await expect(page.getByRole('button', { name: '重新加载 Vault', exact: true })).toBeEnabled();
   await page.clock.setSystemTime(new Date('2026-11-02T10:45:00+08:00'));
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(form.getByLabel('开始时间', { exact: true })).toHaveValue('10:15');

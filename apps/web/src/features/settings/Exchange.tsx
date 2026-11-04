@@ -83,10 +83,12 @@ export function Exchange({
       <WifiExchange mobile={mobile} baseline={baseline} remember={remember} reload={reload} />
       <details>
         <summary>离线文件交换</summary>
-        <p className="hint">
-          通过 USB 或文件传递
-          JSON。首次发送全部受管内容；对方导入后，把回执传回来并载入，后续只发变化。也可用同一回执反向发送。删除、附件和普通非受管文件不自动同步。
-        </p>
+        {!mobile && (
+          <p className="hint">
+            通过 USB 或文件传递
+            JSON。首次发送全部受管内容；对方导入后，把回执传回来并载入，后续只发变化。也可用同一回执反向发送。删除、附件和普通非受管文件不自动同步。
+          </p>
+        )}
         <fieldset disabled={busy}>
           <p>{baseline ? '已记住共同版本，可增量发送。' : '尚无共同版本，将首次全量发送。'}</p>
           <div className="actions">

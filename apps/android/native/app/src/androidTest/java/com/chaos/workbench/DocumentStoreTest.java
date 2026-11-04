@@ -15,6 +15,99 @@ import static org.junit.Assert.*;
 
 /** Real SAF tests. Run only against the explicitly selected synthetic emulator directory. */
 public class DocumentStoreTest {
+    @Test public void benchmarksSmallMarkdownBatch() throws Exception {
+        String prefix = "instrumentation/benchmark-" + UUID.randomUUID() + "/";
+        JSONArray changes = new JSONArray();
+        for (int i = 0; i < 291; i++) changes.put(change(prefix + i + ".md", null, "# 合成性能样本 " + i + "\n\n一段普通 Markdown 正文。\n"));
+        try (DocumentStore store = new DocumentStore(context, tree, device)) {
+            long start = android.os.SystemClock.elapsedRealtime();
+            store.commit(changes);
+            long imported = android.os.SystemClock.elapsedRealtime();
+            store.scan();
+            long scanned = android.os.SystemClock.elapsedRealtime();
+            String path = prefix + "290.md";
+            String source = store.read(path);
+            long read = android.os.SystemClock.elapsedRealtime();
+            store.commit(new JSONArray().put(change(path, DocumentStore.sha(source), "修改后的正文")));
+            long saved = android.os.SystemClock.elapsedRealtime();
+            store.commit(new JSONArray().put(change(path, DocumentStore.sha("修改后的正文"), null)));
+            long deleted = android.os.SystemClock.elapsedRealtime();
+            JSONObject performance = new JSONObject().put("files", 291).put("importMs", imported - start)
+                .put("scanMs", scanned - imported).put("readMs", read - scanned).put("saveMs", saved - read).put("deleteMs", deleted - saved);
+            android.os.Bundle report = new android.os.Bundle();
+            report.putString("chaosPerformance", performance.toString());
+            InstrumentationRegistry.getInstrumentation().sendStatus(2, report);
+            JSONArray files = store.scan();
+            int remaining = 0;
+            for (int i = 0; i < files.length(); i++) if (files.getJSONObject(i).getString("path").startsWith(prefix)) remaining++;
+            assertEquals(290, remaining);
+        }
+    }
+    @Test public void cancelledParallelScanCanBeRetried() throws Exception {
+        String prefix = "instrumentation/scan-" + UUID.randomUUID() + "/";
+        JSONArray changes = new JSONArray();
+        for (int i = 0; i < 12; i++) changes.put(change(prefix + i + ".md", null, "可取消的正文"));
+        try (DocumentStore store = new DocumentStore(context, tree, device)) {
+            store.commit(changes);
+            NativeOperation[] active = new NativeOperation[1];
+            active[0] = new NativeOperation("parallel-scan", event -> {
+                if (event.optString("phase").equals("正在读取工作文件") && event.optInt("completed") >= 1) active[0].cancel("测试停止扫描");
+            });
+            store.operation(active[0]);
+            try { store.scan(); fail("扫描应停止"); }
+            catch (Exception expected) { assertTrue(expected.getMessage().contains("测试停止")); }
+            store.operation(new NativeOperation("retry", event -> {}));
+            assertTrue(store.scan().length() >= 12);
+        }
+    }
+    @Test public void recoversLegacyPerFileJournal() throws Exception {
+        String prefix = "instrumentation/legacy-" + UUID.randomUUID() + "/";
+        String path = prefix + "a.md", old = prefix + ".chaos-old-" + UUID.randomUUID(), temp = prefix + ".chaos-new-" + UUID.randomUUID();
+        try (DocumentStore store = new DocumentStore(context, tree, device)) {
+            store.commit(new JSONArray().put(change(path, null, "旧版原文")));
+            android.provider.DocumentsContract.renameDocument(context.getContentResolver(), store.resource(path), old.substring(old.lastIndexOf('/') + 1));
+            writeFixture(store.resource(prefix.substring(0, prefix.length() - 1)), temp.substring(temp.lastIndexOf('/') + 1), "旧版新文");
+            writeFixture(store.resource(".atlas"), "pending.json", new JSONArray().put(change(path, DocumentStore.sha("旧版原文"), "旧版新文")).toString());
+            writeFixture(store.resource(".atlas"), "android-swap.json", new JSONObject().put("path", path).put("old", old).put("temp", temp).toString());
+        }
+        try (DocumentStore recovered = new DocumentStore(context, tree, device)) {
+            assertEquals("旧版新文", recovered.read(path));
+            assertNull(recovered.fingerprint(".atlas/pending.json"));
+            assertNull(recovered.fingerprint(".atlas/android-swap.json"));
+        }
+    }
+    @Test public void refusesFileCreatedAfterBatchPreflight() throws Exception {
+        String prefix = "instrumentation/race-" + UUID.randomUUID() + "/", path = prefix + "new.md";
+        Uri[] external = new Uri[1];
+        try (DocumentStore store = new DocumentStore(context, tree, device)) {
+            store.commit(new JSONArray().put(change(prefix + "seed.md", null, "样本目录")));
+            store.operation(new NativeOperation("external-create", event -> {
+                if (event.optString("phase").equals("正在写入并恢复文件") && event.optInt("completed") == 0) {
+                    try { external[0] = writeFixture(store.resource(prefix.substring(0, prefix.length() - 1)), "new.md", "外部内容"); }
+                    catch (Exception error) { throw new RuntimeException(error); }
+                }
+            }));
+            try { store.commit(new JSONArray().put(change(path, null, "应用内容"))); fail("应保留外部新增文件"); }
+            catch (Exception expected) { assertTrue(expected.getMessage().contains("目标已有内容")); }
+        }
+        try {
+            try (DocumentStore unexpected = new DocumentStore(context, tree, device)) { fail("恢复应拒绝第三种内容"); }
+            catch (Exception expected) { assertTrue(expected.getMessage().contains("外部修改")); }
+            try (java.io.InputStream input = context.getContentResolver().openInputStream(external[0])) {
+                byte[] bytes = new byte[1024]; int count = input.read(bytes);
+                assertEquals("外部内容", new String(bytes, 0, count, StandardCharsets.UTF_8));
+            }
+        } finally {
+            if (external[0] != null) android.provider.DocumentsContract.deleteDocument(context.getContentResolver(), external[0]);
+            try (DocumentStore recovered = new DocumentStore(context, tree, device)) { assertEquals("应用内容", recovered.read(path)); }
+        }
+    }
+    private Uri writeFixture(Uri parent, String name, String source) throws Exception {
+        Uri uri = android.provider.DocumentsContract.createDocument(context.getContentResolver(), parent, "application/x-chaos-data", name);
+        assertNotNull(uri);
+        try (OutputStream stream = context.getContentResolver().openOutputStream(uri, "wt")) { stream.write(source.getBytes(StandardCharsets.UTF_8)); }
+        return uri;
+    }
     @Test public void reinstallRequiresConsentAndRecoversOldDirectory() throws Exception {
         assertEquals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", DocumentStore.sha("abc"));
         String path = "instrumentation/" + UUID.randomUUID() + ".md";
@@ -104,14 +197,16 @@ public class DocumentStoreTest {
         return new JSONObject().put("path", path).put("expected", expected == null ? JSONObject.NULL : expected).put("content", content == null ? JSONObject.NULL : content);
     }
     @Test public void interruptedBatchRecoversAtEveryPublicationBoundary() throws Exception {
-        for (int boundary = 1; boundary <= 15; boundary++) {
+        for (int boundary = 1; boundary <= 13; boundary++) {
             String prefix = "instrumentation/" + UUID.randomUUID() + "/";
             DocumentStore store = new DocumentStore(context, tree, device);
             store.commit(new JSONArray().put(change(prefix + "a.md", null, "原文A")).put(change(prefix + "b.md", null, "原文B")));
             DocumentStore.interruptAfter = boundary;
+            boolean interrupted = false;
             try { store.commit(new JSONArray().put(change(prefix + "a.md", DocumentStore.sha("原文A"), "新文A")).put(change(prefix + "b.md", DocumentStore.sha("原文B"), "新文B"))); }
-            catch (Exception expected) { assertTrue(expected.getMessage(), expected.getMessage().contains("模拟发布中断")); }
+            catch (Exception expected) { interrupted = true; assertTrue(expected.getMessage(), expected.getMessage().contains("模拟发布中断")); }
             finally { DocumentStore.interruptAfter = -1; store.close(); }
+            assertTrue("应经过发布边界 " + boundary, interrupted);
             try (DocumentStore recovered = new DocumentStore(context, tree, device)) {
                 assertEquals("新文A", recovered.read(prefix + "a.md"));
                 assertEquals("新文B", recovered.read(prefix + "b.md"));

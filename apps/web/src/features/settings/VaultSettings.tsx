@@ -96,7 +96,15 @@ export function Connect({
   );
 }
 
-export function Backup({ snapshot, reload }: { snapshot: Snapshot; reload: () => Promise<void> }) {
+export function Backup({
+  snapshot,
+  reload,
+  mobile = false,
+}: {
+  snapshot: Snapshot;
+  reload: () => Promise<void>;
+  mobile?: boolean;
+}) {
   const [backups, setBackups] = useState<{ id: string; createdAt: string; count: number }[]>([]),
     [error, setError] = useState(''),
     [message, setMessage] = useState(''),
@@ -122,8 +130,14 @@ export function Backup({ snapshot, reload }: { snapshot: Snapshot; reload: () =>
     <section className="backup">
       <h2>备份与恢复</h2>
       <p className="hint">
-        仅手动创建快照，最多保留 3 份。编辑、删除和恢复不自动生成备份。 快照仅包含 CHAOS 管理的
-        Markdown，附件与普通笔记请另行备份。
+        {mobile ? (
+          '手动备份，最多 3 份。'
+        ) : (
+          <>
+            仅手动创建快照，最多保留 3 份。编辑、删除和恢复不自动生成备份。 快照仅包含 CHAOS 管理的
+            Markdown，附件与普通笔记请另行备份。
+          </>
+        )}
       </p>
       <Button
         disabled={busy}

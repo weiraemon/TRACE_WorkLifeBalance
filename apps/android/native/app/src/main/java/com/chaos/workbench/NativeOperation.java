@@ -13,7 +13,8 @@ final class NativeOperation {
     final boolean storage;
     private final Consumer<JSONObject> listener;
     private volatile String stopped;
-    private volatile Runnable cancelIo;
+    private final java.util.Set<Runnable> activeIo = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final ThreadLocal<Runnable> threadIo = new ThreadLocal<>();
     private volatile long lastActivity = SystemClock.elapsedRealtime();
     private long lastUpdate;
     private String lastPhase = "";
@@ -27,14 +28,16 @@ final class NativeOperation {
         this.storage = storage;
     }
     void onCancel(Runnable action) {
-        cancelIo = action;
+        Runnable previous = threadIo.get();
+        if (previous != null) activeIo.remove(previous);
+        if (action == null) threadIo.remove();
+        else { threadIo.set(action); activeIo.add(action); }
         if (stopped != null && action != null) action.run();
     }
     void cancel(String reason) {
         stop(reason);
         signal.cancel();
-        Runnable action = cancelIo;
-        if (action != null) action.run();
+        for (Runnable action : activeIo) action.run();
     }
     void stop(String reason) { stopped = reason; }
     boolean isStopped() { return stopped != null; }
@@ -42,7 +45,7 @@ final class NativeOperation {
     void check() throws IOException {
         if (stopped != null) throw new IOException(stopped);
     }
-    void update(String phase, int completed, int total) throws Exception {
+    synchronized void update(String phase, int completed, int total) throws Exception {
         check();
         long now = SystemClock.elapsedRealtime();
         lastActivity = now;

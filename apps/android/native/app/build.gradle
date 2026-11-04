@@ -8,7 +8,7 @@ android {
         applicationId "com.chaos.workbench"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 3
+        versionCode 4
         versionName new groovy.json.JsonSlurper().parse(rootProject.file('../../../package.json')).version
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {

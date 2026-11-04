@@ -305,8 +305,7 @@ export default function MobileApp() {
   };
   const connection = isAndroid() ? (
     <section className="mobile-connect">
-      <h2>选择 Markdown 工作目录</h2>
-      <p>选择手机上的专用文件夹。工作内容保存在普通 Markdown 文件中。</p>
+      <h2>工作目录</h2>
       <Button
         className="primary"
         onClick={() =>
@@ -324,7 +323,6 @@ export default function MobileApp() {
       >
         选择文件夹
       </Button>
-      <p className="hint">首次授权后可离线使用。授权失效时需要重新选择，原内容会保留。</p>
     </section>
   ) : (
     <Connect
@@ -635,7 +633,7 @@ export default function MobileApp() {
                   </Button>
                 )}
               </div>
-              <Backup snapshot={snapshot} reload={reload} />
+              <Backup snapshot={snapshot} reload={reload} mobile />
               <Exchange key={snapshot.vaultId} snapshot={snapshot} reload={reload} mobile />
             </>
           )}

@@ -18,6 +18,7 @@ export class AndroidWorkspace extends Workspace {
   private tail: Promise<unknown> = Promise.resolve();
   private lastScan?: { fingerprint: string; snapshot: Snapshot };
   private scannedFiles?: ScannedFile[];
+  private sources = new Map<string, string>();
   private publishedSnapshot?: Snapshot;
   takePublishedSnapshot() {
     const snapshot = this.publishedSnapshot;
@@ -37,7 +38,14 @@ export class AndroidWorkspace extends Workspace {
       await new Promise((resolve) => setTimeout(resolve, 0));
   }
   protected serialized<T>(fn: () => Promise<T>): Promise<T> {
-    const result = this.tail.then(fn);
+    const result = this.tail.then(async () => {
+      this.sources.clear();
+      try {
+        return await fn();
+      } finally {
+        this.sources.clear();
+      }
+    });
     this.tail = result.catch(() => {});
     return result;
   }
@@ -48,6 +56,9 @@ export class AndroidWorkspace extends Workspace {
     this.publishedSnapshot = undefined;
     const files = await this.call<ScannedFile[]>('scan');
     this.scannedFiles = files;
+    this.sources = new Map(
+      files.flatMap((file) => (file.source === undefined ? [] : [[file.path, file.source]])),
+    );
     return this.decodeFiles(files);
   }
   private async decodeFiles(files: ScannedFile[]): Promise<Snapshot> {
@@ -96,6 +107,9 @@ export class AndroidWorkspace extends Workspace {
     return snapshot;
   }
   protected async readSource(path: string) {
+    // A scan already read and hashed these exact bytes. Publication checks their revisions again.
+    const scanned = this.sources.get(path);
+    if (scanned !== undefined) return scanned;
     const source = await this.call<string>('read', { path });
     if (
       this.publishedSnapshot &&
@@ -120,6 +134,7 @@ export class AndroidWorkspace extends Workspace {
   protected async commitChanges(changes: FileChange[]) {
     const parsed = changesSchema.parse(changes);
     this.publishedSnapshot = undefined;
+    this.sources.clear();
     if (!parsed.length) return;
     await this.call('commit', { changes: parsed });
     if (!this.scannedFiles) return;

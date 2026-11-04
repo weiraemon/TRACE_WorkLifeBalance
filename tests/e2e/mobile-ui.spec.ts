@@ -44,6 +44,37 @@ test('六个入口、项目清单和竖向业务线共享数据，滑动切线�
   await page.screenshot({ path: 'test-results/mobile-workspace.png' });
 });
 
+test('手机节点日期和操作位于轴线左侧，设置精简说明且桌面保留原说明', async ({ page }) => {
+  await nav(page, '工作空间');
+  await page.getByRole('button', { name: '打开业务线 论文研究', exact: true }).click();
+  const point = page.getByRole('article', { name: '节点 · 方案会议', exact: true });
+  for (const width of [320, 390, 640]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (const theme of ['sage', 'blue']) {
+      await page.evaluate((theme) => {
+        document.documentElement.dataset.theme = theme;
+      }, theme);
+      const axis = await point.locator('.mobile-node-axis').boundingBox();
+      for (const control of await point.locator('.mobile-node-meta button').all()) {
+        const bounds = await control.boundingBox();
+        expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(axis!.x + 1);
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    }
+  }
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  const settings = page.getByRole('dialog', { name: '设置', exact: true });
+  await expect(settings.locator('.backup > .hint')).toHaveText('手动备份，最多 3 份。');
+  await expect(settings.locator('.wifi-exchange > .hint')).toHaveCount(0);
+  await settings.getByText('离线文件交换', { exact: true }).click();
+  await expect(settings.locator('.exchange > details > .hint')).toHaveCount(0);
+  await page.goto('/');
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  await expect(page.locator('.backup > .hint')).toContainText('附件与普通笔记请另行备份');
+});
+
 test('实际录入和已做分开，保存关联与本次完成仍联合发布', async ({ page }) => {
   await nav(page, '编辑');
   await page.getByLabel('具体事件', { exact: true }).fill('在手机上完成材料整理');

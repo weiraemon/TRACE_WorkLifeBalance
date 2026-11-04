@@ -156,6 +156,30 @@ export function VerticalLine({
                     {point.location && <span>{point.location}</span>}
                   </>
                 )}
+                <div className="mobile-node-tools">
+                  {!point.pool && (
+                    <Button
+                      aria-label={`节点操作 · ${point.title}`}
+                      onClick={() => actions(point.id)}
+                    >
+                      <DotsHorizontalIcon />
+                    </Button>
+                  )}
+                  <Button
+                    onClick={() => edit({ type: 'todo', defaults: { milestoneId: point.id } })}
+                  >
+                    <PlusIcon />
+                    待办
+                  </Button>
+                  <Button
+                    onClick={() =>
+                      edit({ type: 'todo', defaults: { milestoneId: point.id, kind: 'idea' } })
+                    }
+                  >
+                    <PlusIcon />
+                    想法
+                  </Button>
+                </div>
               </div>
               <div className="mobile-node-axis">
                 {point.pool ? (
@@ -186,14 +210,6 @@ export function VerticalLine({
                   >
                     {point.title}
                   </button>
-                  {!point.pool && (
-                    <Button
-                      aria-label={`节点操作 · ${point.title}`}
-                      onClick={() => actions(point.id)}
-                    >
-                      <DotsHorizontalIcon />
-                    </Button>
-                  )}
                 </div>
                 <ul className="mobile-todos">
                   {todos.map((todo) => {
@@ -234,22 +250,6 @@ export function VerticalLine({
                     );
                   })}
                 </ul>
-                <div className="mobile-node-add">
-                  <Button
-                    onClick={() => edit({ type: 'todo', defaults: { milestoneId: point.id } })}
-                  >
-                    <PlusIcon />
-                    待办
-                  </Button>
-                  <Button
-                    onClick={() =>
-                      edit({ type: 'todo', defaults: { milestoneId: point.id, kind: 'idea' } })
-                    }
-                  >
-                    <PlusIcon />
-                    想法
-                  </Button>
-                </div>
               </div>
             </article>
           );

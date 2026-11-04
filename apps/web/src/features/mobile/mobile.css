@@ -252,14 +252,13 @@
 }
 .mobile-node {
   display: grid;
-  grid-template-columns: minmax(64px, 0.7fr) 40px minmax(0, 1.7fr);
-  min-height: 190px;
+  grid-template-columns: minmax(84px, 0.75fr) 40px minmax(0, 1.75fr);
 }
 .mobile-node-meta {
   padding: 8px 8px 32px 0;
   text-align: right;
   overflow-wrap: anywhere;
-  font-size: 14px;
+  font-size: 12px;
   color: var(--label);
 }
 .mobile-node-meta button {
@@ -267,14 +266,14 @@
   background: transparent;
   padding: 2px 0 8px;
   min-height: 48px;
-  font-size: 14px;
+  font-size: 12px;
 }
 .mobile-node-meta strong,
 .mobile-node-meta span {
   display: block;
 }
 .mobile-node-meta strong {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 500;
 }
 .mobile-node-axis {
@@ -351,7 +350,6 @@
   overflow-wrap: anywhere;
   min-height: 48px;
 }
-.mobile-node-heading .button,
 .mobile-todos .button {
   min-width: 40px;
   padding: 8px;
@@ -413,15 +411,23 @@
   text-decoration: line-through;
   color: var(--muted);
 }
-.mobile-node-add {
+.mobile-node-tools {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-top: 8px;
 }
-.mobile-node-add .button {
+.mobile-app .mobile-node-tools .button {
   padding: 4px 8px;
   gap: 4px;
-  font-size: 14px;
+  min-height: 44px;
+  font-size: 12px;
+  white-space: nowrap;
+  background: transparent;
+}
+.mobile-node-tools .button svg {
+  width: 16px;
+  height: 16px;
 }
 .mobile-pool .mobile-node-content {
   padding-top: 0;
