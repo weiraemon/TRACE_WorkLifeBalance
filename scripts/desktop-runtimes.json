@@ -8,5 +8,10 @@
     "file": "sqlcipher3-0.6.4-cp312-cp312-win_amd64.whl.zip",
     "url": "https://files.pythonhosted.org/packages/7d/99/ab20279f6598cdd3aacadef04200819c1e70dfca195381987d875fc6423a/sqlcipher3-0.6.4-cp312-cp312-win_amd64.whl",
     "sha256": "ff612c1f731a1870457a3fa4c0095bf27ce13ad7e2035ec3f98a489e2d6ccf5c"
+  },
+  "zstandard": {
+    "file": "zstandard-0.25.0-cp312-cp312-win_amd64.whl.zip",
+    "url": "https://files.pythonhosted.org/packages/79/3b/fa54d9015f945330510cb5d0b0501e8253c127cca7ebe8ba46a965df18c5/zstandard-0.25.0-cp312-cp312-win_amd64.whl",
+    "sha256": "ffef5a74088f1e09947aecf91011136665152e0b4b359c42be3373897fb39b01"
   }
 }

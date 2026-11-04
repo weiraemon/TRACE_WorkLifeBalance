@@ -347,7 +347,7 @@ function QqContactPicker({
   );
 }
 
-function CandidateCard({
+export function CandidateCard({
   candidate,
   snapshot,
   busy,
@@ -488,7 +488,7 @@ function CandidateCard({
     <article className="message-candidate">
       <h3>{candidate.suggestion.title}</h3>
       <p className="hint">
-        {candidate.conversation} · {candidate.source.sender} ·{' '}
+        {candidate.source.provider === 'wechat' ? '微信' : 'QQ'} · {candidate.conversation} · {candidate.source.sender} ·{' '}
         {new Date(candidate.source.sentAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
       </p>
       <p>{candidate.suggestion.reason}</p>
@@ -966,6 +966,7 @@ export function MessageInbox({
       rules: [
         {
           id: crypto.randomUUID(),
+          provider: 'qq',
           name: '',
           kind,
           enabled: kind === 'group',
@@ -991,9 +992,9 @@ export function MessageInbox({
       else next.add(id);
       return next;
     });
-  const groupRuleCount = settings.rules.filter((rule) => rule.kind === 'group').length;
-  const privateRuleCount = settings.rules.filter((rule) => rule.kind === 'private').length;
-  const visibleRules = settings.rules.filter((rule) => rule.kind === ruleKindTab);
+  const groupRuleCount = settings.rules.filter((rule) => (rule.provider ?? 'qq') === 'qq' && rule.kind === 'group').length;
+  const privateRuleCount = settings.rules.filter((rule) => (rule.provider ?? 'qq') === 'qq' && rule.kind === 'private').length;
+  const visibleRules = settings.rules.filter((rule) => (rule.provider ?? 'qq') === 'qq' && rule.kind === ruleKindTab);
   if (!view)
     return (
       <>
@@ -1001,6 +1002,7 @@ export function MessageInbox({
         <ErrorMessage message={error} />
       </>
     );
+  const candidates = view.state.candidates.filter((candidate) => (candidate.source.provider ?? 'qq') === 'qq');
   const activeAi = view.ai.profiles[view.ai.provider];
   const aiLabel = aiDefaults[view.ai.provider].label;
   const selected = view.ai.profiles[ai.provider];
@@ -1084,7 +1086,7 @@ export function MessageInbox({
               >
                 <option value="">选择已绑定 QQ 的会话</option>
                 {view.state.settings.rules
-                  .filter((rule) => rule.chatId)
+                  .filter((rule) => (rule.provider ?? 'qq') === 'qq' && rule.chatId)
                   .map((rule) => (
                     <option key={rule.id} value={rule.id}>
                       {rule.kind === 'group' ? '群聊' : '私聊'} · {rule.name}
@@ -1780,7 +1782,7 @@ export function MessageInbox({
                     >
                       <option value="">选择已保存的会话</option>
                       {view.state.settings.rules
-                        .filter((r) => r.enabled)
+                        .filter((r) => (r.provider ?? 'qq') === 'qq' && r.enabled)
                         .map((r) => (
                           <option key={r.id} value={r.id}>
                             {r.kind === 'group' ? '群聊' : '私聊'} · {r.name}
@@ -1855,7 +1857,7 @@ export function MessageInbox({
                   <select value={quickRuleId} onChange={(e) => setQuickRuleId(e.target.value)}>
                     <option value="">选择会话规则</option>
                     {view.state.settings.rules
-                      .filter((rule) => rule.enabled)
+                      .filter((rule) => (rule.provider ?? 'qq') === 'qq' && rule.enabled)
                       .map((rule) => (
                         <option key={rule.id} value={rule.id}>
                           {rule.kind === 'group' ? '群聊' : '私聊'} · {rule.name}
@@ -1912,20 +1914,20 @@ export function MessageInbox({
               </details>
             </>
           )}
-          {!view.state.candidates.length && (
+          {!candidates.length && (
             <p className="hint">
               {mode === 'pending'
                 ? '暂无待确认消息。'
                 : '暂无待确认事项。先添加会话规则，再粘贴消息验证。'}
             </p>
           )}
-          {view.state.candidates.length > 0 && (
+          {candidates.length > 0 && (
             <div className="message-bulk-actions">
               <Button disabled={busy} onClick={() => setBulk('accept')}>
-                一键确认（{view.state.candidates.length}）
+                一键确认（{candidates.length}）
               </Button>
               <Button disabled={busy} onClick={() => setBulk('dismiss')}>
-                一键忽略（{view.state.candidates.length}）
+                一键忽略（{candidates.length}）
               </Button>
             </div>
           )}
@@ -1934,8 +1936,8 @@ export function MessageInbox({
               <div className="message-bulk-confirm" role="alertdialog" aria-modal="true">
                 <p>
                   {bulk === 'accept'
-                    ? `确定要一键确认全部 ${view.state.candidates.length} 条待确认事项吗？变更会直接修改原事项，取消会标记完成。`
-                    : `确定要一键忽略全部 ${view.state.candidates.length} 条待确认事项吗？忽略后原文不会进入计划。`}
+                    ? `确定要一键确认全部 ${candidates.length} 条待确认事项吗？变更会直接修改原事项，取消会标记完成。`
+                    : `确定要一键忽略全部 ${candidates.length} 条待确认事项吗？忽略后原文不会进入计划。`}
                 </p>
                 <div className="message-bulk-actions">
                   <Button disabled={busy} onClick={() => setBulk(null)}>
@@ -1961,7 +1963,7 @@ export function MessageInbox({
               </div>
             </div>
           )}
-          {view.state.candidates.map((candidate) => (
+          {candidates.map((candidate) => (
             <CandidateCard
               key={candidate.id}
               candidate={candidate}

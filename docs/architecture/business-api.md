@@ -8,6 +8,7 @@ CHAOS 以现有 main 页面和业务规则为准。新增外部能力以弹窗�
 flowchart LR
   Web[现有页面与附加弹窗] --> HTTP[HTTP 输入校验]
   QQ[QQ 协议读取与同步] --> Intake[消息筛选、去重与识别服务]
+  WeChat[微信本机只读同步] --> Intake
   HTTP --> Business[WorkspaceService 标准业务服务]
   HTTP --> Intake
   Intake --> Inbox[待确认与来源服务]
@@ -19,9 +20,10 @@ flowchart LR
 
 - packages/domain/business.ts：版本化命令、计划输入和机器可读 Schema 的唯一来源；不引用 QQ 或 AI 提供商。
 - packages/workspace/workspace-service.ts：网页与任意客户端共用的业务入口，不依赖 Node Vault。保存、完成、改期、批注和 Notes 操作复用 packages/workspace/workspace.ts 中的同一份业务规则。
-- application/message-intake-service.ts：共用的消息筛选、去重、AI 识别与待确认流程；QQ 和粘贴识别调用同一实现。
+- application/message-intake-service.ts：共用的消息筛选、去重、AI 识别与待确认流程；QQ、微信和粘贴识别调用同一实现。
 - application/message-inbox-service.ts：来源、确认和批量处理。将识别建议转换为标准业务命令，不直接改写工作文件。
 - sync/qq-sync.ts：QQ 读取脚本、协议数据转换、同步时间和游标。新增平台也遵守这一边界。
+- sync/wechat-sync.ts：微信本机数据库读取、来源转换及各消息分库的独立游标；只调用共用消息服务，不改写业务 Markdown。
 - packages/workspace/markdown.ts 与 line-notes.ts：Markdown 保真处理、Notes 正文组织与迁移，不依赖操作系统。
 - native/：Node 文件读写、索引诊断、路径安全、锁、原子发布与恢复；Vault 继承共享 Workspace 实现，不再维护完成、改期和 Notes 业务副本。不得依赖消息模型、QQ 或 AI 接入。
 
@@ -116,3 +118,11 @@ npm run check:architecture 检查核心层不反向引用接入层，npm run che
 - `chaos:discover-qq({ seed?: string, browse?: boolean })`：返回 `{ accounts: [{ dataDir, selfQQ, modified }], limited }`；浏览文件夹取消返回 `null`。仅可信主窗口可调用，扫描有深度、目录数量和时间预算。
 - `chaos:setup-qq({ dataDir, selfQQ })`：只在脚本成功验证并写入本机配置后 resolve；失败、提前关闭和超时 reject，禁止并发初始化。主进程生成独立临时结果文件，通过 `-ResultFile` 传给脚本，内容仅为 `success` 或 `failed`，最终清理。命令行保留供用户阅读，不以窗口关闭作为成功依据。
 - 前端成功后使用现有消息配置读取接口刷新，不改写业务 Markdown，不增加业务命令。密钥不经过桌面桥接。
+
+### Windows 微信读取与同步契约
+
+- `chaos:setup-wechat()`：桌面主进程让用户选微信数据目录，调用 `setup-wechat.ps1` 和 `wechat-key.py`，验证本人已登录微信的联系人库与消息分库密钥。密钥经 Windows DPAPI 保存在 `%APPDATA%\CHAOS\wechat-keys.bin`，不经过网页或 HTTP 响应。
+- `GET /api/messages`：返回共享收集箱和 `wechat` 状态；旧规则与消息缺少 `provider` 时按 QQ 解释。微信新规则和来源消息显式设置 `provider: "wechat"`。
+- `POST /api/messages/wechat/config`：保存 `enabled`、`python`、`intervalSeconds`、`backfillDays`；`GET /api/messages/wechat/chats` 返回本机群聊与联系人；`POST /api/messages/wechat/test` 测试可读性；`POST /api/messages/wechat/sync` 立即检查已启用的规则。
+- 微信读取器只读取用户绑定的文字会话，按消息分库保存 `local_id` 游标，优先使用 `server_id` 去重，从来源元数据解析真实 @。数据库及 WAL 只复制为临时加密文件，用完删除。新增消息分库或密钥失效时停止读取并提示重新初始化。
+- `POST /api/messages/bulk` 可传 `provider: "qq" | "wechat"`，只批量处理对应来源；旧调用默认 QQ。筛选、AI、归属推荐、待确认和确认入库共用消息应用服务。

@@ -12,6 +12,9 @@ import {
   readQqConfig,
   saveAiConfig,
   saveQqConfig,
+  activeWeChat,
+  saveWeChatConfig,
+  wechatView,
 } from '../apps/local-service/src/sync/app-config';
 
 let dir = '';
@@ -42,6 +45,20 @@ const openai = {
   model: 'gpt-test',
   jsonMode: true,
 };
+
+describe('微信本机设置', () => {
+  it('独立保存同步设置，状态仅报告本机密钥文件是否存在', async () => {
+    expect((await wechatView()).keySaved).toBe(false);
+    const saved = await saveWeChatConfig({ enabled: true, python: 'py -3.12',
+      intervalSeconds: 10, backfillDays: 7 });
+    expect(saved.enabled).toBe(true);
+    expect(await activeWeChat()).toEqual(saved);
+    expect((await readQqConfig()).enabled).toBe(false);
+    await fs.writeFile(path.join(dir, 'wechat-keys.bin'), 'test-file');
+    expect(await wechatView()).toMatchObject({ keySaved: true, configured: true });
+    expect((await fs.readFile(configPath(), 'utf8'))).not.toContain('test-file');
+  });
+});
 
 describe('AI 设置与密钥保存', () => {
   it('默认使用 DeepSeek；密钥写到用户配置目录而不是 Vault', async () => {

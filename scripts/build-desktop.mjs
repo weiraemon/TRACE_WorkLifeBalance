@@ -47,7 +47,8 @@ execFileSync(
     '-NonInteractive',
     '-Command',
     `Expand-Archive -LiteralPath $env:CHAOS_PYTHON_ZIP -DestinationPath $env:CHAOS_PYTHON_DIR -Force
-  Expand-Archive -LiteralPath $env:CHAOS_SQLCIPHER_WHEEL -DestinationPath (Join-Path $env:CHAOS_PYTHON_DIR 'Lib/site-packages') -Force`,
+  Expand-Archive -LiteralPath $env:CHAOS_SQLCIPHER_WHEEL -DestinationPath (Join-Path $env:CHAOS_PYTHON_DIR 'Lib/site-packages') -Force
+  Expand-Archive -LiteralPath $env:CHAOS_ZSTD_WHEEL -DestinationPath (Join-Path $env:CHAOS_PYTHON_DIR 'Lib/site-packages') -Force`,
   ],
   {
     windowsHide: true,
@@ -56,6 +57,7 @@ execFileSync(
       CHAOS_PYTHON_ZIP: path.join(cache, runtimes.python.file),
       CHAOS_PYTHON_DIR: pythonDir,
       CHAOS_SQLCIPHER_WHEEL: path.join(cache, runtimes.sqlcipher.file),
+      CHAOS_ZSTD_WHEEL: path.join(cache, runtimes.zstandard.file),
     },
   },
 );
@@ -68,7 +70,7 @@ execFileSync(
   path.join(pythonDir, 'python.exe'),
   [
     '-c',
-    "import sqlcipher3; c=sqlcipher3.connect(':memory:'); assert c.execute('PRAGMA cipher_version').fetchone()[0]; c.close()",
+    "import sqlcipher3, zstandard; c=sqlcipher3.connect(':memory:'); assert c.execute('PRAGMA cipher_version').fetchone()[0]; c.close()",
   ],
   { windowsHide: true },
 );
@@ -78,9 +80,13 @@ for (const file of [
   'LICENSE',
   'THIRD_PARTY_NOTICES.md',
   'setup-qq.cmd',
+  'setup-wechat.cmd',
   'scripts/setup-qq.ps1',
+  'scripts/setup-wechat.ps1',
   'scripts/qq_sync.py',
   'scripts/qq_probe.py',
+  'scripts/wechat-key.py',
+  'scripts/wechat_sync.py',
 ]) {
   await fs.copyFile(file, path.join(output, file));
 }

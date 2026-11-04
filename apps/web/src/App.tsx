@@ -446,7 +446,7 @@ export default function App() {
                   mode="settings"
                 />
               ) : (
-                <WechatSync mode="settings" />
+                <WechatSync snapshot={snapshot} reload={reload} onPendingChange={setPendingCount} mode="settings" />
               )}
             </Suspense>
           </div>
@@ -476,7 +476,7 @@ export default function App() {
                   mode="pending"
                 />
               ) : (
-                <WechatSync mode="pending" />
+                <WechatSync snapshot={snapshot} reload={reload} onPendingChange={setPendingCount} mode="pending" />
               )}
             </Suspense>
           </div>

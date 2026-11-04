@@ -14,6 +14,7 @@ declare global {
       } | null>;
       chooseDirectory: () => Promise<string | null>;
       setupQq: (input: { dataDir: string; selfQQ: string }) => Promise<void>;
+      setupWechat?: () => Promise<boolean>;
     };
   }
 }

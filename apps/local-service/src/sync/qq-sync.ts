@@ -216,7 +216,7 @@ export class QqSync {
     let inbox = await messageServiceFor(vault).messageInbox();
     let revision = inbox.revision;
     const sourceRule = inbox.state.settings.rules.find((rule) => rule.id === ruleId);
-    if (!sourceRule) throw new Error('会话规则不存在');
+    if (!sourceRule || sourceRule.provider === 'wechat') throw new Error('QQ 会话规则不存在');
     if (!sourceRule.chatId) throw new Error('该规则尚未绑定 QQ 群或 QQ 号');
     const rule = { ...sourceRule, includeSelf, enabled: true };
     const settings = {
@@ -366,7 +366,8 @@ export class QqSync {
       let inbox = await messageServiceFor(vault).messageInbox();
       let revision = inbox.revision;
       const rules = inbox.state.settings.rules.filter(
-        (rule) => rule.enabled && rule.chatId && (rule.kind === 'group' || rule.kind === 'private'),
+        (rule) => (rule.provider ?? 'qq') === 'qq' && rule.enabled && rule.chatId &&
+          (rule.kind === 'group' || rule.kind === 'private'),
       );
       for (const rule of rules) {
         if (rule.kind === 'private' && !config.selfQQ) {

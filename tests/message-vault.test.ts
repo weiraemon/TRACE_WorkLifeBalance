@@ -68,6 +68,25 @@ async function setup() {
   await messageServiceFor(vault).saveMessageInbox(state, null);
   return { vault, candidate, line, project };
 }
+it('微信与旧 QQ 待确认批量处理互不影响，微信原文带来源标记', async () => {
+  const { vault, candidate, line } = await setup();
+  const first = await messageServiceFor(vault).messageInbox();
+  const wechat: Candidate = {
+    ...candidate, id: randomUUID(), fingerprint: 'b'.repeat(64),
+    source: { ...candidate.source, provider: 'wechat', remoteId: 'wechat-test' },
+  };
+  first.state.candidates.push(wechat);
+  await messageServiceFor(vault).saveMessageInbox(first.state, first.revision);
+  const second = await messageServiceFor(vault).messageInbox();
+  expect((await messageServiceFor(vault).bulk('dismiss', second.revision, 'qq')).dismissed).toBe(1);
+  const remaining = await messageServiceFor(vault).messageInbox();
+  expect(remaining.state.candidates.map((item) => item.id)).toEqual([wechat.id]);
+  await messageServiceFor(vault).acceptMessage(wechat.id, remaining.revision,
+    line.data.id, wechat.suggestion);
+  const notes = (await vault.scan()).entries.filter((entry) => entry.data.type === 'workline');
+  const content = await vault.readContent(notes.find((entry) => entry.data.id === line.data.id)!.data.id);
+  expect(JSON.stringify(content)).toContain('微信 · ');
+});
 it('确认后节点、TODO、Notes 和移出收集箱共同落盘，重复确认不重复建任务', async () => {
   const { vault, candidate, line } = await setup();
   const inbox = await messageServiceFor(vault).messageInbox();

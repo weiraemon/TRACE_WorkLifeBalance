@@ -70,6 +70,7 @@ test('桌面版目录选择、四页、记录保存、完整 QQ 入口与安全�
     'chooseDirectory',
     'discoverQq',
     'setupQq',
+    'setupWechat',
   ]);
   expect(await page.evaluate(() => typeof (globalThis as { require?: unknown }).require)).toBe(
     'undefined',
@@ -80,6 +81,11 @@ test('桌面版目录选择、四页、记录保存、完整 QQ 入口与安全�
   await expect(
     page.getByRole('button', { name: '初始化 QQ 数据库读取…', exact: true }),
   ).toBeVisible();
+  await expect(page.getByLabel('Python 命令', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '关闭对话框', exact: true }).click();
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  await page.getByRole('button', { name: '微信同步设置', exact: true }).click();
+  await expect(page.getByRole('button', { name: '选择微信数据目录并初始化…', exact: true })).toBeVisible();
   await expect(page.getByLabel('Python 命令', { exact: true })).toHaveCount(0);
   await desktop!.close();
   desktop = undefined;

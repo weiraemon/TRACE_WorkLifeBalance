@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -28,24 +29,33 @@ export function validateReleasePaths(names) {
 }
 
 export function zipDirectory(source, destination, includeRoot = false) {
-  execFileSync(
-    'powershell.exe',
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      "Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::CreateFromDirectory($env:CHAOS_ZIP_SOURCE, $env:CHAOS_ZIP_DESTINATION, [System.IO.Compression.CompressionLevel]::Optimal, $env:CHAOS_ZIP_INCLUDE_ROOT -eq 'true')",
-    ],
-    {
-      windowsHide: true,
-      env: {
-        ...process.env,
-        CHAOS_ZIP_SOURCE: path.resolve(source),
-        CHAOS_ZIP_DESTINATION: path.resolve(destination),
-        CHAOS_ZIP_INCLUDE_ROOT: String(includeRoot),
-      },
-    },
-  );
+  for (let attempt = 0; attempt < 8; attempt++) {
+    try {
+      execFileSync(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          "Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::CreateFromDirectory($env:CHAOS_ZIP_SOURCE, $env:CHAOS_ZIP_DESTINATION, [System.IO.Compression.CompressionLevel]::Optimal, $env:CHAOS_ZIP_INCLUDE_ROOT -eq 'true')",
+        ],
+        {
+          windowsHide: true,
+          env: {
+            ...process.env,
+            CHAOS_ZIP_SOURCE: path.resolve(source),
+            CHAOS_ZIP_DESTINATION: path.resolve(destination),
+            CHAOS_ZIP_INCLUDE_ROOT: String(includeRoot),
+          },
+        },
+      );
+      return;
+    } catch (error) {
+      if (attempt === 7) throw error;
+      fsSync.rmSync(destination, { force: true, maxRetries: 8, retryDelay: 500 });
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+    }
+  }
 }
 
 export async function archiveInstalledElectron(executable, version, destination) {
@@ -79,7 +89,7 @@ export async function pruneDesktopReleases(directory, keepDirectory) {
     const target = await fs.realpath(path.join(root, child.name));
     if (target === keep) continue;
     assert.equal(path.dirname(target), root, 'Refuse cleanup outside the release directory.');
-    await fs.rm(target, { recursive: true, force: true });
+    await fs.rm(target, { recursive: true, force: true, maxRetries: 8, retryDelay: 500 });
     removed.push(child.name);
   }
   return removed;
@@ -134,13 +144,14 @@ async function main() {
 解压整个文件夹到本机可写目录，双击 CHAOS.exe。可右键发送桌面快捷方式。
 无需安装 Node.js、Python 或浏览器，无需保留命令行窗口。
 首次使用点击“浏览文件夹…”选择 Markdown 工作目录；旧用户选择原目录即可。
-关闭应用会同时停止本地服务与 QQ 自动同步；再次启动会恢复工作目录。
+关闭应用会同时停止本地服务与消息自动同步；再次启动会恢复工作目录。
 跨天自动更新今日安排，空白记录跟随当前时间，已填写草稿保留原日期和时间。
 
-包含工作空间、今日、知识、回顾、Notes、备份、QQ 读取与同步、AI 设置等全部现有功能。
+包含工作空间、今日、知识、回顾、Notes、备份、QQ／微信读取与同步、AI 设置等功能。
 QQ 首次使用：备份 → QQ同步设置 → QQ自动同步全局设置 → 初始化 QQ 数据库读取。
 Python 与 SQLCipher 已内置；QQ 软件、本人账号登录、数据库密钥与 AI API 密钥需自行配置。
-微信数据源沿用当前占位入口。密钥与目录配置保存在本机用户配置目录，不随程序分发。
+微信首次使用：设置 → 微信同步设置 → 选择微信数据目录并初始化。按微信号或群成员姓名搜索并绑定会话。
+密钥与目录配置保存在本机用户配置目录，不随程序分发。
 升级前退出旧版，解压新版后直接打开；程序不会迁移或批量改写用户 Markdown。
 `,
   );

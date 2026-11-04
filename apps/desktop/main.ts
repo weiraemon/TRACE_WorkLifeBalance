@@ -26,6 +26,7 @@ let quitting = false;
 let stopped = false;
 let origin = '';
 let qqSetupRunning = false;
+let wechatSetupRunning = false;
 
 function trustedSender(event: Electron.IpcMainInvokeEvent) {
   if (
@@ -244,6 +245,34 @@ async function start() {
       qqSetupRunning = false;
       await fs.unlink(resultFile).catch(() => {});
       await fs.rmdir(resultDirectory).catch(() => {});
+    }
+  });
+  ipcMain.handle('chaos:setup-wechat', async (event) => {
+    trustedSender(event);
+    if (wechatSetupRunning) throw new Error('微信初始化正在进行，请先完成当前操作');
+    const selection = await dialog.showOpenDialog(window!, {
+      title: '选择微信 xwechat_files 或账号目录', properties: ['openDirectory'],
+    });
+    if (selection.canceled) return false;
+    wechatSetupRunning = true;
+    try {
+      const script = path.join(root, 'scripts', 'setup-wechat.ps1').replaceAll("'", "''");
+      const encoded = Buffer.from(`& '${script}' -DataDir $env:CHAOS_WECHAT_DATA_DIR`, 'utf16le').toString('base64');
+      const command = `$p = Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encoded}' -WindowStyle Normal -Wait -PassThru -ErrorAction Stop; Write-Output $p.ExitCode`;
+      const code = await new Promise<number>((resolve, reject) => {
+        execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
+          cwd: root, windowsHide: true, timeout: 15 * 60 * 1000,
+          env: { ...process.env, CHAOS_CONFIG_DIR: configDirectory,
+            CHAOS_WECHAT_DATA_DIR: selection.filePaths[0] },
+        }, (error, stdout) => {
+          if (error) reject(new Error('微信初始化工具未能完成，请重试'));
+          else resolve(Number(stdout.trim()));
+        });
+      });
+      if (code !== 0) throw new Error('微信初始化失败，请按命令行提示检查后重试');
+      return true;
+    } finally {
+      wechatSetupRunning = false;
     }
   });
   await window.loadURL(androidPreview ? `${origin}/?ui=android` : origin);

@@ -16,6 +16,61 @@ async function openSync(page: Page, kind: 'QQ' | '微信') {
     .click();
 }
 
+test('微信私聊可按微信号搜索，并区分微信号与内部 ID', async ({ page }) => {
+  await connect(page);
+  await page.route('**/api/messages', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const response = await route.fetch();
+    const data = await response.json();
+    data.wechat = {
+      enabled: false,
+      python: 'py -3.12',
+      intervalSeconds: 30,
+      backfillDays: 7,
+      keySaved: true,
+      configured: true,
+      running: false,
+      lastSyncAt: null,
+      lastError: '',
+    };
+    await route.fulfill({ response, json: data });
+  });
+  await page.route('**/api/messages/wechat/chats', async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({
+      response,
+      status: 200,
+      json: {
+        groups: [
+          { id: 'test@chatroom', name: '未命名群：甲、乙', members: ['甲', '乙'], memberCount: 3 },
+        ],
+        contacts: [
+          { id: 'wxid_test_contact', name: '测试联系人', remark: '', alias: 'test_wechat_alias' },
+        ],
+      },
+    });
+  });
+  await openSync(page, '微信');
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: '会话规则', exact: true }).click();
+  await dialog.getByRole('button', { name: '私聊', exact: true }).click();
+  await dialog.getByRole('button', { name: '读取微信会话列表', exact: true }).click();
+  await dialog.getByRole('button', { name: '添加私聊规则', exact: true }).click();
+  await dialog.getByPlaceholder('输入名称或微信号搜索').fill('test_wechat_alias');
+  const result = dialog.getByRole('listbox').getByRole('button');
+  await expect(result).toHaveCount(1);
+  await expect(result).toContainText('微信号：test_wechat_alias');
+  await result.click();
+  await expect(dialog).toContainText('已绑定：微信号 test_wechat_alias');
+  await dialog.getByRole('button', { name: '群聊', exact: true }).click();
+  await dialog.getByRole('button', { name: '添加群聊规则', exact: true }).click();
+  await dialog.getByPlaceholder('输入名称或微信号搜索').fill('乙');
+  const unnamed = dialog.getByRole('listbox').getByRole('button');
+  await expect(unnamed).toHaveCount(1);
+  await expect(unnamed).toContainText('未命名群：甲、乙');
+  await expect(unnamed).toContainText('3 人');
+});
+
 test('消息规则、AI 提供商、QQ 项目范围与计划入库', async ({ page }) => {
   await fs.rm('.test-vault/app-config', { recursive: true, force: true });
   await connect(page);
@@ -30,7 +85,13 @@ test('消息规则、AI 提供商、QQ 项目范围与计划入库', async ({ pa
 
   await openSync(page, '微信');
   const wechat = page.getByRole('dialog');
-  await expect(wechat).toContainText('微信同步尚未接入');
+  await expect(wechat).toContainText('尚未初始化数据库密钥');
+  await expect(wechat.getByRole('button', { name: '测试读取', exact: true })).toBeDisabled();
+  await wechat.getByRole('button', { name: '会话规则', exact: true }).click();
+  await wechat.getByRole('button', { name: '添加群聊规则', exact: true }).click();
+  await wechat.getByLabel('会话名称').fill('微信年级通知');
+  await wechat.getByRole('button', { name: '保存规则', exact: true }).click();
+  await expect(wechat).toContainText('微信会话规则已保存');
   await wechat.getByRole('button', { name: '关闭对话框', exact: true }).click();
 
   await openSync(page, 'QQ');
@@ -196,7 +257,7 @@ test('消息规则、AI 提供商、QQ 项目范围与计划入库', async ({ pa
   await expect(dialog.getByRole('button', { name: 'QQ消息', exact: true })).toBeVisible();
   await expect(dialog.getByText('粘贴 QQ 消息进行识别', { exact: true })).toHaveCount(0);
   await dialog.getByRole('button', { name: '微信消息', exact: true }).click();
-  await expect(dialog).toContainText('微信同步尚未接入，暂无待确认消息');
+  await expect(dialog).toContainText('暂无待确认的微信消息');
   await dialog.getByRole('button', { name: 'QQ消息', exact: true }).click();
   await expect(dialog.getByRole('heading', { name: '交登记表', exact: true })).toBeVisible();
   const defaultCard = dialog.locator('article.message-candidate').filter({ hasText: '交登记表' });

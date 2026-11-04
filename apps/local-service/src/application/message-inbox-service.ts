@@ -92,30 +92,34 @@ export class MessageInboxService {
       }
     for (const rule of settings.rules) {
       const previous = current.state.settings.rules.find((item) => item.id === rule.id);
-      const cursorId = (item: { kind: 'group' | 'private'; chatId: string | null }) =>
-        item.chatId ? (item.kind === 'private' ? `private:${item.chatId}` : item.chatId) : null;
+      const cursorId = (item: { provider?: 'qq' | 'wechat'; kind: 'group' | 'private'; chatId: string | null }) =>
+        item.chatId ? (item.provider === 'wechat'
+          ? `wechat:${item.chatId}`
+          : item.kind === 'private' ? `private:${item.chatId}` : item.chatId) : null;
       const nextCursorId = cursorId(rule);
       const previousCursorId = previous ? cursorId(previous) : null;
       const resetCursor =
         Boolean(nextCursorId) &&
         (!previous ||
           previousCursorId !== nextCursorId ||
+          (previous.provider ?? 'qq') !== (rule.provider ?? 'qq') ||
           previous.kind !== rule.kind ||
           (!previous.includeSelf && rule.includeSelf));
       if (resetCursor)
         current.state.sync = current.state.sync.filter(
-          (cursor) => cursor.chatId !== nextCursorId && cursor.chatId !== previousCursorId,
+          (cursor) => ![nextCursorId, previousCursorId].some((id) => id &&
+            (cursor.chatId === id || (id.startsWith('wechat:') && cursor.chatId.startsWith(id + ':')))),
         );
     }
     current.state.settings = settings;
     await this.saveMessageInbox(current.state, revision);
   }
-  async bulk(action: 'accept' | 'dismiss', revision: string | null) {
+  async bulk(action: 'accept' | 'dismiss', revision: string | null, provider: 'qq' | 'wechat' = 'qq') {
     const current = await this.messageInbox();
     if (current.revision !== revision) throw new VaultError('消息收集已更改，请刷新后重试', 409);
-    const candidates = [...current.state.candidates];
+    const candidates = current.state.candidates.filter((candidate) => (candidate.source.provider ?? 'qq') === provider);
     if (action === 'dismiss') {
-      current.state.candidates = [];
+      current.state.candidates = current.state.candidates.filter((candidate) => (candidate.source.provider ?? 'qq') !== provider);
       await this.saveMessageInbox(current.state, revision);
       return {
         message: `已一键忽略 ${candidates.length} 条待确认事项`,
@@ -210,7 +214,7 @@ export class MessageInboxService {
     const source = candidate.source;
     const location = suggestion.location ? '地点：' + label(suggestion.location) + '\n\n' : '';
     const text =
-      'QQ · ' +
+      (source.provider === 'wechat' ? '微信 · ' : 'QQ · ') +
       label(candidate.conversation) +
       ' · ' +
       label(source.sender) +

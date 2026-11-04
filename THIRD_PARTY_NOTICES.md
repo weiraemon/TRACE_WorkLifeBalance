@@ -1,5 +1,48 @@
 # Third-party notices
 
+## WeChat key verification logic
+
+`scripts/wechat-key.py` adapts read-only process scanning and SQLCipher key validation from
+[fanyuantaier/wechatauto-replica](https://github.com/fanyuantaier/wechatauto-replica),
+licensed under [Apache License 2.0](https://github.com/fanyuantaier/wechatauto-replica/blob/main/LICENSE).
+The adaptation does not include message sending or UI automation.
+
+## zstandard 0.25.0 (bundled Python runtime)
+
+Declared license: BSD-3-Clause
+
+Source: [python-zstandard](https://github.com/indygreg/python-zstandard)
+
+```text
+Copyright (c) 2016, Gregory Szorc
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+this list of conditions and the following disclaimer in the documentation
+and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its contributors
+may be used to endorse or promote products derived from this software without
+specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
 Generated from the locked production dependencies. Each dependency retains its own license.
 
 ## @capacitor/android 7.6.10

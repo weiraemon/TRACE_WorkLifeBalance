@@ -271,3 +271,48 @@ export async function qqView() {
 export async function activeQq() {
   return readQqConfig();
 }
+
+export type WeChatConfig = {
+  enabled: boolean;
+  python: string;
+  intervalSeconds: number;
+  backfillDays: number;
+};
+
+const wechatDefaults: WeChatConfig = {
+  enabled: false,
+  python: 'py -3.12',
+  intervalSeconds: 30,
+  backfillDays: 7,
+};
+
+export async function activeWeChat(): Promise<WeChatConfig> {
+  const raw = await readRaw();
+  const value = record(raw.wechat) ? raw.wechat : {};
+  return {
+    enabled: typeof value.enabled === 'boolean' ? value.enabled : false,
+    python: text(value.python, 200, wechatDefaults.python) || wechatDefaults.python,
+    intervalSeconds: Math.max(10, Math.min(3600,
+      Math.round(typeof value.intervalSeconds === 'number' ? value.intervalSeconds : 30))),
+    backfillDays: Math.max(1, Math.min(365,
+      Math.round(typeof value.backfillDays === 'number' ? value.backfillDays : 7))),
+  };
+}
+
+export async function saveWeChatConfig(input: WeChatConfig): Promise<WeChatConfig> {
+  const config: WeChatConfig = {
+    enabled: Boolean(input.enabled),
+    python: input.python.trim().slice(0, 200) || wechatDefaults.python,
+    intervalSeconds: Math.max(10, Math.min(3600, Math.round(input.intervalSeconds))),
+    backfillDays: Math.max(1, Math.min(365, Math.round(input.backfillDays))),
+  };
+  const raw = await readRaw();
+  await writeRaw({ ...raw, version: 2, wechat: config });
+  return config;
+}
+
+export async function wechatView() {
+  const config = await activeWeChat();
+  const keySaved = await fs.access(path.join(configDir(), 'wechat-keys.bin')).then(() => true).catch(() => false);
+  return { ...config, keySaved, configured: keySaved };
+}

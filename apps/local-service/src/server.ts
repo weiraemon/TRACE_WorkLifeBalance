@@ -20,8 +20,9 @@ import {
   sourceMessageSchema,
   suggestionSchema,
 } from '../../../packages/domain/messages';
-import { aiView, saveAiConfig, saveQqConfig } from './sync/app-config';
+import { aiView, saveAiConfig, saveQqConfig, saveWeChatConfig } from './sync/app-config';
 import { QqSync } from './sync/qq-sync';
+import { WeChatSync } from './sync/wechat-sync';
 import { startWifiExchange, wifiAddresses, wifiProxy } from './application/wifi-exchange';
 let wifi: Awaited<ReturnType<typeof startWifiExchange>> | undefined;
 
@@ -46,6 +47,7 @@ async function restoreConnection() {
   }
 }
 const qqSync = new QqSync(() => vault);
+const wechatSync = new WeChatSync(() => vault);
 const production = process.argv.includes('--production');
 const vite = production
   ? undefined
@@ -231,6 +233,7 @@ const server = http.createServer(async (req, res) => {
           revision,
           ai: await aiView(),
           qq: await qqSync.status(),
+          wechat: await wechatSync.status(),
         });
       }
       if (url.pathname === '/api/messages/ai' && req.method === 'POST') {
@@ -279,6 +282,27 @@ const server = http.createServer(async (req, res) => {
           message: 'QQ 同步设置已保存',
           qq: await qqSync.status(),
         });
+      }
+      if (url.pathname === '/api/messages/wechat/config' && req.method === 'POST') {
+        const input = z.object({ enabled: z.boolean(), python: z.string().trim().max(200),
+          intervalSeconds: z.number().min(10).max(3600),
+          backfillDays: z.number().min(1).max(365) }).strict().parse(await body(req));
+        await saveWeChatConfig(input);
+        wechatSync.restart();
+        return send(res, 200, { message: '微信同步设置已保存', wechat: await wechatSync.status() });
+      }
+      if (url.pathname === '/api/messages/wechat/chats' && req.method === 'GET') {
+        try { return send(res, 200, await wechatSync.chats()); }
+        catch (error) { throw new VaultError(error instanceof Error ? error.message : '读取微信会话失败', 400); }
+      }
+      if (url.pathname === '/api/messages/wechat/test' && req.method === 'POST') {
+        try { return send(res, 200, await wechatSync.test()); }
+        catch (error) { throw new VaultError(error instanceof Error ? error.message : '读取微信数据库失败', 400); }
+      }
+      if (url.pathname === '/api/messages/wechat/sync' && req.method === 'POST') {
+        if ((await wechatSync.status()).running) throw new VaultError('微信正在同步，请稍后重试', 409);
+        await wechatSync.run();
+        return send(res, 200, { wechat: await wechatSync.status() });
       }
       if (url.pathname === '/api/messages/qq/groups' && req.method === 'GET') {
         try {
@@ -430,10 +454,11 @@ const server = http.createServer(async (req, res) => {
           .object({
             action: z.enum(['accept', 'dismiss']),
             revision: z.string().nullable(),
+            provider: z.enum(['qq', 'wechat']).default('qq'),
           })
           .strict()
           .parse(await body(req));
-        return send(res, 200, await messageServiceFor(active).bulk(input.action, input.revision));
+        return send(res, 200, await messageServiceFor(active).bulk(input.action, input.revision, input.provider));
       }
       if (url.pathname === '/api/backups' && req.method === 'GET')
         return send(res, 200, await active.backups());
@@ -527,6 +552,7 @@ server.listen(port, '127.0.0.1', () => {
       `ATLAS ready: ${origin}\n${vault ? 'Restored the last workspace.' : 'Choose an existing Vault in the browser.'}`,
     );
     qqSync.restart();
+    wechatSync.restart();
     process.send?.({ type: 'ready', port });
   });
 });
@@ -535,6 +561,7 @@ const shutdown = async () => {
   if (stopping) return;
   stopping = true;
   qqSync.stop();
+  wechatSync.stop();
   wifi?.close();
   server.close();
   await restoring;

@@ -45,6 +45,7 @@ export const conditionLabels = {
 export const messageRuleSchema = z
   .object({
     id: z.string().uuid(),
+    provider: z.enum(['qq', 'wechat']).optional(),
     name: z.string().trim().min(1).max(100),
     kind: z.enum(['group', 'private']),
     enabled: z.boolean(),
@@ -72,6 +73,7 @@ export const messageSettingsSchema = z
   .refine((s) => new Set(s.rules.map((r) => r.id)).size === s.rules.length, '会话规则 ID 重复');
 export const sourceMessageSchema = z
   .object({
+    provider: z.enum(['qq', 'wechat']).optional(),
     ruleId: z.string().uuid(),
     sender: z.string().trim().min(1).max(100),
     sentAt: z.iso.datetime({ offset: true }),
@@ -136,14 +138,14 @@ export const inboxSchema = z
       .array(
         z
           .object({
-            chatId: z.string().max(100),
+            chatId: z.string().max(200),
             afterRowid: z.string().max(40),
             afterTime: z.number(),
             afterId: z.string().max(40),
           })
           .strict(),
       )
-      .max(200)
+      .max(500)
       .default([]),
   })
   .strict();
@@ -178,7 +180,18 @@ export type QqStatus = {
   lastSyncAt: string | null;
   lastError: string;
 };
-export type InboxView = { state: Inbox; revision: string | null; ai: AiView; qq: QqStatus };
+export type WeChatStatus = {
+  enabled: boolean;
+  python: string;
+  intervalSeconds: number;
+  backfillDays: number;
+  keySaved: boolean;
+  configured: boolean;
+  running: boolean;
+  lastSyncAt: string | null;
+  lastError: string;
+};
+export type InboxView = { state: Inbox; revision: string | null; ai: AiView; qq: QqStatus; wechat?: WeChatStatus };
 export const emptyInbox = (): Inbox => ({
   version: 1,
   settings: { names: [], classes: [], rules: [] },
@@ -189,7 +202,7 @@ export const emptyInbox = (): Inbox => ({
 
 export function matchMessage(settings: MessageSettings, message: SourceMessage) {
   const rule = settings.rules.find((r) => r.id === message.ruleId);
-  if (!rule?.enabled) return false;
+  if (!rule?.enabled || (rule.provider ?? 'qq') !== (message.provider ?? 'qq')) return false;
   if (rule.includeSelf && message.fromSelf) return true;
   if (rule.mode === 'all') return true;
   const contains = (values: string[]) =>

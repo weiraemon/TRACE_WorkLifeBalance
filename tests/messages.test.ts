@@ -105,6 +105,15 @@ describe('QQ 筛选与模型边界', () => {
     paused.rules[0].enabled = false;
     expect(matchMessage(paused, { ...message, atAll: true })).toBe(false);
   });
+  it('微信和旧 QQ 规则只接收各自来源的消息', () => {
+    const settings = structuredClone(state.settings);
+    const wechatId = randomUUID();
+    settings.rules.push({ ...settings.rules[0], id: wechatId, provider: 'wechat' });
+    expect(matchMessage(settings, { ...message, atAll: true })).toBe(true);
+    expect(matchMessage(settings, { ...message, provider: 'wechat', atAll: true })).toBe(false);
+    expect(matchMessage(settings, { ...message, ruleId: wechatId, provider: 'wechat', atAll: true })).toBe(true);
+    expect(matchMessage(settings, { ...message, ruleId: wechatId, atAll: true })).toBe(false);
+  });
   it('私聊、全量模式和发送人条件可独立使用', () => {
     const settings = structuredClone(state.settings);
     Object.assign(settings.rules[0], { kind: 'private', mode: 'all' });

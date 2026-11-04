@@ -232,6 +232,7 @@ export class MessageIntakeService {
       rules: inbox.state.settings.rules.map((item) => (item.id === rule.id ? rule : item)),
     };
     const source: SourceMessage = {
+      provider: rule.provider,
       ruleId: rule.id,
       sender: '手动',
       sentAt: new Date().toISOString(),
