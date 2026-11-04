@@ -159,7 +159,7 @@ def message_shards(root, keys):
                   and (root / name).is_file())
 
 
-def read_messages(root, keys, self_id, chat_id, after, since, limit):
+def read_messages(root, keys, self_id, chat_id, after, since, until, limit):
     table = 'Msg_' + hashlib.md5(chat_id.encode('utf-8')).hexdigest()
     rows = contacts(root, keys)
     if chat_id.endswith('@chatroom') and not any(
@@ -175,8 +175,9 @@ def read_messages(root, keys, self_id, chat_id, after, since, limit):
             shard = Path(relative).name
             rows = connection.execute(
                 f'SELECT local_id,server_id,local_type,real_sender_id,create_time,message_content,source '
-                f'FROM "{table}" WHERE local_id>? AND (create_time>=? OR ?>0) ORDER BY local_id LIMIT ?',
-                (int(after.get(shard, 0)), since, int(after.get(shard, 0)), limit),
+                f'FROM "{table}" WHERE local_id>? AND (create_time>=? OR ?>0) '
+                'AND (?<=0 OR create_time<=?) ORDER BY local_id LIMIT ?',
+                (int(after.get(shard, 0)), since, int(after.get(shard, 0)), until, until, limit),
             ).fetchall()
             for local_id, server_id, msg_type, sender_id, sent_at, content, source in rows:
                 if msg_type != 1:
@@ -218,6 +219,7 @@ def main():
     parser.add_argument('--chat-id', default='')
     parser.add_argument('--after-json', default='{}')
     parser.add_argument('--since-time', type=int, default=0)
+    parser.add_argument('--until-time', type=int, default=0)
     parser.add_argument('--limit', type=int, default=20)
     args = parser.parse_args()
     if sys.platform != 'win32':
@@ -261,7 +263,8 @@ def main():
                                                    for key, value in after.items()):
                 raise ValueError('微信同步游标无效')
             result = read_messages(root, keys, self_id, args.chat_id, after,
-                                   max(0, args.since_time), max(1, min(100, args.limit)))
+                                   max(0, args.since_time), max(0, args.until_time),
+                                   max(1, min(100, args.limit)))
         print(json.dumps(result, ensure_ascii=False))
     except Exception as error:
         print(json.dumps({'error': str(error) if isinstance(error, ValueError)

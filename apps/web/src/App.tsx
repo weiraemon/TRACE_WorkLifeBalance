@@ -60,10 +60,11 @@ export default function App() {
     [showArchived, setShowArchived] = useState(false);
   const query = useDeferredValue(search.toLowerCase());
   const [contentDirty, setContentDirty] = useState(false);
-  const [syncPanel, setSyncPanel] = useState<'qq' | 'wechat' | null>(null);
+  const [syncPanel, setSyncPanel] = useState<'qq' | 'wechat' | 'model' | null>(null);
   const [pendingPanel, setPendingPanel] = useState(false);
   const [pendingTab, setPendingTab] = useState<'qq' | 'wechat'>('qq');
   const [pendingCount, setPendingCount] = useState(0);
+  const [pendingCounts, setPendingCounts] = useState({ qq: 0, wechat: 0 });
   const [pastePanel, setPastePanel] = useState(false);
   const [deleting, setDeleting] = useState<Entry | null>(null);
   const [deletion, setDeletion] = useState<DeleteResult | null>(null);
@@ -81,11 +82,21 @@ export default function App() {
     try {
       const [next, inbox] = await Promise.all([
         load(),
-        api<{ state: { candidates: unknown[] } }>('messages').catch(() => null),
+        api<{ state: { candidates: { source?: { provider?: string } }[] } }>('messages').catch(
+          () => null,
+        ),
       ]);
       if (request === snapshotRequest.current) {
         setSnapshot(next);
-        if (inbox) setPendingCount(inbox.state.candidates.length);
+        if (inbox) {
+          const candidates = inbox.state.candidates;
+          setPendingCount(candidates.length);
+          setPendingCounts({
+            qq: candidates.filter((candidate) => candidate.source?.provider !== 'wechat').length,
+            wechat: candidates.filter((candidate) => candidate.source?.provider === 'wechat')
+              .length,
+          });
+        }
       }
     } catch (error) {
       if (request === snapshotRequest.current) throw error;
@@ -430,10 +441,16 @@ export default function App() {
       )}
       {syncPanel && snapshot && (
         <Modal
-          title={syncPanel === 'qq' ? 'QQ同步设置' : '微信同步设置'}
+          title={
+            syncPanel === 'qq' ? 'QQ同步设置' : syncPanel === 'wechat' ? '微信同步设置' : '模型设置'
+          }
           wide
           className="sync-dialog"
           onClose={() => setSyncPanel(null)}
+          onBack={() => {
+            setSyncPanel(null);
+            setSettings(true);
+          }}
         >
           <div className="dialog-body">
             <Suspense fallback={<EmptyState>正在加载消息设置…</EmptyState>}>
@@ -445,8 +462,21 @@ export default function App() {
                   onPendingChange={setPendingCount}
                   mode="settings"
                 />
+              ) : syncPanel === 'wechat' ? (
+                <WechatSync
+                  snapshot={snapshot}
+                  reload={reload}
+                  onPendingChange={setPendingCount}
+                  mode="settings"
+                />
               ) : (
-                <WechatSync snapshot={snapshot} reload={reload} onPendingChange={setPendingCount} mode="settings" />
+                <MessageInbox
+                  key={`${snapshot.vaultId}-model`}
+                  snapshot={snapshot}
+                  reload={reload}
+                  onPendingChange={setPendingCount}
+                  mode="model"
+                />
               )}
             </Suspense>
           </div>
@@ -457,13 +487,13 @@ export default function App() {
           <div className="dialog-body">
             <div className="segmented message-source-tabs">
               <button aria-pressed={pendingTab === 'qq'} onClick={() => setPendingTab('qq')}>
-                QQ消息
+                QQ消息（{pendingCounts.qq}）
               </button>
               <button
                 aria-pressed={pendingTab === 'wechat'}
                 onClick={() => setPendingTab('wechat')}
               >
-                微信消息
+                微信消息（{pendingCounts.wechat}）
               </button>
             </div>
             <Suspense fallback={<EmptyState>正在加载待确认消息…</EmptyState>}>
@@ -476,7 +506,12 @@ export default function App() {
                   mode="pending"
                 />
               ) : (
-                <WechatSync snapshot={snapshot} reload={reload} onPendingChange={setPendingCount} mode="pending" />
+                <WechatSync
+                  snapshot={snapshot}
+                  reload={reload}
+                  onPendingChange={setPendingCount}
+                  mode="pending"
+                />
               )}
             </Suspense>
           </div>
@@ -521,9 +556,9 @@ export default function App() {
           {snapshot && (
             <>
               <section className="sync-entry" aria-label="外部消息接入">
-                <h3>外部消息接入</h3>
+                <h2>外部消息接入</h2>
                 <div className="actions">
-                  {(['qq', 'wechat'] as const).map((kind) => (
+                  {(['qq', 'wechat', 'model'] as const).map((kind) => (
                     <Button
                       key={kind}
                       onClick={() => {
@@ -532,7 +567,11 @@ export default function App() {
                         setSyncPanel(kind);
                       }}
                     >
-                      {kind === 'qq' ? 'QQ同步设置' : '微信同步设置'}
+                      {kind === 'qq'
+                        ? 'QQ同步设置'
+                        : kind === 'wechat'
+                          ? '微信同步设置'
+                          : '模型设置'}
                     </Button>
                   ))}
                 </div>

@@ -488,7 +488,8 @@ export function CandidateCard({
     <article className="message-candidate">
       <h3>{candidate.suggestion.title}</h3>
       <p className="hint">
-        {candidate.source.provider === 'wechat' ? '微信' : 'QQ'} · {candidate.conversation} · {candidate.source.sender} ·{' '}
+        {candidate.source.provider === 'wechat' ? '微信' : 'QQ'} · {candidate.conversation} ·{' '}
+        {candidate.source.sender} ·{' '}
         {new Date(candidate.source.sentAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
       </p>
       <p>{candidate.suggestion.reason}</p>
@@ -788,12 +789,12 @@ export function MessageInbox({
   snapshot: Snapshot;
   reload: () => Promise<void>;
   onPendingChange?: (count: number) => void;
-  mode?: 'pending' | 'settings' | 'paste';
+  mode?: 'pending' | 'settings' | 'paste' | 'model';
 }) {
   const [view, setView] = useState<InboxView | null>(null);
   const [settings, setSettings] = useState<MessageSettings>({ names: [], classes: [], rules: [] });
   const [tab, setTab] = useState<'inbox' | 'manual' | 'global' | 'model' | 'rules'>(
-    mode === 'settings' ? 'global' : 'inbox',
+    mode === 'settings' ? 'global' : mode === 'model' ? 'model' : 'inbox',
   );
   const [ruleKindTab, setRuleKindTab] = useState<'group' | 'private'>('group');
   const [collapsedRules, setCollapsedRules] = useState<Set<string>>(() => new Set());
@@ -992,9 +993,15 @@ export function MessageInbox({
       else next.add(id);
       return next;
     });
-  const groupRuleCount = settings.rules.filter((rule) => (rule.provider ?? 'qq') === 'qq' && rule.kind === 'group').length;
-  const privateRuleCount = settings.rules.filter((rule) => (rule.provider ?? 'qq') === 'qq' && rule.kind === 'private').length;
-  const visibleRules = settings.rules.filter((rule) => (rule.provider ?? 'qq') === 'qq' && rule.kind === ruleKindTab);
+  const groupRuleCount = settings.rules.filter(
+    (rule) => (rule.provider ?? 'qq') === 'qq' && rule.kind === 'group',
+  ).length;
+  const privateRuleCount = settings.rules.filter(
+    (rule) => (rule.provider ?? 'qq') === 'qq' && rule.kind === 'private',
+  ).length;
+  const visibleRules = settings.rules.filter(
+    (rule) => (rule.provider ?? 'qq') === 'qq' && rule.kind === ruleKindTab,
+  );
   if (!view)
     return (
       <>
@@ -1002,7 +1009,9 @@ export function MessageInbox({
         <ErrorMessage message={error} />
       </>
     );
-  const candidates = view.state.candidates.filter((candidate) => (candidate.source.provider ?? 'qq') === 'qq');
+  const candidates = view.state.candidates.filter(
+    (candidate) => (candidate.source.provider ?? 'qq') === 'qq',
+  );
   const activeAi = view.ai.profiles[view.ai.provider];
   const aiLabel = aiDefaults[view.ai.provider].label;
   const selected = view.ai.profiles[ai.provider];
@@ -1026,17 +1035,14 @@ export function MessageInbox({
             自动同步：在设置中启用并绑定群或私聊联系人后，会定时读取新消息。未绑定的会话不会自动读取。
           </p>
           <div className="segmented">
-            <button aria-pressed={tab === 'manual'} onClick={() => setTab('manual')}>
-              QQ手动同步
-            </button>
             <button aria-pressed={tab === 'global'} onClick={() => setTab('global')}>
               QQ自动同步全局设置
             </button>
-            <button aria-pressed={tab === 'model'} onClick={() => setTab('model')}>
-              模型设置
-            </button>
             <button aria-pressed={tab === 'rules'} onClick={() => setTab('rules')}>
               会话规则设置
+            </button>
+            <button aria-pressed={tab === 'manual'} onClick={() => setTab('manual')}>
+              QQ手动同步
             </button>
           </div>
         </>

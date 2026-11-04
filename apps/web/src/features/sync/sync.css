@@ -18,8 +18,8 @@
   margin-top: 20px;
   padding-top: 16px;
 }
-.sync-entry h3 {
-  font-size: 14px;
+.sync-entry h2 {
+  font-size: 20px;
   margin-bottom: 12px;
 }
 .point-meta .node-location {
@@ -43,7 +43,8 @@
 .message-inbox.mode-paste > .message-bulk-actions,
 .message-inbox.mode-paste > .message-bulk-backdrop,
 .message-inbox.mode-paste > .message-candidate,
-.message-inbox.mode-paste > .message-reload {
+.message-inbox.mode-paste > .message-reload,
+.message-inbox.mode-model > .message-reload {
   display: none;
 }
 .qq-group-matches {

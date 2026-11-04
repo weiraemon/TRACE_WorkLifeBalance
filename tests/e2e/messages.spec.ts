@@ -87,6 +87,8 @@ test('消息规则、AI 提供商、QQ 项目范围与计划入库', async ({ pa
   const wechat = page.getByRole('dialog');
   await expect(wechat).toContainText('尚未初始化数据库密钥');
   await expect(wechat.getByRole('button', { name: '测试读取', exact: true })).toBeDisabled();
+  await wechat.getByRole('button', { name: '微信手动同步', exact: true }).click();
+  await expect(wechat.getByRole('button', { name: '开始手动同步', exact: true })).toBeVisible();
   await wechat.getByRole('button', { name: '会话规则', exact: true }).click();
   await wechat.getByRole('button', { name: '添加群聊规则', exact: true }).click();
   await wechat.getByLabel('会话名称').fill('微信年级通知');
@@ -94,7 +96,7 @@ test('消息规则、AI 提供商、QQ 项目范围与计划入库', async ({ pa
   await expect(wechat).toContainText('微信会话规则已保存');
   await wechat.getByRole('button', { name: '关闭对话框', exact: true }).click();
 
-  await openSync(page, 'QQ');
+  await page.getByRole('button', { name: '设置', exact: true }).click();
   await dialog.getByRole('button', { name: '模型设置', exact: true }).click();
 
   // AI provider settings and per-provider keys persist in the app config file.
@@ -128,6 +130,8 @@ test('消息规则、AI 提供商、QQ 项目范围与计划入库', async ({ pa
   await dialog.getByRole('button', { name: '清除此提供商的密钥', exact: true }).click();
   await expect(dialog).toContainText('OpenAI / ChatGPT：密钥未配置');
 
+  await dialog.getByRole('button', { name: '返回上级菜单', exact: true }).click();
+  await dialog.getByRole('button', { name: 'QQ同步设置', exact: true }).click();
   await dialog.getByRole('button', { name: 'QQ自动同步全局设置', exact: true }).click();
   await expect(dialog).toContainText('QQ 自动同步');
   await expect(dialog.getByLabel('QQ 数据目录')).toBeVisible();
@@ -254,11 +258,12 @@ test('消息规则、AI 提供商、QQ 项目范围与计划入库', async ({ pa
   await fs.writeFile(file, writeInboxText(await fs.readFile(file, 'utf8'), state));
   await page.getByRole('button', { name: /^待确认/ }).click();
   await expect(page.locator('.pending-trigger .pending-count')).toHaveText('2');
-  await expect(dialog.getByRole('button', { name: 'QQ消息', exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'QQ消息（2）', exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: '微信消息（0）', exact: true })).toBeVisible();
   await expect(dialog.getByText('粘贴 QQ 消息进行识别', { exact: true })).toHaveCount(0);
-  await dialog.getByRole('button', { name: '微信消息', exact: true }).click();
+  await dialog.getByRole('button', { name: /^微信消息/ }).click();
   await expect(dialog).toContainText('暂无待确认的微信消息');
-  await dialog.getByRole('button', { name: 'QQ消息', exact: true }).click();
+  await dialog.getByRole('button', { name: /^QQ消息/ }).click();
   await expect(dialog.getByRole('heading', { name: '交登记表', exact: true })).toBeVisible();
   const defaultCard = dialog.locator('article.message-candidate').filter({ hasText: '交登记表' });
   await expect(defaultCard).toContainText('已使用会话默认业务线');
@@ -339,7 +344,7 @@ test('会话开启自动加入后，命中消息直接进入计划', async ({ pa
     await connect(page);
     const { line } = await seed(page);
     await refresh(page);
-    await openSync(page, 'QQ');
+    await page.getByRole('button', { name: '设置', exact: true }).click();
     const dialog = page.getByRole('dialog');
     await dialog.getByRole('button', { name: '模型设置', exact: true }).click();
     await dialog.getByLabel('模型提供商').selectOption('custom');
@@ -348,6 +353,8 @@ test('会话开启自动加入后，命中消息直接进入计划', async ({ pa
     await dialog.getByLabel('API 密钥').fill('sk-mock');
     await dialog.getByRole('button', { name: '保存 AI 设置', exact: true }).click();
     await expect(dialog).toContainText('AI 设置与密钥已保存到本机');
+    await dialog.getByRole('button', { name: '返回上级菜单', exact: true }).click();
+    await dialog.getByRole('button', { name: 'QQ同步设置', exact: true }).click();
     await dialog.getByRole('button', { name: 'QQ自动同步全局设置', exact: true }).click();
     await dialog.getByLabel('本人姓名与称呼').fill('测试');
     await dialog.getByRole('button', { name: '保存全局设置', exact: true }).click();

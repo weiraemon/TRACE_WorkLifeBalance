@@ -284,23 +284,76 @@ const server = http.createServer(async (req, res) => {
         });
       }
       if (url.pathname === '/api/messages/wechat/config' && req.method === 'POST') {
-        const input = z.object({ enabled: z.boolean(), python: z.string().trim().max(200),
-          intervalSeconds: z.number().min(10).max(3600),
-          backfillDays: z.number().min(1).max(365) }).strict().parse(await body(req));
+        const input = z
+          .object({
+            enabled: z.boolean(),
+            python: z.string().trim().max(200),
+            intervalSeconds: z.number().min(10).max(3600),
+            backfillDays: z.number().min(1).max(365),
+          })
+          .strict()
+          .parse(await body(req));
         await saveWeChatConfig(input);
         wechatSync.restart();
         return send(res, 200, { message: '微信同步设置已保存', wechat: await wechatSync.status() });
       }
       if (url.pathname === '/api/messages/wechat/chats' && req.method === 'GET') {
-        try { return send(res, 200, await wechatSync.chats()); }
-        catch (error) { throw new VaultError(error instanceof Error ? error.message : '读取微信会话失败', 400); }
+        try {
+          return send(res, 200, await wechatSync.chats());
+        } catch (error) {
+          throw new VaultError(error instanceof Error ? error.message : '读取微信会话失败', 400);
+        }
       }
       if (url.pathname === '/api/messages/wechat/test' && req.method === 'POST') {
-        try { return send(res, 200, await wechatSync.test()); }
-        catch (error) { throw new VaultError(error instanceof Error ? error.message : '读取微信数据库失败', 400); }
+        try {
+          return send(res, 200, await wechatSync.test());
+        } catch (error) {
+          throw new VaultError(error instanceof Error ? error.message : '读取微信数据库失败', 400);
+        }
+      }
+      if (url.pathname === '/api/messages/wechat/manual' && req.method === 'POST') {
+        const input = z
+          .object({
+            ruleId: z.string().uuid(),
+            from: z.number().int().positive(),
+            to: z.number().int().positive(),
+            includeSelf: z.boolean(),
+            autoAccept: z.boolean(),
+            resyncSeen: z.boolean().default(false),
+            useAi: z.boolean().default(true),
+          })
+          .strict()
+          .parse(await body(req));
+        if (input.from >= input.to) throw new VaultError('结束时间必须晚于开始时间', 400);
+        try {
+          const result = await wechatSync.manual(
+            input.ruleId,
+            input.from,
+            input.to,
+            input.includeSelf,
+            input.autoAccept,
+            input.resyncSeen,
+            input.useAi,
+          );
+          return send(res, 200, {
+            result,
+            message:
+              result.messages === 0
+                ? '该时间段没有读取到可识别的微信文本消息'
+                : !input.useAi
+                  ? `读取 ${result.messages} 条，未使用 AI，已加入待确认 ${result.added} 条`
+                  : `读取 ${result.messages} 条，生成 ${result.added} 项${
+                      result.autoAdded ? `，自动加入 ${result.autoAdded} 项` : ''
+                    }${result.pending ? `，待确认 ${result.pending} 项` : ''}`,
+            wechat: await wechatSync.status(),
+          });
+        } catch (error) {
+          throw new VaultError(error instanceof Error ? error.message : '微信手动同步失败', 400);
+        }
       }
       if (url.pathname === '/api/messages/wechat/sync' && req.method === 'POST') {
-        if ((await wechatSync.status()).running) throw new VaultError('微信正在同步，请稍后重试', 409);
+        if ((await wechatSync.status()).running)
+          throw new VaultError('微信正在同步，请稍后重试', 409);
         await wechatSync.run();
         return send(res, 200, { wechat: await wechatSync.status() });
       }
@@ -458,7 +511,11 @@ const server = http.createServer(async (req, res) => {
           })
           .strict()
           .parse(await body(req));
-        return send(res, 200, await messageServiceFor(active).bulk(input.action, input.revision, input.provider));
+        return send(
+          res,
+          200,
+          await messageServiceFor(active).bulk(input.action, input.revision, input.provider),
+        );
       }
       if (url.pathname === '/api/backups' && req.method === 'GET')
         return send(res, 200, await active.backups());

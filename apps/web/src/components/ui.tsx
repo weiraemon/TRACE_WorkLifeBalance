@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { Cross2Icon } from '@radix-ui/react-icons';
+import { ArrowLeftIcon, Cross2Icon } from '@radix-ui/react-icons';
 import {
   Children,
   cloneElement,
@@ -17,12 +17,14 @@ export function Modal({
   title,
   children,
   onClose,
+  onBack,
   wide = false,
   className = '',
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
+  onBack?: () => void;
   wide?: boolean;
   className?: string;
 }) {
@@ -64,6 +66,11 @@ export function Modal({
           onInteractOutside={(event) => event.preventDefault()}
         >
           <div className="section-heading">
+            {onBack && (
+              <Button aria-label="返回上级菜单" className="icon back-button" onClick={onBack}>
+                <ArrowLeftIcon />
+              </Button>
+            )}
             <Dialog.Title>{title}</Dialog.Title>
             <Dialog.Close asChild>
               <Button aria-label="关闭对话框" className="icon">

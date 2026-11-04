@@ -216,7 +216,7 @@ npx tsx scripts/sample-vault.ts E:\CHAOS-Demo
 
 ### 接入 AI
 
-打开「QQ同步设置」→「模型设置」：
+打开「设置」→「外部消息接入」→「模型设置」：
 
 - **DeepSeek**：默认 `https://api.deepseek.com` / `deepseek-flash`；
 - **OpenAI / ChatGPT**：填写你的接口地址和可用模型；
