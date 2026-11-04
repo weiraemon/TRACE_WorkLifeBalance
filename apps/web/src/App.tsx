@@ -460,6 +460,7 @@ export default function App() {
                   snapshot={snapshot}
                   reload={reload}
                   onPendingChange={setPendingCount}
+                  onPendingCountsChange={setPendingCounts}
                   mode="settings"
                 />
               ) : syncPanel === 'wechat' ? (
@@ -467,6 +468,7 @@ export default function App() {
                   snapshot={snapshot}
                   reload={reload}
                   onPendingChange={setPendingCount}
+                  onPendingCountsChange={setPendingCounts}
                   mode="settings"
                 />
               ) : (
@@ -475,6 +477,7 @@ export default function App() {
                   snapshot={snapshot}
                   reload={reload}
                   onPendingChange={setPendingCount}
+                  onPendingCountsChange={setPendingCounts}
                   mode="model"
                 />
               )}
@@ -503,6 +506,7 @@ export default function App() {
                   snapshot={snapshot}
                   reload={reload}
                   onPendingChange={setPendingCount}
+                  onPendingCountsChange={setPendingCounts}
                   mode="pending"
                 />
               ) : (
@@ -510,6 +514,7 @@ export default function App() {
                   snapshot={snapshot}
                   reload={reload}
                   onPendingChange={setPendingCount}
+                  onPendingCountsChange={setPendingCounts}
                   mode="pending"
                 />
               )}
@@ -531,6 +536,7 @@ export default function App() {
                 snapshot={snapshot}
                 reload={reload}
                 onPendingChange={setPendingCount}
+                onPendingCountsChange={setPendingCounts}
                 mode="paste"
               />
             </Suspense>

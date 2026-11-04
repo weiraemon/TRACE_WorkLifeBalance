@@ -429,6 +429,20 @@ const server = http.createServer(async (req, res) => {
         await messageServiceFor(active).saveSettings(input.settings, input.revision);
         return send(res, 200, { saved: true });
       }
+      if (url.pathname === '/api/messages/paste' && req.method === 'POST') {
+        const input = z
+          .object({
+            text: z.string().trim().min(1).max(12000),
+            sentAt: z.iso.datetime({ offset: true }).nullable().optional(),
+          })
+          .strict()
+          .parse(await body(req));
+        return send(
+          res,
+          200,
+          await intakeServiceFor(active).paste(input.text, input.sentAt ?? null),
+        );
+      }
       if (url.pathname === '/api/messages/analyze' && req.method === 'POST') {
         const input = z
           .object({ message: sourceMessageSchema, revision: z.string().nullable() })

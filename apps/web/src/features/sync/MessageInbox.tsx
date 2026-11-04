@@ -784,11 +784,13 @@ export function MessageInbox({
   snapshot,
   reload,
   onPendingChange,
+  onPendingCountsChange,
   mode = 'settings',
 }: {
   snapshot: Snapshot;
   reload: () => Promise<void>;
   onPendingChange?: (count: number) => void;
+  onPendingCountsChange?: (counts: { qq: number; wechat: number }) => void;
   mode?: 'pending' | 'settings' | 'paste' | 'model';
 }) {
   const [view, setView] = useState<InboxView | null>(null);
@@ -799,9 +801,6 @@ export function MessageInbox({
   const [ruleKindTab, setRuleKindTab] = useState<'group' | 'private'>('group');
   const [collapsedRules, setCollapsedRules] = useState<Set<string>>(() => new Set());
   const [bulk, setBulk] = useState<'accept' | 'dismiss' | null>(null);
-  const [quickRuleId, setQuickRuleId] = useState('');
-  const [quickInput, setQuickInput] = useState('');
-  const [quickParsed, setQuickParsed] = useState<ReturnType<typeof parseQuickCapture> | null>(null);
   const [manual, setManual] = useState(() => {
     const now = new Date();
     return {
@@ -864,19 +863,16 @@ export function MessageInbox({
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
-  const [source, setSource] = useState({
-    ruleId: '',
-    sender: '',
-    sentAt: '',
-    text: '',
-    context: '',
-    atAll: false,
-    atMe: false,
-  });
+  const [pasteText, setPasteText] = useState('');
+  const [pasteSentAt, setPasteSentAt] = useState('');
   const refresh = async () => {
     const next = await api<InboxView>('messages');
     setView(next);
     onPendingChange?.(next.state.candidates.length);
+    onPendingCountsChange?.({
+      qq: next.state.candidates.filter((item) => item.source.provider !== 'wechat').length,
+      wechat: next.state.candidates.filter((item) => item.source.provider === 'wechat').length,
+    });
     const active = next.ai.profiles[next.ai.provider];
     setSettings({
       ...next.state.settings,
@@ -1759,164 +1755,54 @@ export function MessageInbox({
           {mode !== 'pending' && (
             <>
               <details open={mode === 'paste'}>
-                <summary>粘贴 QQ 消息进行识别</summary>
+                <summary>粘贴内容</summary>
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
                     void run(async () => {
-                      const result = await api<{ message: string }>('messages/analyze', {
-                        revision: view.revision,
-                        message: {
-                          ...source,
-                          sentAt: new Date(source.sentAt + '+08:00').toISOString(),
-                        },
+                      const sentAt = pasteSentAt
+                        ? new Date(
+                            `${pasteSentAt.length === 16 ? `${pasteSentAt}:00` : pasteSentAt}+08:00`,
+                          ).toISOString()
+                        : null;
+                      const result = await api<{ message: string }>('messages/paste', {
+                        text: pasteText,
+                        sentAt,
                       });
+                      setPasteText('');
+                      setPasteSentAt('');
                       setNotice(result.message);
                     });
                   }}
                 >
                   <p className="hint">
-                    将命中的消息、补充上下文和身份关键词发送给 {aiLabel}
-                    。没有默认业务线时，还会发送未结束项目／业务线的名称与标识，用于推荐归属，不发送
-                    Notes 正文。时间按北京时间填写；@ 标记由你根据原消息确认。
+                    填写消息正文后发送给 {aiLabel} 检查。消息时间可留空；留空时按当前时间处理。
                   </p>
-                  <Field label="来源会话">
-                    <select
-                      required
-                      value={source.ruleId}
-                      onChange={(e) => setSource({ ...source, ruleId: e.target.value })}
-                    >
-                      <option value="">选择已保存的会话</option>
-                      {view.state.settings.rules
-                        .filter((r) => (r.provider ?? 'qq') === 'qq' && r.enabled)
-                        .map((r) => (
-                          <option key={r.id} value={r.id}>
-                            {r.kind === 'group' ? '群聊' : '私聊'} · {r.name}
-                          </option>
-                        ))}
-                    </select>
-                  </Field>
-                  <Field label="发送人">
+                  <Field label="消息发送时间（可选，北京时间）">
                     <input
-                      required
-                      value={source.sender}
-                      onChange={(e) => setSource({ ...source, sender: e.target.value })}
-                    />
-                  </Field>
-                  <Field label="消息发送时间（北京时间）">
-                    <input
-                      required
                       type="datetime-local"
-                      value={source.sentAt}
-                      onChange={(e) => setSource({ ...source, sentAt: e.target.value })}
+                      value={pasteSentAt}
+                      onChange={(e) => setPasteSentAt(e.target.value)}
                     />
                   </Field>
                   <Field label="消息正文">
                     <textarea
                       required
-                      rows={5}
+                      rows={8}
                       maxLength={12000}
-                      value={source.text}
-                      onChange={(e) => setSource({ ...source, text: e.target.value })}
+                      value={pasteText}
+                      onChange={(e) => setPasteText(e.target.value)}
                     />
                   </Field>
-                  <div className="message-conditions">
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={source.atAll}
-                        onChange={(e) => setSource({ ...source, atAll: e.target.checked })}
-                      />
-                      原消息确实 @全体成员
-                    </label>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={source.atMe}
-                        onChange={(e) => setSource({ ...source, atMe: e.target.checked })}
-                      />
-                      原消息确实 @我
-                    </label>
-                  </div>
-                  <Field label="同一会话的相关上下文（可选）">
-                    <textarea
-                      rows={3}
-                      maxLength={6000}
-                      value={source.context}
-                      onChange={(e) => setSource({ ...source, context: e.target.value })}
-                    />
-                  </Field>
-                  <Button disabled={busy || !activeAi.ready}>
-                    {busy ? '正在处理…' : `按规则筛选并发送给 ${aiLabel}`}
+                  <Button disabled={busy || !activeAi.ready || !pasteText.trim()}>
+                    {busy ? '正在检查…' : '发送给 AI 检查'}
                   </Button>
                   {!activeAi.ready && (
-                    <p className="hint">请先在“模型设置”保存可用的 AI 接口、模型和密钥。</p>
+                    <p className="hint">
+                      请先在“设置 → 外部消息接入 → 模型设置”保存可用的 AI 接口、模型和密钥。
+                    </p>
                   )}
                 </form>
-              </details>
-              <details className="message-quick">
-                <summary>快速处理（本地解析，不调用 AI）</summary>
-                <p className="hint">
-                  粘贴一段文字，先用本地脚本提取日期、时刻、标签和可能业务线，再加入待确认。
-                </p>
-                <Field label="快速处理会话">
-                  <select value={quickRuleId} onChange={(e) => setQuickRuleId(e.target.value)}>
-                    <option value="">选择会话规则</option>
-                    {view.state.settings.rules
-                      .filter((rule) => (rule.provider ?? 'qq') === 'qq' && rule.enabled)
-                      .map((rule) => (
-                        <option key={rule.id} value={rule.id}>
-                          {rule.kind === 'group' ? '群聊' : '私聊'} · {rule.name}
-                        </option>
-                      ))}
-                  </select>
-                </Field>
-                <Field label="快速处理文字">
-                  <textarea
-                    rows={3}
-                    value={quickInput}
-                    onChange={(e) => {
-                      setQuickInput(e.target.value);
-                      setQuickParsed(null);
-                    }}
-                  />
-                </Field>
-                <div className="message-bulk-actions">
-                  <Button
-                    type="button"
-                    disabled={busy || !quickInput.trim()}
-                    onClick={() => setQuickParsed(parseQuickCapture(quickInput, snapshot.entries))}
-                  >
-                    本地解析
-                  </Button>
-                  <Button
-                    type="button"
-                    className="primary"
-                    disabled={busy || !quickRuleId || !quickInput.trim()}
-                    onClick={() =>
-                      void run(async () => {
-                        const result = await api<{ message: string }>('messages/raw', {
-                          ruleId: quickRuleId,
-                          text: quickInput,
-                        });
-                        setQuickInput('');
-                        setQuickParsed(null);
-                        setNotice(result.message);
-                      })
-                    }
-                  >
-                    加入待确认
-                  </Button>
-                </div>
-                {quickParsed && (
-                  <p className="hint">
-                    解析结果：{quickParsed.title}
-                    {quickParsed.dueDate
-                      ? ` · ${quickParsed.dueDate} ${quickParsed.dueTime ?? ''}`
-                      : ''}
-                    {quickParsed.tags.length ? ` · ${quickParsed.tags.join('、')}` : ''}
-                  </p>
-                )}
               </details>
             </>
           )}

@@ -35,11 +35,13 @@ export function WechatSync({
   snapshot,
   reload,
   onPendingChange,
+  onPendingCountsChange,
   mode = 'settings',
 }: {
   snapshot: Snapshot;
   reload: () => Promise<void>;
   onPendingChange?: (count: number) => void;
+  onPendingCountsChange?: (counts: { qq: number; wechat: number }) => void;
   mode?: 'pending' | 'settings';
 }) {
   const [view, setView] = useState<InboxView | null>(null);
@@ -77,6 +79,10 @@ export function WechatSync({
     setView(next);
     setSettings(next.state.settings);
     onPendingChange?.(next.state.candidates.length);
+    onPendingCountsChange?.({
+      qq: next.state.candidates.filter((item) => item.source.provider !== 'wechat').length,
+      wechat: next.state.candidates.filter((item) => item.source.provider === 'wechat').length,
+    });
     if (next.wechat)
       setConfig({
         enabled: next.wechat.enabled,

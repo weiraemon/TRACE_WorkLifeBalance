@@ -80,8 +80,9 @@ export class MessageIntakeService {
     source: SourceMessage,
     settings: MessageSettings,
     resyncSeen: boolean,
+    allowUnmatched = false,
   ) {
-    if (!matchMessage(settings, source)) return null;
+    if (!allowUnmatched && !matchMessage(settings, source)) return null;
     const fingerprint = messageFingerprint(source);
     const sourceKey = messageKey(source);
     const alreadyPending = inbox.candidates.some(
@@ -154,8 +155,9 @@ export class MessageIntakeService {
     source: SourceMessage,
     settings: MessageSettings = inbox.settings,
     resyncSeen = false,
+    allowUnmatched = false,
   ): Promise<Candidate[]> {
-    const identity = this.sourceIdentity(inbox, source, settings, resyncSeen);
+    const identity = this.sourceIdentity(inbox, source, settings, resyncSeen, allowUnmatched);
     if (!identity) return [];
     const { fingerprint, sourceKey } = identity;
     if (inbox.candidates.length >= 100) throw new Error('待确认消息已满 100 条');
@@ -218,6 +220,64 @@ export class MessageIntakeService {
       added.push(candidate);
     }
     return added;
+  }
+
+  async paste(text: string, sentAt: string | null) {
+    if (this.processing) throw new VaultError('已有消息正在处理，请稍后重试', 409);
+    this.processing = true;
+    try {
+      const vault = this.vault;
+      const messages = messageServiceFor(vault);
+      const inbox = await messages.messageInbox();
+      const rule: MessageRule = {
+        id: '00000000-0000-4000-8000-000000000001',
+        provider: 'qq',
+        name: '手动粘贴',
+        kind: 'private',
+        enabled: true,
+        useAi: true,
+        autoAccept: false,
+        includeSelf: false,
+        mode: 'all',
+        conditions: [],
+        senders: [],
+        keywords: [],
+        aliases: [],
+        chatId: null,
+        projectId: null,
+        lineId: null,
+      };
+      const source: SourceMessage = {
+        provider: 'qq',
+        ruleId: rule.id,
+        sender: '手动',
+        sentAt: sentAt ?? new Date().toISOString(),
+        text,
+        context: '',
+        atAll: false,
+        atMe: false,
+        remoteId: null,
+        fromSelf: false,
+      };
+      const added = await this.analyze(
+        vault,
+        inbox.state,
+        rule,
+        source,
+        inbox.state.settings,
+        false,
+        true,
+      );
+      await messages.saveMessageInbox(inbox.state, inbox.revision);
+      return {
+        added: added.length,
+        message: added.length
+          ? `AI 已生成 ${added.length} 项，请在“待确认”中核对`
+          : 'AI 未生成需要安排的事项',
+      };
+    } finally {
+      this.processing = false;
+    }
   }
 
   async enqueueRaw(ruleId: string, text: string) {

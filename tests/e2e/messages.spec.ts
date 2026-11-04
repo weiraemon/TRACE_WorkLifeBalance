@@ -311,7 +311,7 @@ test('消息规则、AI 提供商、QQ 项目范围与计划入库', async ({ pa
   await expect(page.getByRole('button', { name: 'QQ同步设置', exact: true })).toHaveCount(0);
 });
 
-test('会话开启自动加入后，命中消息直接进入计划', async ({ page }) => {
+test('手动粘贴消息经 AI 检查后进入待确认', async ({ page }) => {
   await fs.rm('.test-vault/app-config', { recursive: true, force: true });
   const content = JSON.stringify({
     suggestions: [
@@ -342,7 +342,7 @@ test('会话开启自动加入后，命中消息直接进入计划', async ({ pa
   const { port } = mock.address() as AddressInfo;
   try {
     await connect(page);
-    const { line } = await seed(page);
+    await seed(page);
     await refresh(page);
     await page.getByRole('button', { name: '设置', exact: true }).click();
     const dialog = page.getByRole('dialog');
@@ -353,41 +353,24 @@ test('会话开启自动加入后，命中消息直接进入计划', async ({ pa
     await dialog.getByLabel('API 密钥').fill('sk-mock');
     await dialog.getByRole('button', { name: '保存 AI 设置', exact: true }).click();
     await expect(dialog).toContainText('AI 设置与密钥已保存到本机');
-    await dialog.getByRole('button', { name: '返回上级菜单', exact: true }).click();
-    await dialog.getByRole('button', { name: 'QQ同步设置', exact: true }).click();
-    await dialog.getByRole('button', { name: 'QQ自动同步全局设置', exact: true }).click();
-    await dialog.getByLabel('本人姓名与称呼').fill('测试');
-    await dialog.getByRole('button', { name: '保存全局设置', exact: true }).click();
-    await expect(dialog).toContainText('全局设置已保存');
-    await dialog.getByRole('button', { name: '会话规则设置', exact: true }).click();
-    await dialog.getByRole('button', { name: '添加群聊规则', exact: true }).click();
-    await dialog.getByLabel('会话名称').fill('自动测试');
-    await dialog.getByLabel('自动加入计划（跳过待确认）').check();
-    await dialog.getByLabel('默认业务线（可选）').selectOption(line.data.id);
-    await dialog.getByRole('button', { name: '保存此规则', exact: true }).click();
-    await expect(dialog).toContainText('此规则已保存');
     await dialog.getByRole('button', { name: '关闭对话框', exact: true }).click();
 
     await page.getByRole('button', { name: '手动粘贴', exact: true }).click();
     const inbox = page.getByRole('dialog');
     await expect(inbox.locator('article.message-candidate')).toHaveCount(0);
     await expect(inbox.locator('.message-inbox h3')).toHaveText('手动粘贴消息');
-    await inbox.getByLabel('来源会话').selectOption({ label: '群聊 · 自动测试' });
-    await inbox.getByLabel('发送人').fill('辅导员');
-    await inbox.getByLabel('消息发送时间（北京时间）').fill('2026-10-29T09:00');
     await inbox.getByLabel('消息正文').fill('请在明天前完成自动加入测试');
-    await inbox.getByRole('button', { name: /按规则筛选并发送给/ }).click();
-    await expect(inbox).toContainText('已自动加入 1 项计划');
+    await expect(inbox.getByLabel('来源会话')).toHaveCount(0);
+    await expect(inbox.getByLabel('发送人')).toHaveCount(0);
+    await inbox.getByRole('button', { name: '发送给 AI 检查', exact: true }).click();
+    await expect(inbox).toContainText('AI 已生成 1 项');
     await inbox.getByRole('button', { name: '关闭对话框', exact: true }).click();
 
-    const after = await snapshot(page);
-    expect(
-      after.entries.some((e) => e.data.type === 'todo' && e.data.title === '自动加入测试'),
-    ).toBe(true);
     const messages = await page.request
       .get('/api/messages', { headers: await headers(page) })
       .then((r) => r.json());
-    expect(messages.state.candidates).toHaveLength(0);
+    expect(messages.state.candidates).toHaveLength(1);
+    expect(messages.state.candidates[0].suggestion.title).toBe('自动加入测试');
   } finally {
     await new Promise<void>((resolve) => mock.close(() => resolve()));
   }
