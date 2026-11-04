@@ -107,3 +107,9 @@ Invoke-RestMethod "$base/business/v1/commands" -Method Post -Headers $headers -C
 6. 验证原有流程与新增适配器。QQ / AI 使用本地模拟数据和服务测试，未经用户授权不对真实账号读写或发送真实消息。
 
 npm run check:architecture 检查核心层不反向引用接入层，npm run check 包含这一检查及业务、构建和浏览器回归。该检查用于约束依赖，不替代业务测试。
+
+### Windows QQ 初始化桌面契约
+
+- `chaos:discover-qq({ seed?: string, browse?: boolean })`：返回 `{ accounts: [{ dataDir, selfQQ, modified }], limited }`；浏览文件夹取消返回 `null`。仅可信主窗口可调用，扫描有深度、目录数量和时间预算。
+- `chaos:setup-qq({ dataDir, selfQQ })`：只在脚本成功验证并写入本机配置后 resolve；失败、提前关闭和超时 reject，禁止并发初始化。主进程生成独立临时结果文件，通过 `-ResultFile` 传给脚本，内容仅为 `success` 或 `failed`，最终清理。命令行保留供用户阅读，不以窗口关闭作为成功依据。
+- 前端成功后使用现有消息配置读取接口刷新，不改写业务 Markdown，不增加业务命令。密钥不经过桌面桥接。

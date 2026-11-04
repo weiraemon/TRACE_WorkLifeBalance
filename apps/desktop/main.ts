@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import { execFile, fork, type ChildProcess } from 'node:child_process';
 import { qqSetupArguments } from './qq-setup';
+import { discoverQq } from './qq-discovery';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { once } from 'node:events';
@@ -24,6 +25,7 @@ let service: ChildProcess | undefined;
 let quitting = false;
 let stopped = false;
 let origin = '';
+let qqSetupRunning = false;
 
 function trustedSender(event: Electron.IpcMainInvokeEvent) {
   if (
@@ -154,24 +156,95 @@ async function start() {
     });
     return result.canceled ? null : result.filePaths[0];
   });
+  ipcMain.handle(
+    'chaos:discover-qq',
+    async (event, input: { seed?: string; browse?: boolean } = {}) => {
+      trustedSender(event);
+      if (input.browse) {
+        const selection = await dialog.showOpenDialog(window!, {
+          title: '选择 QQ 数据所在文件夹（可选择上级目录）',
+          properties: ['openDirectory'],
+        });
+        if (selection.canceled) return null;
+        return discoverQq(selection.filePaths);
+      }
+      const roots = [path.join(app.getPath('documents'), 'Tencent Files')];
+      if (typeof input.seed === 'string' && path.isAbsolute(input.seed)) roots.unshift(input.seed);
+      try {
+        const config = JSON.parse(
+          await fs.readFile(path.join(configDirectory, 'settings.json'), 'utf8'),
+        );
+        if (typeof config.qq?.dataDir === 'string') roots.unshift(config.qq.dataDir);
+      } catch {
+        /* First setup has no saved configuration. */
+      }
+      for (const drive of 'CDEFGHIJKLMNOPQRSTUVWXYZ') {
+        for (const relative of ['Tencent Files', 'qq_files', 'SoftwareData/QQ/Tencent Files'])
+          roots.push(path.join(`${drive}:\\`, relative));
+      }
+      return discoverQq(roots);
+    },
+  );
   ipcMain.handle('chaos:setup-qq', async (event, input: unknown) => {
     trustedSender(event);
-    const args = qqSetupArguments(root, input);
-    await new Promise<void>((resolve, reject) => {
-      // Start-Process gives the interactive tool its own console and input handles.
-      // All arguments here are fixed flags or base64, never raw user input.
-      execFile(
-        'powershell.exe',
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-Command',
-          `Start-Process -FilePath powershell.exe -ArgumentList '${args.join(' ')}' -WindowStyle Normal -ErrorAction Stop`,
-        ],
-        { cwd: root, windowsHide: true },
-        (error) => (error ? reject(new Error('无法打开 QQ 初始化工具')) : resolve()),
-      );
-    });
+    if (qqSetupRunning) throw new Error('QQ 初始化正在进行，请先完成当前操作');
+    qqSetupArguments(root, input);
+    qqSetupRunning = true;
+    const resultDirectory = await fs
+      .mkdtemp(path.join(app.getPath('temp'), 'chaos-qq-result-'))
+      .catch((error) => {
+        qqSetupRunning = false;
+        throw error;
+      });
+    const resultFile = path.join(resultDirectory, 'result.txt');
+    const args = qqSetupArguments(root, input, resultFile);
+    let setupPid = 0;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        // Start-Process gives the interactive tool its own console and input handles.
+        // All arguments here are fixed flags or base64, never raw user input.
+        execFile(
+          'powershell.exe',
+          [
+            '-NoProfile',
+            '-NonInteractive',
+            '-Command',
+            `(Start-Process -FilePath powershell.exe -ArgumentList '${args.join(' ')}' -WindowStyle Normal -PassThru -ErrorAction Stop).Id`,
+          ],
+          {
+            cwd: root,
+            windowsHide: true,
+            env: { ...process.env, CHAOS_CONFIG_DIR: configDirectory },
+          },
+          (error, stdout) => {
+            if (error) reject(new Error('无法打开 QQ 初始化工具'));
+            else {
+              setupPid = Number(stdout.trim());
+              resolve();
+            }
+          },
+        );
+      });
+      const deadline = Date.now() + 15 * 60 * 1000;
+      while (Date.now() < deadline) {
+        const result = await fs.readFile(resultFile, 'utf8').catch(() => '');
+        if (result === 'success') return;
+        if (result === 'failed') throw new Error('初始化未完成，请查看命令行中的提示后重试');
+        if (setupPid) {
+          try {
+            process.kill(setupPid, 0);
+          } catch {
+            throw new Error('初始化窗口已关闭，尚未收到成功结果，请重试');
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+      throw new Error('等待初始化超时。请检查命令行；若已成功，可点击“重新加载 QQ 同步”。');
+    } finally {
+      qqSetupRunning = false;
+      await fs.unlink(resultFile).catch(() => {});
+      await fs.rmdir(resultDirectory).catch(() => {});
+    }
   });
   await window.loadURL(androidPreview ? `${origin}/?ui=android` : origin);
 }
