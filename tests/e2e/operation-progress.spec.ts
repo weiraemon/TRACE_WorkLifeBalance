@@ -14,7 +14,7 @@ test('手机读取目录时显示进度与计时，取消后可重试', async ({
   await expect(page.getByRole('alert')).toContainText('操作已停止');
   await page.unroute('**/api/session');
   await page.getByRole('button', { name: '重新读取原目录' }).click();
-  await expect(page.getByRole('heading', { name: '今天，先做什么', exact: true })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '今日导航', exact: true })).toBeVisible();
 });
 
 test('读取电脑变化等待响应时显示进度，可停止并显示超时错误', async ({ page }) => {

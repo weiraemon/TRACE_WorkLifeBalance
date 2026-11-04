@@ -14,15 +14,15 @@ export function ActualAssociationPicker({
   const [lineId, setLineId] = useState('');
   return (
     <>
-      <details className="association-disclosure">
-        <summary>关联节点或待办（可选）</summary>
+      <section className="association-disclosure" aria-label="关联节点或待办">
+        <h3>关联</h3>
         <AssociationCandidates
           snapshot={snapshot}
           selection={selection}
           lineId={lineId}
           setLineId={setLineId}
         />
-      </details>
+      </section>
       <SelectedAssociations selection={selection} />
     </>
   );

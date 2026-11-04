@@ -144,7 +144,7 @@ try {
   let page = connection.page;
   // A remembered directory must be the dedicated synthetic directory before this script writes anything.
   const connected = await eventually(async () => {
-    const heading = page.getByRole('heading', { name: '今天，先做什么', exact: true });
+    const heading = page.getByRole('navigation', { name: '今日导航', exact: true });
     const picker = page.getByRole('button', { name: '选择文件夹', exact: true });
     assert.ok((await heading.count()) || (await picker.count()));
     return Boolean(await heading.count());
@@ -165,7 +165,7 @@ try {
     await tapNative(/^(ALLOW|允许)$/i);
     const needsTakeover = await eventually(
       async () => {
-        if (await page.getByRole('heading', { name: '今天，先做什么', exact: true }).isVisible())
+        if (await page.getByRole('navigation', { name: '今日导航', exact: true }).isVisible())
           return false;
         assert.ok(await page.getByText('等待确认重新授权旧目录', { exact: true }).isVisible());
         return true;
@@ -175,7 +175,7 @@ try {
     );
     if (needsTakeover) await tapNative(/^接管并恢复$/);
     await page
-      .getByRole('heading', { name: '今天，先做什么', exact: true })
+      .getByRole('navigation', { name: '今日导航', exact: true })
       .waitFor({ timeout: 45000 });
   }
   checks.push('真实 SAF 目录授权与连接');
@@ -202,9 +202,7 @@ try {
   await tapNative(/^(USE THIS FOLDER|使用此文件夹)$/i);
   await tapNative(/^(ALLOW|允许)$/i);
   await tapNative(/^接管并恢复$/);
-  await page
-    .getByRole('heading', { name: '今天，先做什么', exact: true })
-    .waitFor({ timeout: 45000 });
+  await page.getByRole('navigation', { name: '今日导航', exact: true }).waitFor({ timeout: 45000 });
   checks.push('模拟重装后重新授权旧目录，确认接管并保留原工作内容');
   const nav = (name) =>
     page
@@ -212,7 +210,7 @@ try {
       .getByRole('button', { name, exact: true })
       .click();
   await nav('工作空间');
-  if (!(await page.getByRole('button', { name: '查看项目 移动端验收', exact: true }).count())) {
+  if (!(await page.getByRole('heading', { name: '移动端验收', exact: true }).count())) {
     await page.getByRole('button', { name: '新建项目', exact: true }).click();
     await page.getByRole('dialog').getByLabel('标题', { exact: true }).fill('移动端验收');
     await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click();
@@ -222,7 +220,7 @@ try {
   for (const title of ['下一步研究', '方法验证']) {
     if (await page.getByRole('button', { name: `打开业务线 ${title}`, exact: true }).count())
       continue;
-    await project.getByRole('button', { name: '添加业务线', exact: true }).click();
+    await project.getByRole('button', { name: '添加业务线 · 移动端验收', exact: true }).click();
     await page.getByRole('dialog').getByLabel('标题', { exact: true }).fill(title);
     await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click();
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
@@ -237,7 +235,6 @@ try {
     const dialog = page.getByRole('dialog');
     await dialog.getByLabel('标题', { exact: true }).fill('方案讨论');
     await dialog.getByLabel('节点标签', { exact: true }).fill('讨论');
-    await dialog.getByText('可选设置', { exact: true }).click();
     const today = await page.evaluate(() => {
       const date = new Date();
       return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -295,7 +292,6 @@ try {
   await page.getByLabel('开始时间', { exact: true }).fill('09:00');
   await page.getByLabel('结束时间', { exact: true }).fill('10:00');
   if (!updatingActual) {
-    await page.getByText('关联节点或待办（可选）', { exact: true }).click();
     await page
       .locator('.actual-pool-choice')
       .filter({ hasText: '整理讨论材料' })
@@ -316,7 +312,7 @@ try {
   await page.screenshot({ path: path.join(output, 'actuals.png') });
   checks.push('关闭网络后，实际记录＋本次完成联合保存');
   await nav('回顾');
-  await page.getByRole('heading', { name: '回顾', exact: true }).waitFor();
+  await page.getByRole('region', { name: '本周概况', exact: true }).waitFor();
   await page.screenshot({ path: path.join(output, 'review.png') });
   await page.getByRole('button', { name: '设置', exact: true }).click();
   await page.getByRole('button', { name: '创建管理数据快照', exact: true }).click();
@@ -467,7 +463,7 @@ try {
   await wifiPanel.getByRole('status').filter({ hasText: '确认已返回' }).waitFor({ timeout: 60000 });
   await page.getByRole('button', { name: '关闭对话框', exact: true }).click();
   await nav('工作空间');
-  await page.getByRole('button', { name: `查看项目 ${wifi.title}`, exact: true }).waitFor();
+  await page.getByRole('heading', { name: wifi.title, exact: true }).waitFor();
   await page.getByRole('button', { name: '新建项目', exact: true }).click();
   await page.getByRole('dialog').getByLabel('标题', { exact: true }).fill(wifi.phoneTitle);
   await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click();
@@ -541,9 +537,7 @@ try {
   connection = await connectWebView();
   browser = connection.browser;
   page = connection.page;
-  await page
-    .getByRole('heading', { name: '今天，先做什么', exact: true })
-    .waitFor({ timeout: 30000 });
+  await page.getByRole('navigation', { name: '今日导航', exact: true }).waitFor({ timeout: 30000 });
   await page
     .getByRole('navigation', { name: '手机导航' })
     .getByRole('button', { name: '今日已做', exact: true })

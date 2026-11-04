@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { CheckIcon } from '@radix-ui/react-icons';
 import { localDay, type BusinessLine, type Snapshot } from '../../../../../packages/domain/index';
 import { readContent, saveContent } from '../../api';
 import { Button, ErrorMessage, Field } from '../../components/ui';
@@ -58,9 +59,9 @@ export function MobileNotes({
       >
         <Field label="随手记">
           <textarea
-            rows={4}
+            rows={3}
             value={memo}
-            placeholder="先记下来，留在这条业务线的笔记里…"
+            placeholder="记下想法…"
             onChange={(event) => {
               setMemo(event.target.value);
               onDirtyChange(Boolean(event.target.value.trim()) || bodyDirty);
@@ -68,8 +69,14 @@ export function MobileNotes({
           />
         </Field>
         <ErrorMessage message={error} />
-        <Button type="submit" className="primary" disabled={!memo.trim() || busy || bodyDirty}>
-          {busy ? '正在保存…' : '记到笔记'}
+        <Button
+          type="submit"
+          className="mobile-note-save"
+          aria-label="记到笔记"
+          title="记到笔记"
+          disabled={!memo.trim() || busy || bodyDirty}
+        >
+          <CheckIcon />
         </Button>
         {bodyDirty && <p className="hint">先保存或取消下方的正文编辑，再添加随手记。</p>}
       </form>
@@ -77,6 +84,7 @@ export function MobileNotes({
         id={line.id}
         revision={resource?.revision}
         editable
+        compact
         reload={reload}
         onDirtyChange={bodyChanged}
       />

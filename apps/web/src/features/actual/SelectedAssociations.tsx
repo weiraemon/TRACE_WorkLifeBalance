@@ -12,8 +12,7 @@ function AssociationComment({
   selection: ActualAssociations;
 }) {
   return (
-    <details className="result-disclosure">
-      <summary>成果 / 下一步 · {title}</summary>
+    <div className="result-disclosure">
       <Field label={`批注 · ${title}`}>
         <textarea
           rows={2}
@@ -21,7 +20,7 @@ function AssociationComment({
           onChange={(event) => selection.setComment(id, event.target.value)}
         />
       </Field>
-    </details>
+    </div>
   );
 }
 function AssociationCompletion({

@@ -46,7 +46,6 @@ test('会议快速关联可本次完成，含下属条目；保存前不写入�
 test('待添加和已添加独立保留，移除再添加保留批注，子条目随节点选择可还原', async ({ page }) => {
   await seed(page);
   const form = page.getByRole('form', { name: '实际工作录入', exact: true });
-  await form.getByText('关联节点或待办（可选）', { exact: true }).click();
   const candidates = form.getByRole('region', { name: '待选池', exact: true });
   const selected = form.getByRole('region', { name: '已选择', exact: true });
   await expect(candidates.getByRole('heading', { name: '待添加', exact: true })).toBeVisible();
@@ -61,7 +60,6 @@ test('待添加和已添加独立保留，移除再添加保留批注，子条�
     .filter({ hasText: 'TODO · 找人要材料' })
     .getByRole('button', { name: '加入', exact: true })
     .click();
-  await selected.getByText('成果 / 下一步 · 方案会议', { exact: true }).click();
   await selected.getByLabel('批注 · 方案会议', { exact: true }).fill('未保存的会议结论');
   const parent = selected.getByRole('checkbox', { name: '本次完成节点 方案会议', exact: true });
   const child = selected.getByRole('checkbox', { name: '本次完成 找人要材料', exact: true });
@@ -78,7 +76,6 @@ test('待添加和已添加独立保留，移除再添加保留批注，子条�
     .click();
   await expect(nodeChoice).toBeVisible();
   await nodeChoice.getByRole('button', { name: '加入', exact: true }).click();
-  await selected.getByText('成果 / 下一步 · 方案会议', { exact: true }).click();
   await expect(selected.getByLabel('批注 · 方案会议', { exact: true })).toHaveValue(
     '未保存的会议结论',
   );

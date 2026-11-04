@@ -84,7 +84,6 @@ test('迟到的旧快照不能覆盖实际完成、重要性、日期属性和 N
   await page.getByRole('button', { name: '记一段 · 例会', exact: true }).click();
   const form = page.getByRole('form', { name: '实际工作录入', exact: true });
   await form.getByRole('checkbox', { name: '本次完成节点 例会', exact: true }).check();
-  await form.getByText('成果 / 下一步 · 例会', { exact: true }).click();
   await form.getByLabel('批注 · 例会', { exact: true }).fill('唯一一份会议结论');
   await form.getByLabel('具体事件', { exact: true }).fill('完成例会');
   await form.getByLabel('开始时间', { exact: true }).fill('09:00');

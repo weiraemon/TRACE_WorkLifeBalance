@@ -33,6 +33,7 @@
   "dependencies": {
     "@capacitor/android": "^7.6.10",
     "@capacitor/core": "^7.6.10",
+    "@fontsource-variable/noto-serif-sc": "^5.3.1",
     "@fullcalendar/core": "^6.1.19",
     "@fullcalendar/react": "^6.1.19",
     "@fullcalendar/timegrid": "^6.1.19",

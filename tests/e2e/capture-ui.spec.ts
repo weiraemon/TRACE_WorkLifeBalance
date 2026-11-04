@@ -94,7 +94,6 @@ test('普通新增节点可以从微信消息识别时间、业务线、重要�
   await dialog.getByRole('button', { name: '识别时间和节点', exact: true }).click();
   await expect(dialog.getByLabel('标题', { exact: true })).toHaveValue('论文研究讨论推进方案');
   await expect(dialog.getByLabel('所属业务线', { exact: true })).toHaveValue(line.data.id);
-  await dialog.getByText('可选设置', { exact: true }).click();
   await expect(dialog.getByLabel('截止时刻', { exact: true })).toHaveValue('09:30');
   await expect(dialog.getByLabel('节点标签', { exact: true })).toHaveValue('会议');
   await dialog.getByRole('button', { name: '保存', exact: true }).click();
@@ -189,7 +188,7 @@ test('今日优先显示定时节点，悬浮看全部条目，记一段保留�
     '等 小王',
   );
   const form = page.getByRole('form', { name: '实际工作录入', exact: true });
-  await expect(form.getByRole('region', { name: '待选池', exact: true })).not.toBeVisible();
+  await expect(form.getByRole('region', { name: '待选池', exact: true })).toBeVisible();
   await form.getByLabel('具体事件', { exact: true }).fill('直接推进会议节点');
   await form.getByLabel('开始时间', { exact: true }).fill('10:00');
   await form.getByLabel('结束时间', { exact: true }).fill('11:00');
@@ -199,7 +198,6 @@ test('今日优先显示定时节点，悬浮看全部条目，记一段保留�
   await expect(
     form.getByRole('checkbox', { name: '本次完成 找人要材料', exact: true }),
   ).not.toBeChecked();
-  await form.getByText('成果 / 下一步 · 方案会议', { exact: true }).click();
   await form.getByLabel('批注 · 方案会议', { exact: true }).fill('会议确定了下一步方案');
   await form.getByRole('button', { name: '保存实际工作', exact: true }).click();
   await expect(form.getByLabel('具体事件', { exact: true })).toHaveValue('');

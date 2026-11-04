@@ -117,6 +117,9 @@
   width: 100%;
   min-width: 0;
 }
+.actual-time-fields > .span-two {
+  grid-column: auto;
+}
 [aria-label='实际工作录入'] {
   min-width: 0;
 }
@@ -124,16 +127,9 @@
   .actual-time-fields {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
-  .actual-time-fields > .field:first-child {
+  .actual-time-fields > .field.span-two {
     grid-column: 1 / -1;
   }
-}
-.association-disclosure > summary,
-.result-disclosure > summary {
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 12px;
-  padding: 8px 0;
 }
 .actual-selected h3 {
   font-size: 12px;

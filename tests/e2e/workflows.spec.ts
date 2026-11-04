@@ -43,7 +43,6 @@ test('新增统一在待办节点页签，实际录入仅关联已有条目，�
   await form.getByLabel('具体事件', { exact: true }).fill('比较两种解释');
   await form.getByLabel('开始时间', { exact: true }).fill('10:00');
   await form.getByLabel('结束时间', { exact: true }).fill('11:00');
-  await form.getByText('关联节点或待办（可选）', { exact: true }).click();
   await expect(form.getByRole('button', { name: '新建 TODO / IDEA', exact: true })).toHaveCount(0);
   await expect(
     form.getByRole('region', { name: '快速创建 TODO / IDEA', includeHidden: true }),
@@ -100,7 +99,6 @@ test('一次实际工作可以关联多个不同节点', async ({ page }) => {
   await form.getByLabel('具体事件', { exact: true }).fill('同步推进两个节点');
   await form.getByLabel('开始时间', { exact: true }).fill('15:00');
   await form.getByLabel('结束时间', { exact: true }).fill('16:00');
-  await form.getByText('关联节点或待办（可选）', { exact: true }).click();
   const pool = form.getByRole('region', { name: '待选池', exact: true });
   await pool.getByLabel('业务线', { exact: true }).selectOption(line.data.id);
   for (const title of ['方案会议', '复盘节点'])
@@ -131,7 +129,6 @@ test('实际工作可从已有待办绑定，节点和待办批注均可留空�
   await form.getByLabel('具体事件', { exact: true }).fill('完成方案会议后的材料确认');
   await form.getByLabel('开始时间', { exact: true }).fill('10:00');
   await form.getByLabel('结束时间', { exact: true }).fill('10:30');
-  await form.getByText('关联节点或待办（可选）', { exact: true }).click();
   const pool = form.getByRole('region', { name: '待选池', exact: true });
   await pool.getByLabel('业务线', { exact: true }).selectOption(line.data.id);
   for (const title of ['节点 · 方案会议', 'TODO · 找人要材料'])
@@ -140,8 +137,6 @@ test('实际工作可从已有待办绑定，节点和待办批注均可留空�
       .filter({ hasText: title })
       .getByRole('button', { name: '加入', exact: true })
       .click();
-  await form.getByText('成果 / 下一步 · 方案会议', { exact: true }).click();
-  await form.getByText('成果 / 下一步 · 找人要材料', { exact: true }).click();
   await expect(form.getByLabel('批注 · 方案会议', { exact: true })).toHaveValue('');
   await expect(form.getByLabel('批注 · 找人要材料', { exact: true })).toHaveValue('');
   await form.getByRole('checkbox', { name: '本次完成 找人要材料', exact: true }).check();
@@ -315,7 +310,6 @@ test('节点创建时写纪要和新标签，Notes 包含日期与名称；无�
   await track.locator('.add-point').click();
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel('标题', { exact: true }).fill('新实验');
-  await dialog.getByText('可选设置', { exact: true }).click();
   await dialog.getByLabel('截止日期', { exact: true }).fill('2026-11-01');
   await dialog.getByLabel('截止时刻', { exact: true }).fill('15:30');
   await dialog.getByLabel('节点标签', { exact: true }).fill('实验，新方向');

@@ -76,10 +76,6 @@ export function ActualRecordForm({
         edited.current = true;
         onDirtyChange?.(true);
       }}
-      onClickCapture={(event) => {
-        if ((event.target as Element).closest('.actual-association-picker, .actual-associations'))
-          onDirtyChange?.(true);
-      }}
       onSubmit={async (e) => {
         e.preventDefault();
         setBusy(true);
@@ -140,7 +136,7 @@ export function ActualRecordForm({
       </Field>
       <div className="actual-time-fields">
         {(!embedded || date !== defaultDate) && (
-          <Field label="记录日期">
+          <Field label="记录日期" wide>
             <DatePicker value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
           </Field>
         )}

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, lazy, Suspense } from 'react';
+import { CheckIcon, Cross2Icon, Pencil2Icon } from '@radix-ui/react-icons';
 import { readContent, saveContent } from '../../api';
 import { Button, ErrorMessage, Field } from '../../components/ui';
 const Markdown = lazy(() => import('react-markdown'));
@@ -6,12 +7,14 @@ export function NotesContent({
   id,
   revision,
   editable = false,
+  compact = false,
   reload,
   onDirtyChange,
 }: {
   id: string;
   revision?: string;
   editable?: boolean;
+  compact?: boolean;
   reload?: () => Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
@@ -44,7 +47,11 @@ export function NotesContent({
     <section className="detail-section notes-content">
       <div className="section-heading">
         <h3>Notes</h3>
-        {editable && !editing && <Button onClick={() => setEditing(true)}>编辑正文</Button>}
+        {editable && !editing && (
+          <Button aria-label="编辑正文" title="编辑正文" onClick={() => setEditing(true)}>
+            {compact ? <Pencil2Icon /> : '编辑正文'}
+          </Button>
+        )}
       </div>
       {editing ? (
         <>
@@ -61,6 +68,7 @@ export function NotesContent({
           </Field>
           <div className="actions">
             <Button
+              aria-label="取消"
               disabled={busy}
               onClick={() => {
                 if (dirty.current && !window.confirm('放弃尚未保存的正文？')) return;
@@ -75,10 +83,12 @@ export function NotesContent({
                   .catch((e) => setError(String(e)));
               }}
             >
-              取消
+              {compact ? <Cross2Icon /> : '取消'}
             </Button>
             <Button
               className="primary"
+              aria-label="保存正文"
+              title="保存正文"
               disabled={busy}
               onClick={() => {
                 setBusy(true);
@@ -95,7 +105,7 @@ export function NotesContent({
                   .finally(() => setBusy(false));
               }}
             >
-              保存正文
+              {compact ? <CheckIcon /> : '保存正文'}
             </Button>
           </div>
         </>

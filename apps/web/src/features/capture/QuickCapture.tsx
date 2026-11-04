@@ -9,12 +9,10 @@ export function QuickCapture({
   snapshot,
   onCreate,
   today,
-  collapsiblePaste = false,
 }: {
   snapshot: Snapshot;
   onCreate: (item: Todo | Milestone, comment: string) => Promise<void>;
   today: string;
-  collapsiblePaste?: boolean;
 }) {
   const [importance, setImportance] = useState(1);
   const [title, setTitle] = useState(''),
@@ -130,14 +128,7 @@ export function QuickCapture({
   return (
     <section className="quick-capture compact-capture" aria-label="快速创建 TODO / IDEA">
       <h2 className="capture-recognition-heading">自动匹配与识别</h2>
-      {collapsiblePaste ? (
-        <details className="mobile-paste-disclosure">
-          <summary>从文字快速识别（可选）</summary>
-          {pasteCapture}
-        </details>
-      ) : (
-        pasteCapture
-      )}
+      {pasteCapture}
       <div className="quick-capture-controls">
         <select
           className="line-dropdown"

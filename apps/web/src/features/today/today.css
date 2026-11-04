@@ -617,9 +617,6 @@
   .today-capture .association-disclosure {
     margin: 4px 0 8px;
   }
-  .today-capture .association-disclosure > summary {
-    padding-block: 4px;
-  }
   .today-capture .form-actions {
     margin-top: 10px;
   }

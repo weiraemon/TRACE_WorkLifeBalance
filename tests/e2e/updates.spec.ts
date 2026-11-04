@@ -113,7 +113,6 @@ test('条目独立日期可提前安排，今日完成后保留划线，不改�
     .click({ button: 'right' });
   await page.getByRole('menuitem', { name: '编辑条目', exact: true }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByText('可选设置', { exact: true }).click();
   await expect(dialog.locator('input[type="time"]')).toHaveCount(0);
   await dialog.getByLabel('条目日期', { exact: true }).fill(localDay());
   await dialog.getByRole('button', { name: '保存', exact: true }).click();
@@ -178,7 +177,6 @@ test('节点按截止点排序，池固定末端，改期立即重排，桌面�
   await track.getByRole('button', { name: '后来未定', exact: true }).click({ button: 'right' });
   await page.getByRole('menuitem', { name: '编辑节点', exact: true }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByText('可选设置', { exact: true }).click();
   await dialog.getByLabel('截止日期', { exact: true }).fill(localDay(previousDay));
   await dialog.getByRole('button', { name: '保存', exact: true }).click();
   await expect(titles).toHaveText(['后来未定', '上午', '下午', '最早未定', '待办池']);

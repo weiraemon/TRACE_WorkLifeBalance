@@ -10,6 +10,7 @@ import {
   ArrowLeftIcon,
   ReloadIcon,
   PlusIcon,
+  MagnifyingGlassIcon,
 } from '@radix-ui/react-icons';
 import {
   isSpaceItem,
@@ -36,10 +37,11 @@ import { SpaceDetails } from '../workspace/SpaceDetails';
 import { workspaceGroups } from '../workspace/workspaceGroups';
 import type { Editor } from '../../types/editor';
 import type { RecordSource } from '../actual/types';
-import { ProjectOrbit } from './ProjectOrbit';
+import { ProjectList } from './ProjectList';
 import { VerticalLine } from './VerticalLine';
 import { MobileActions } from './MobileActions';
 import { MobileNotes } from './MobileNotes';
+import '@fontsource-variable/noto-serif-sc';
 import './mobile.css';
 import { OperationProgress } from '../../components/OperationProgress';
 import { operationSnapshot, runOperation } from '../../platform/operations';
@@ -73,7 +75,7 @@ export default function MobileApp() {
     [selected, setSelected] = useState<string | null>(null),
     [actionId, setActionId] = useState<string | null>(null),
     [deleting, setDeleting] = useState<Entry | null>(null);
-  const [editMode, setEditMode] = useState<'actual' | 'todo' | 'milestone'>('actual'),
+  const [editMode, setEditMode] = useState<'actual' | 'todo'>('actual'),
     [formVersion, setFormVersion] = useState(0),
     [source, setSource] = useState<RecordSource>();
   const dirty = useRef(new Set<string>()),
@@ -260,6 +262,7 @@ export default function MobileApp() {
   });
   const groups = snapshot ? workspaceGroups(snapshot.entries, archived, '') : [];
   const lines = groups.flatMap((group) => group.lines);
+  const contacts = snapshot ? contactsForDay(snapshot.entries, date) : [];
   let line = lines.find((line) => line.id === route.lineId);
   if (line && snapshot) previousLine.current = { vaultId: snapshot.vaultId, line };
   if (
@@ -386,7 +389,6 @@ export default function MobileApp() {
             )}
             {route.page === 'today' && (
               <>
-                <h1>今天，先做什么</h1>
                 <TodayAgenda
                   snapshot={snapshot}
                   date={date}
@@ -401,7 +403,7 @@ export default function MobileApp() {
                 />
                 <section className="mobile-contacts" aria-label="今天联系谁">
                   <h2>今天联系谁</h2>
-                  {contactsForDay(snapshot.entries, date)
+                  {contacts
                     .flatMap((group) => group.todos)
                     .map(({ todo, line }) => (
                       <button
@@ -418,15 +420,12 @@ export default function MobileApp() {
                         </span>
                       </button>
                     ))}
-                  {!contactsForDay(snapshot.entries, date).length && (
-                    <p className="hint">没有当天需要联络的事项。</p>
-                  )}
+                  {!contacts.length && <p className="hint">没有当天需要联络的事项。</p>}
                 </section>
               </>
             )}
             {route.page === 'done' && (
               <section className="mobile-done">
-                <h1>今天，已经做过</h1>
                 <p className="mobile-total">
                   {(timeTotals(snapshot.entries, date, date).total / 60).toFixed(1)}
                   <small>小时实际投入</small>
@@ -453,8 +452,12 @@ export default function MobileApp() {
             )}
             {route.page === 'edit' && (
               <section className="mobile-editor">
-                <h1>{editMode === 'actual' ? '记下做过的事' : '安排下一步'}</h1>
-                <div className="mobile-edit-modes" role="group" aria-label="录入类型">
+                <div
+                  className="mobile-edit-modes"
+                  data-mode={editMode}
+                  role="group"
+                  aria-label="录入类型"
+                >
                   {(
                     [
                       { id: 'actual', label: '实际工作' },
@@ -504,7 +507,6 @@ export default function MobileApp() {
                       key={`capture:${snapshot.vaultId}:${formVersion}`}
                       snapshot={snapshot}
                       today={date}
-                      collapsiblePaste
                       onCreate={async (item, comment) => {
                         await save(item, undefined, {
                           comments: comment.trim()
@@ -544,19 +546,17 @@ export default function MobileApp() {
                   )
                 ) : (
                   <>
-                    <h1>{route.page === 'notes' ? '把想法，留在线上' : '从一条业务线开始'}</h1>
-                    <p className="mobile-intro">
-                      {route.page === 'notes'
-                        ? '选择业务线，随手记或继续整理笔记。'
-                        : '选择项目周围的业务线，查看下一步。'}
-                    </p>
-                    <div className="mobile-orbit-filter">
-                      <input
-                        aria-label="搜索项目和业务线"
-                        placeholder="搜索项目、业务线或待办"
-                        value={query}
-                        onChange={(event) => setQuery(event.target.value)}
-                      />
+                    <div className="mobile-project-filter">
+                      <div className="mobile-search">
+                        <MagnifyingGlassIcon aria-hidden="true" />
+                        <input
+                          type="search"
+                          aria-label="搜索项目和业务线"
+                          placeholder="搜索"
+                          value={query}
+                          onChange={(event) => setQuery(event.target.value)}
+                        />
+                      </div>
                       <label>
                         <input
                           type="checkbox"
@@ -566,7 +566,7 @@ export default function MobileApp() {
                         包含已结束
                       </label>
                     </div>
-                    <ProjectOrbit
+                    <ProjectList
                       snapshot={snapshot}
                       query={query}
                       archived={archived}

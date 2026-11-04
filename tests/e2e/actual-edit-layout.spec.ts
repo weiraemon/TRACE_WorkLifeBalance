@@ -101,7 +101,7 @@ test('实际记录修改保留冲突草稿，不覆盖外部修改，也拒绝�
   ).toHaveProperty('description', '外部已保存修改');
 });
 
-test('三栏与紧凑清单尺寸固定，展开设置、浮层和抽屉不挤压内容', async ({ page }) => {
+test('三栏与紧凑清单尺寸固定，可选字段直接可用，浮层和抽屉不挤压内容', async ({ page }) => {
   const { node, line } = await seed(page);
   await write(page, 'todo', {
     title: '确认材料进度',
@@ -138,18 +138,19 @@ test('三栏与紧凑清单尺寸固定，展开设置、浮层和抽屉不挤�
       .evaluate((el) => el.getBoundingClientRect().height),
   ).toBe(48);
   const form = page.getByRole('form', { name: '实际工作录入', exact: true });
-  await form.getByText('关联节点或待办（可选）', { exact: true }).click();
-  await expect.poll(sizes).toEqual(original);
-  await form.getByText('关联节点或待办（可选）', { exact: true }).click();
+  await expect(form.getByRole('region', { name: '待选池', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '记一段 · 方案会议', exact: true }).click();
-  await form.getByText('成果 / 下一步 · 方案会议', { exact: true }).click();
   await form.getByLabel('批注 · 方案会议', { exact: true }).fill('长内容'.repeat(100));
   await expect.poll(sizes).toEqual(original);
   await page.getByRole('button', { name: '编辑记录 · 布局检查记录', exact: true }).click();
   const dialog = page.getByRole('dialog');
   const before = await dialog.boundingBox();
-  await dialog.getByText('关联节点或待办（可选）', { exact: true }).click();
-  await expect.poll(() => dialog.boundingBox()).toEqual(before);
+  const dateField = await dialog.getByLabel('记录日期', { exact: true }).boundingBox();
+  const startField = await dialog.getByLabel('开始时间', { exact: true }).boundingBox();
+  const endField = await dialog.getByLabel('结束时间', { exact: true }).boundingBox();
+  expect(dateField!.y).toBe(startField!.y);
+  expect(startField!.y).toBe(endField!.y);
+  await expect(dialog.getByRole('region', { name: '待选池', exact: true })).toBeVisible();
   await dialog.getByLabel('具体事件', { exact: true }).fill('很长的编辑内容'.repeat(200));
   await expect.poll(() => dialog.boundingBox()).toEqual(before);
   await expect.poll(sizes).toEqual(original);

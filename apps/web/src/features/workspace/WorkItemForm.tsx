@@ -203,8 +203,7 @@ export function WorkItemForm({
             </datalist>
           </Field>
         )}
-        <details className="optional-settings">
-          <summary>可选设置</summary>
+        <div className="optional-settings">
           {(type === 'todo' || type === 'milestone') && !pool && (
             <Field label={type === 'milestone' ? '截止日期' : '条目日期'}>
               <DatePicker
@@ -249,7 +248,7 @@ export function WorkItemForm({
               <textarea rows={4} value={comment} onChange={(e) => setComment(e.target.value)} />
             </Field>
           )}
-        </details>
+        </div>
         <ErrorMessage message={error} />
         <div className="form-actions">
           <Button type="button" onClick={close}>

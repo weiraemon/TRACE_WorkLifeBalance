@@ -152,12 +152,6 @@
   margin-top: 18px;
   padding-top: 12px;
 }
-.optional-settings > summary {
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--muted);
-  margin-bottom: 12px;
-}
 .location-picker {
   margin-top: 12px;
 }
