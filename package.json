@@ -1,6 +1,6 @@
 {
   "name": "atlas-personal-workbench",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "type": "module",
   "engines": {
@@ -16,6 +16,7 @@
     "test:android": "node scripts/test-android.mjs",
     "preview:android": "node scripts/preview-android.mjs",
     "package:android": "npm run android:sync && node scripts/build-android.mjs",
+    "package:android:release": "npm run android:sync && node scripts/build-android.mjs --release",
     "package:android:preview": "npm run build:desktop && node scripts/package-android-preview.mjs",
     "test:android:preview": "node scripts/test-android-preview.mjs",
     "schema:exchange": "tsx scripts/exchange-schema.ts",

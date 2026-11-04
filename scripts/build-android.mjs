@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 
 const root = path.resolve(import.meta.dirname, '..');
 const tools = path.join(root, '.android-tools');
+const releaseBuild = process.argv[2] === '--release';
 const childDirectory = (directory, pattern) =>
   fs.existsSync(directory)
     ? fs.readdirSync(directory).find((name) => pattern.test(name))
@@ -60,9 +61,16 @@ fs.writeFileSync(
   path.join(native, 'local.properties'),
   'sdk.dir=' + sdk.replaceAll('\\', '/') + '\n',
 );
-const tasks = process.argv.slice(2);
+if (releaseBuild && !fs.existsSync(path.join(tools, 'release-signing.properties')))
+  throw new Error('缺少本机发行签名配置 .android-tools/release-signing.properties');
+const tasks = process.argv.slice(releaseBuild ? 3 : 2);
 if (tasks.some((task) => !/^[\w:-]+$/.test(task))) throw new Error('只接受 Gradle 任务名');
-if (!tasks.length) tasks.push(':app:assembleDebug', ':app:assembleDebugAndroidTest');
+if (!tasks.length)
+  tasks.push(
+    ...(releaseBuild
+      ? [':app:assembleRelease']
+      : [':app:assembleDebug', ':app:assembleDebugAndroidTest']),
+  );
 const args = ['--no-daemon', '--console=plain', ...tasks];
 const result = spawnSync(
   process.platform === 'win32' ? 'cmd.exe' : executable,
@@ -81,36 +89,59 @@ const result = spawnSync(
   },
 );
 if (result.status !== 0) process.exit(result.status ?? 1);
-const apk = path.join(native, 'app/build/outputs/apk/debug/app-debug.apk');
-if (fs.existsSync(apk)) {
-  const archive = spawnSync(
-    path.join(javaHome, 'bin', process.platform === 'win32' ? 'jar.exe' : 'jar'),
-    ['tf', apk],
-    { encoding: 'utf8' },
-  );
-  assert.equal(archive.status, 0, '无法检查 APK 内容');
-  const entries = archive.stdout.split(/\r?\n/);
+const variant = releaseBuild ? 'release' : 'debug';
+const apk = path.join(native, `app/build/outputs/apk/${variant}/app-${variant}.apk`);
+assert.ok(fs.existsSync(apk), '未生成预期的 Android 安装包');
+const archive = spawnSync(
+  path.join(javaHome, 'bin', process.platform === 'win32' ? 'jar.exe' : 'jar'),
+  ['tf', apk],
+  { encoding: 'utf8' },
+);
+assert.equal(archive.status, 0, '无法检查 APK 内容');
+const entries = archive.stdout.split(/\r?\n/);
+assert.ok(
+  entries.includes('assets/public/index.html') && entries.includes('classes.dex'),
+  'APK 缺少应用界面或运行时',
+);
+for (const entry of entries)
   assert.ok(
-    entries.includes('assets/public/index.html') && entries.includes('classes.dex'),
-    'APK 缺少应用界面或运行时',
+    !/(?:^|\/)(?:\.atlas|\.test-vault|\.android-tools|\.chaos\.local\.json|workspace\.json|settings\.json|[^/]*\.(?:jks|keystore))(?:\/|$)/i.test(
+      entry,
+    ),
+    'APK 包含本机数据或凭据：' + entry,
   );
-  for (const entry of entries)
-    assert.ok(
-      !/(?:^|\/)(?:\.atlas|\.test-vault|\.android-tools|\.chaos\.local\.json|workspace\.json|settings\.json|[^/]*\.(?:jks|keystore))(?:\/|$)/i.test(
-        entry,
-      ),
-      'APK 包含本机数据或凭据：' + entry,
-    );
-  const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
-  const output = path.join(root, 'releases', `CHAOS-Android-${version}-debug.apk`);
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.copyFileSync(apk, output);
-  fs.writeFileSync(
-    output + '.sha256',
-    createHash('sha256').update(fs.readFileSync(output)).digest('hex') +
-      '  ' +
-      path.basename(output) +
-      '\n',
+const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
+if (releaseBuild) {
+  const buildTools = fs
+    .readdirSync(path.join(sdk, 'build-tools'))
+    .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))[0];
+  const badging = spawnSync(
+    path.join(sdk, 'build-tools', buildTools, process.platform === 'win32' ? 'aapt2.exe' : 'aapt2'),
+    ['dump', 'badging', apk],
+    { encoding: 'utf8', windowsHide: true },
   );
-  console.log('Android development APK: ' + output);
+  assert.equal(badging.status, 0, '无法检查发行 APK');
+  assert.ok(!badging.stdout.includes('application-debuggable'), '发行 APK 不能开启调试');
+  assert.ok(badging.stdout.includes(`versionName='${version}'`), '发行 APK 版本不一致');
+  const signature = spawnSync(
+    path.join(javaHome, 'bin', process.platform === 'win32' ? 'java.exe' : 'java'),
+    ['-jar', path.join(sdk, 'build-tools', buildTools, 'lib/apksigner.jar'), 'verify', apk],
+    { encoding: 'utf8', windowsHide: true },
+  );
+  assert.equal(signature.status, 0, '发行 APK 签名校验失败');
 }
+const output = path.join(
+  root,
+  'releases',
+  `CHAOS-Android-${version}${releaseBuild ? '' : '-debug'}.apk`,
+);
+fs.mkdirSync(path.dirname(output), { recursive: true });
+fs.copyFileSync(apk, output);
+fs.writeFileSync(
+  output + '.sha256',
+  createHash('sha256').update(fs.readFileSync(output)).digest('hex') +
+    '  ' +
+    path.basename(output) +
+    '\n',
+);
+console.log(`Android ${variant} APK: ` + output);

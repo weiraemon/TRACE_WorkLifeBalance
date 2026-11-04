@@ -28,6 +28,7 @@ public class MainActivity extends BridgeActivity {
         });
         registerPlugin(ChaosFilesPlugin.class);
         super.onCreate(state);
+        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
         getWindow().getDecorView().postDelayed(() -> launchReady = true, 10000);
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override public void handleOnBackPressed() {

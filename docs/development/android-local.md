@@ -4,7 +4,7 @@ Android 使用 Capacitor 7 承载现有 React 界面。共享 `WorkspaceService`
 
 后续 Windows 与 Android 的新增业务继续在同一主干和共享核心实现；本次保留 Windows 界面只约束本次变更，不限制后续两端共同开发。分工与验收约定见[共用底座的开发约定](../architecture/repository.md#后续-windows-与-android-共用底座的开发约定)。
 
-Android 图形与 `apps/web/public/chaos.svg` 的 C 形路径、29 单位笔画及金色圆点一致。Android 8 及以上使用 `mipmap-anydpi-v26/chaos_launcher.xml` 自适应图标，暖绿底色与透明 `drawable/chaos_mark.xml` 分离，旧系统使用 `drawable/chaos_icon.xml`。启动页使用整屏暖绿和透明标志，系统栏同色，并在 WebView 首帧可绘制后移交页面。HTML 启动占位也使用同色背景和网页 logo。修改品牌图形时需同步网页 SVG 与这两个原生矢量资源。测试截图、复制的网页资产、构建目录、工具链和签名凭据继续留在忽略目录；正常源码图片不作全局忽略。
+Android 图形与 `apps/web/public/chaos.svg` 的 C 形路径、29 单位笔画及金色圆点一致。Android 8 及以上使用 `mipmap-anydpi-v26/chaos_launcher.xml` 自适应图标，暖绿底色与透明 `drawable/chaos_mark.xml` 分离，旧系统通过 `mipmap-anydpi/chaos_launcher.xml` 引用 `drawable/chaos_icon.xml`。启动页使用整屏暖绿和透明标志，系统栏同色，并在 WebView 首帧可绘制后移交页面。HTML 启动占位也使用同色背景和网页 logo。修改品牌图形时需同步网页 SVG 与这两个原生矢量资源。测试截图、复制的网页资产、构建目录、工具链和签名凭据继续留在忽略目录；正常源码图片不作全局忽略。
 
 ## 已明确的手机界面
 
@@ -89,7 +89,13 @@ npm run android:open
 
 构建脚本也识别本机 `.android-tools/jdk`、`.android-tools/sdk` 和 `.android-tools/gradle`。这些工具、Gradle 缓存、本地 SDK 路径和开发签名全部被 Git 忽略。使用 Android Studio 的 Device Manager 启动 Android 35 模拟器后，可直接运行 App 并查看 Logcat、布局和 WebView。
 
-开发产物为 `releases/CHAOS-Android-<版本>-debug.apk`，仅含应用代码和界面，不含工作目录。未配置发行签名，不将开发 APK 当作商店发行包。Gradle 默认只构建 `:app` 自身与其测试包，不构建 Capacitor 依赖内部的测试 App。
+开发产物为 `releases/CHAOS-Android-<版本>-debug.apk`，仅含应用代码和界面，不含工作目录。Gradle 默认只构建 `:app` 自身与其测试包，不构建 Capacitor 依赖内部的测试 App。
+
+### 签名发行 APK
+
+`npm run package:android:release` 构建 `releases/CHAOS-Android-<版本>.apk` 与 SHA-256 文件。脚本要求本机存在 `.android-tools/release-signing.properties`，字段为 `storeFile`、`storePassword`、`keyAlias`、`keyPassword`，路径相对 Android Gradle 根目录解析。配置与密钥容器都由 Git 忽略，构建时检查 APK 路径、应用版本、关闭调试标志与签名完整性。
+
+v0.1.7 沿用此前本地测试版的安装证书，并将签名材料保存在独立加密的本机发行容器 `.android-tools/release.keystore` 中，支持直接覆盖升级。发行构建关闭应用调试、WebView 远程调试和调试故障注入。后续覆盖升级继续使用相同安装证书。GitHub Release 的 Windows ZIP 由既有 tag 工作流验收发布，Android 签名 APK 在本机验收后附加到同一版本。
 
 ## 可重复的自动验收
 
@@ -166,3 +172,11 @@ npm run test:android
 - `npm run check` 通过，包含 172 项单元测试、76 项浏览器回归、架构检查和 TypeScript／Vite 构建。手机布局在 320、390、640px 与两种主题下验证日期及操作位于轴线左侧、无横向溢出。换日用例先等待刷新结束再推进模拟时钟，保留原产品行为。
 - 最终开发 APK `versionCode` 为 4，完整 `npm run test:android` 通过，包含 12 项原生测试、13 个发布中断位置、并行扫描取消与重试、预检后外部新增文件冲突保护、旧版日志恢复，以及目录授权、离线保存、长按删除、备份恢复、JSON／Wi-Fi 双向交换、超时取消和进程终止后重启。
 - 结果与截图在 `test-results/android/`，性能数据在 `report.json`。测试仅使用专用合成目录。实体手机、真实断电、磁盘满和其他文件提供方仍需设备验收。
+
+## v0.1.7 发行验收
+
+- 已整合远端 main `907aad6` 的 Windows 微信文字消息接入、会话选择、手动同步和简化后的手动粘贴。发布快照固定在 `codex/release-v0.1.7`。`npm run check` 通过，包含 175 项单元测试、77 项浏览器回归、架构检查和构建。Windows 实际发行 ZIP 的两项桌面验收通过，包括 SQLCipher 与微信所需 zstandard 依赖。
+- Android release 构建通过发行 lint 与 APK 签名校验，versionCode 为 5，应用 `DEBUGGABLE` 标志关闭。旧系统启动器改用合法的 mipmap 图层资源，继续复用原图形。
+- 在专用模拟器目录由已安装测试版覆盖升级至发行 APK，101 个现有业务 Markdown 的 SHA-256 均保持一致。发行构建的四项原生回归通过，覆盖 291 文件发布、旧版日志恢复、并发外部新增冲突与并行扫描取消。六个实际页面截图和离线重启检查通过，记录位于 `.test-vault/android-release-0.1.7/`。
+- 发行包明确按构建类型请求关闭 WebView 调试。当前模拟器为 `ro.debuggable=1` 的 userdebug 系统，Chromium 在开发系统上强制启用 WebView 调试，应用开关无法覆盖该行为。本轮核对了 APK 的非调试标志及系统属性，普通用户系统的实际调试端口状态仍需真机验收。[Chromium 对应实现](https://github.com/chromium/chromium/blob/main/android_webview/glue/java/src/com/android/webview/chromium/SharedStatics.java)
+- 安装证书 SHA-256 为 `21e7c4ad96275de442f7df2e9c67e1525da5bf0b0f890cabdba42be272fecd0c`，与既有本地测试版相同。私钥、密钥库口令、配置和测试目录继续排除在源码与发行包之外。
