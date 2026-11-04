@@ -1,5 +1,9 @@
 apply plugin: 'com.android.application'
 
+def releaseSigningFile = rootProject.file('../../../.android-tools/release-signing.properties')
+def releaseSigning = new Properties()
+if (releaseSigningFile.exists()) releaseSigningFile.withInputStream { releaseSigning.load(it) }
+
 android {
     namespace "com.chaos.workbench"
     compileSdk rootProject.ext.compileSdkVersion
@@ -8,7 +12,7 @@ android {
         applicationId "com.chaos.workbench"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 4
+        versionCode 5
         versionName new groovy.json.JsonSlurper().parse(rootProject.file('../../../package.json')).version
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
@@ -17,14 +21,24 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        debug { storeFile rootProject.file('../../../.android-tools/debug.keystore') }
+        release {
+            if (releaseSigningFile.exists()) {
+                storeFile rootProject.file(releaseSigning.getProperty('storeFile'))
+                storePassword releaseSigning.getProperty('storePassword')
+                keyAlias releaseSigning.getProperty('keyAlias')
+                keyPassword releaseSigning.getProperty('keyPassword')
+            }
+        }
+    }
     buildTypes {
         release {
+            debuggable false
+            if (releaseSigningFile.exists()) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
-    }
-    signingConfigs {
-        debug { storeFile rootProject.file('../../../.android-tools/debug.keystore') }
     }
 }
 

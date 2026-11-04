@@ -8,7 +8,7 @@
 
 以业务线组织工作，让计划、行动与真实投入各归其位。
 
-[下载 Windows 桌面版](https://github.com/weiraemon/TRACE_WorkLifeBalance/releases/latest) · [界面预览](#界面预览) · [快速开始](#快速开始) · [跟着做一次](#跟着做一次) · [使用指南](docs/product/usage.md)
+[下载 Windows 桌面版](https://github.com/weiraemon/TRACE_WorkLifeBalance/releases/latest) · [下载 Android APK](https://github.com/weiraemon/TRACE_WorkLifeBalance/releases/latest) · [界面预览](#界面预览) · [快速开始](#快速开始) · [使用指南](docs/product/usage.md)
 
 </div>
 
@@ -52,7 +52,7 @@ CHAOS 是一个本地运行的个人工作台。把外部要求与自己的探�
 
 ## 快速开始
 
-Android 本地开发版使用六入口竖屏界面，支持本机 Markdown 目录、Wi-Fi 直连与 JSON 增量交换，暂不接入消息与后台自动同步。构建 APK：`npm run package:android`；电脑手机界面预览：`npm run preview:android`，或用 `npm run package:android:preview` 生成可直接安装的手机界面预览 EXE；启动 Android Studio 模拟器后运行 `npm run test:android` 可验收真实 APK、系统目录授权与文件恢复。详见 [Android 构建、预览与验收](docs/development/android-local.md)。
+Android 使用六入口竖屏界面，支持本机 Markdown 目录、Wi-Fi 直连与 JSON 增量交换，暂不接入 QQ／微信／AI 服务与后台自动同步。GitHub Release 提供关闭调试的签名 APK，支持覆盖此前相同证书的本地测试版。完整差异见 [Android 功能覆盖](docs/development/android-feature-coverage.md)。开发构建使用 `npm run package:android`，本机配置发行签名后使用 `npm run package:android:release`。电脑手机界面预览与模拟器验收见 [Android 构建、预览与验收](docs/development/android-local.md)。
 
 桌面版需要 **Windows x64 · 本地 NTFS 目录**。
 
@@ -60,7 +60,7 @@ Android 本地开发版使用六入口竖屏界面，支持本机 Markdown 目�
 
 桌面版保留工作空间、今日、知识、回顾、Notes、备份、资源打开、QQ、微信和 AI。QQ 初始化入口在“设置 → QQ同步设置 → QQ自动同步全局设置”；运行环境已内置，可自动检测本机 QQ 数据目录并选择账号，初始化成功后自动刷新配置。微信初始化入口在“设置 → 微信同步设置”，需选择本人微信数据目录并保持微信登录。使用 AI 识别时另行配置 API 密钥。
 
-维护者在 Windows x64 上运行 `npm ci`、`npm run package:desktop`，即可在 `releases/` 得到桌面 ZIP 和 SHA-256 校验文件。Electron 的 npm 包由 `npm ci` 安装；运行文件可能在首次使用时下载。打包复用已完整安装的运行时，无需手动准备 Electron ZIP；首次构建仍需下载经过 SHA-256 校验的 Python／SQLCipher。打包成功后自动清理旧产物，本地只保留最新一份；该目录由 Git 忽略。发布时推送与 `package.json` 版本一致的 `v版本号` tag，GitHub Actions 解压并测试实际发布 ZIP 后，将 ZIP 和校验文件上传到对应 GitHub Release。包不带个人工作目录、目录配置或 QQ／AI 密钥。升级前退出旧服务，再解压新版运行；桌面配置保存在 `%APPDATA%\CHAOS`，升级不必重配。
+维护者在 Windows x64 上运行 `npm ci`、`npm run package:desktop`，即可在 `releases/` 得到桌面 ZIP 和 SHA-256 校验文件。Electron 的 npm 包由 `npm ci` 安装；运行文件可能在首次使用时下载。打包复用已完整安装的运行时，无需手动准备 Electron ZIP；首次构建仍需下载经过 SHA-256 校验的 Python／SQLCipher。打包成功后自动清理旧产物，本地只保留最新一份；该目录由 Git 忽略。发布时推送与 `package.json` 版本一致的 `v版本号` tag，GitHub Actions 解压并测试实际发布 ZIP 后，将 ZIP 和校验文件上传到对应 GitHub Release；Android 签名 APK 与校验文件在本机验收后附加到同一版本。包不带个人工作目录、目录配置或 QQ／AI 密钥。升级前退出旧服务，再解压新版运行；桌面配置保存在 `%APPDATA%\CHAOS`，升级不必重配。
 
 如果打包出现 `Downloading Electron binary...` 后 `fetch failed`，说明 Electron 运行文件缺失且下载失败。可在 PowerShell 中使用镜像恢复（仍使用 Electron 包自带的官方校验值）：
 
@@ -255,7 +255,7 @@ Python 3.10–3.12 最稳妥，推荐 3.12；3.13+ 如果没有 `sqlcipher3` 预
 
 ## 开发与文档
 
-消息转计划的入口为顶部「待确认」和「手动粘贴」，QQ 与微信同步设置均在齿轮「设置」内。两种来源共用消息筛选、AI 识别、归属推荐和确认入库；微信只读获取本人本机数据库中已绑定会话的文字消息。QQ 另提供按会话和时间段补取历史消息的手动同步。默认由用户确认，且排除本人消息；每条规则可单独选择自动加入计划。识别模型可选 DeepSeek、OpenAI / ChatGPT 或自定义 OpenAI 兼容接口。详见[功能边界与使用说明](docs/product/qq-message-intake.md)。
+消息转计划的入口为顶部「待确认」和「手动粘贴」，QQ 与微信同步设置均在齿轮「设置」内。两种来源共用消息筛选、AI 识别、归属推荐和确认入库；微信只读获取本人本机数据库中已绑定会话的文字消息。QQ 与微信均提供按会话和时间段补取历史消息的手动同步。默认由用户确认，且排除本人消息；每条规则可单独选择自动加入计划。识别模型可选 DeepSeek、OpenAI / ChatGPT 或自定义 OpenAI 兼容接口。详见[功能边界与使用说明](docs/product/qq-message-intake.md)。
 
 开发运行 `npm run dev`；验证使用 `npm test`、`npm run build`、`npm run test:e2e`。Windows 首次接入 QQ 的完整步骤见上文[接入 QQ 与 AI](#接入-qq-与-ai)。文件测试需要 NTFS 硬链接与 Junction 权限。
 
