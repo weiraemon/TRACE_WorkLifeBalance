@@ -223,7 +223,7 @@ test('随手记保存中切页再返回，发布完成清理草稿且正文只�
     release = resolve;
   });
   await page.route('**/api/business/v1/commands', async (route) => {
-    if (route.request().postDataJSON().type === 'notes.save') await hold;
+    if (route.request().postDataJSON().type === 'notes.append') await hold;
     await route.continue();
   });
   await page.getByRole('button', { name: '记到笔记', exact: true }).click();

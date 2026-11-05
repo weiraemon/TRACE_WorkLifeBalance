@@ -94,7 +94,10 @@ it('过期删除范围、外部修改和重复 ID 均拒绝，保留所有未发
     '更改',
   );
   expect(await fs.readFile(path.join(vault.root, todo.path), 'utf8')).toContain('外部新正文');
-  await fs.copyFile(path.join(vault.root, todo.path), path.join(vault.root, '重复.md'));
+  await fs.copyFile(
+    path.join(vault.root, todo.path),
+    path.join(vault.root, path.dirname(todo.path), '重复.md'),
+  );
   expect((await vault.deletePreview(node.data.id)).blockedReason).toContain('诊断');
 });
 it('池不能单独删除；业务线删除包含池但保留专属 Notes', async () => {

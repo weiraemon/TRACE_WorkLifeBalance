@@ -54,7 +54,7 @@ Android 的受限原生桥访问局域网 HTTP，业务正文已由共用协议�
 
 `data` 直接采用现有领域记录 Schema，覆盖项目、业务线、节点、TODO／IDEA、实际、资源元数据与回顾。`body` 是受管 Markdown 的正文，包括业务线 Notes、节点纪要和条目批注，保持单一原文。新旧记录使用稳定 UUID 匹配，不通过名称或时钟推断身份。同名不同 UUID 只列为匹配候选，默认明确新增，绝不自动合并或改写引用。
 
-每个对象的 `hash = SHA256(canonicalJson({data, body}))`。受管笔记资源的 `data.target` 使用 `chaos-note:<UUID>` 逻辑标识；存储路径由接收端决定，新笔记写入 `ATLAS/knowledge/imported/<UUID>.md`，已有笔记保留本机路径。包不能指定写文件路径、`FileChange` 或运行日志。其他资源引用保留原契约，但附件不传输，电脑外部路径不会在手机突然变得可用。
+每个对象的 `hash = SHA256(canonicalJson({data, body}))`。受管笔记资源的 `data.target` 使用 `chaos-note:<UUID>` 逻辑标识；存储路径由接收端决定，受管记录统一写入 `ATLAS/records/<UUID前两位>/<UUID>.md`，首次启动自动转换旧路径。包不能指定写文件路径、`FileChange` 或运行日志。其他资源引用保留原契约，但附件不传输，电脑外部路径不会在手机突然变得可用。
 
 `canonicalJson` 递归按对象键的 JavaScript 字符串顺序排序，数组保留顺序，标量使用标准 `JSON.stringify` 表达；输入是 Schema 校验后的 JSON，不含 undefined、NaN 或循环引用。UTF-8 编码后计算 SHA-256。哈希包括记录时间字段和正文原有换行，不使用文件修改时间或本机原文 revision。顶层校验也用相同的规范化方法，排除 `checksum` 后计算。
 

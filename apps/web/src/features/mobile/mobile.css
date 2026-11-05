@@ -708,21 +708,6 @@
   background: var(--surface);
   padding: 16px 0;
 }
-[data-surface='android'] .dialog .detail {
-  width: auto;
-  height: auto;
-  position: static;
-  border: 0;
-  padding: 0;
-  overflow: visible;
-}
-[data-surface='android'] .dialog .detail > .section-heading .button {
-  display: none;
-}
-[data-surface='android'] .dialog .detail h2 {
-  margin: 16px 0;
-  font-size: 23px;
-}
 [data-surface='android'] .dialog .markdown-body {
   font-size: 16px;
   line-height: 1.9;
@@ -749,8 +734,39 @@
 .mobile-actions-fields legend {
   padding-top: 8px;
 }
-.mobile-detail-more {
-  margin-left: auto;
+.mobile-main-detail {
+  padding: 20px max(24px, env(safe-area-inset-right)) max(40px, env(safe-area-inset-bottom))
+    max(24px, env(safe-area-inset-left));
+}
+.mobile-detail-page .detail {
+  position: static;
+  width: 100%;
+  height: auto;
+  min-height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+  z-index: auto;
+}
+.mobile-detail-page .detail > .section-heading > .button {
+  display: none;
+}
+.mobile-detail-page .detail > h2 {
+  margin: 12px 0 24px;
+  font-size: 26px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.mobile-detail-page .detail .actions .button {
+  min-height: 44px;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+.mobile-detail-page .markdown-body {
+  font-size: 16px;
+  line-height: 1.9;
 }
 /* Mobile surfaces share the existing themes while keeping controls quiet. */
 .mobile-app h1,

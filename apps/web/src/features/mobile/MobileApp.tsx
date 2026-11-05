@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Pencil2Icon,
   CheckIcon,
@@ -11,6 +11,7 @@ import {
   ReloadIcon,
   PlusIcon,
   MagnifyingGlassIcon,
+  DotsHorizontalIcon,
 } from '@radix-ui/react-icons';
 import {
   isSpaceItem,
@@ -84,6 +85,8 @@ export default function MobileApp() {
   const [isDirty, setIsDirty] = useState(false);
   const previousLine = useRef<{ vaultId: string; line: BusinessLine } | null>(null);
   const previousDetail = useRef<{ vaultId: string; entry: Entry } | null>(null);
+  const detailScroll = useRef(0);
+  const detailWasOpen = useRef(false);
   const markDirty = useCallback((key: string, value: boolean) => {
     if (value) dirty.current.add(key);
     else dirty.current.delete(key);
@@ -143,13 +146,18 @@ export default function MobileApp() {
       setEditor(next);
     }
   };
+  const openDetails = (id: string) => {
+    if (!canLeave()) return;
+    detailScroll.current = main.current?.scrollTop ?? 0;
+    setSelected(id);
+  };
   const showWork = (id: string) => {
     if (!snapshot) return;
     const entry = snapshot.entries.find((entry) => entry.data.id === id);
     if (!entry || !isSpaceItem(entry.data)) return;
     const line = lineFor(entry.data, snapshot.entries);
     navigate('workspace', line?.id ?? '');
-    setSelected(id);
+    openDetails(id);
   };
   const toggle = (id: string) =>
     run(async () => {
@@ -212,7 +220,7 @@ export default function MobileApp() {
         });
     };
     const activate = () => refresh();
-    const timer = setInterval(() => refresh(!isAndroid()), 5000);
+    const timer = setInterval(() => refresh(false), 5000);
     if (!isAndroid()) window.addEventListener('focus', activate);
     document.addEventListener('visibilitychange', activate);
     return () => {
@@ -260,10 +268,18 @@ export default function MobileApp() {
     window.addEventListener('chaos-back', back);
     window.addEventListener('popstate', pop);
     window.addEventListener('beforeunload', unload);
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && selected && !actionId && !editor && !settings && !deleting) {
+        event.preventDefault();
+        back();
+      }
+    };
+    window.addEventListener('keydown', escape);
     return () => {
       window.removeEventListener('chaos-back', back);
       window.removeEventListener('popstate', pop);
       window.removeEventListener('beforeunload', unload);
+      window.removeEventListener('keydown', escape);
     };
   });
   const groups = snapshot ? workspaceGroups(snapshot.entries, archived, '') : [];
@@ -289,6 +305,11 @@ export default function MobileApp() {
   )
     selectedEntry = previousDetail.current.entry;
   const actionEntry = snapshot?.entries.find((entry) => entry.data.id === actionId);
+  useLayoutEffect(() => {
+    if (selectedEntry) main.current?.scrollTo({ top: 0 });
+    else if (detailWasOpen.current) main.current?.scrollTo({ top: detailScroll.current });
+    detailWasOpen.current = Boolean(selectedEntry);
+  }, [selectedEntry?.data.id]);
   const title = destinations.find((item) => item.id === route.page)!.title;
   const updateDate = (next: string) => {
     if (next && canLeave()) {
@@ -337,30 +358,56 @@ export default function MobileApp() {
     <div className="mobile-app">
       <header className="mobile-topbar">
         <div>
-          {route.lineId || route.page !== 'today' ? (
+          {selectedEntry || route.lineId || route.page !== 'today' ? (
             <Button aria-label="返回" onClick={back}>
               <ArrowLeftIcon />
             </Button>
           ) : (
             <span className="mobile-brand">CHAOS</span>
           )}
-          <span>{title}</span>
+          <span>{selectedEntry ? '工作详情' : title}</span>
         </div>
-        <Button
-          aria-label="设置"
-          onClick={() => {
-            if (canLeave()) setSettings(true);
-          }}
-        >
-          <GearIcon />
-        </Button>
+        {selectedEntry ? (
+          <Button
+            aria-label="更多操作"
+            title="更多操作"
+            aria-haspopup="dialog"
+            onClick={() => setActionId(selectedEntry.data.id)}
+          >
+            <DotsHorizontalIcon />
+          </Button>
+        ) : (
+          <Button
+            aria-label="设置"
+            onClick={() => {
+              if (canLeave()) setSettings(true);
+            }}
+          >
+            <GearIcon />
+          </Button>
+        )}
       </header>
-      <main className="mobile-main" ref={main}>
+      <main className={`mobile-main${selectedEntry ? ' mobile-main-detail' : ''}`} ref={main}>
         {!settings && !loading && <OperationProgress />}
         <ErrorMessage message={error} />
         {error && <Button onClick={() => setError('')}>收起提示</Button>}
         {error && !snapshot && !loading && <Button onClick={readDirectory}>重新读取原目录</Button>}
-        {loading ? (
+        {snapshot && selectedEntry ? (
+          <section className="mobile-detail-page" aria-label="工作详情页面">
+            <SpaceDetails
+              key={`${selectedEntry.data.id}:${formVersion}`}
+              entry={selectedEntry}
+              snapshot={snapshot}
+              edit={openEditor}
+              close={() => {
+                if (canLeave()) setSelected(null);
+              }}
+              run={run}
+              reload={reload}
+              onDirtyChange={detailDirty}
+            />
+          </section>
+        ) : loading ? (
           <div className="mobile-loading">
             <OperationProgress />
           </div>
@@ -534,7 +581,7 @@ export default function MobileApp() {
                       line={line}
                       lines={lines}
                       changeLine={(id) => navigate('workspace', id)}
-                      select={setSelected}
+                      select={openDetails}
                       edit={openEditor}
                       toggle={toggle}
                       actions={setActionId}
@@ -596,19 +643,21 @@ export default function MobileApp() {
           </>
         )}
       </main>
-      <nav className="mobile-navigation" aria-label="手机导航">
-        {destinations.map(({ id, label, title, icon: Icon }) => (
-          <button
-            key={id}
-            aria-label={title}
-            aria-current={route.page === id ? 'page' : undefined}
-            onClick={() => navigate(id)}
-          >
-            <Icon />
-            <span>{label}</span>
-          </button>
-        ))}
-      </nav>
+      {!selectedEntry && (
+        <nav className="mobile-navigation" aria-label="手机导航">
+          {destinations.map(({ id, label, title, icon: Icon }) => (
+            <button
+              key={id}
+              aria-label={title}
+              aria-current={route.page === id ? 'page' : undefined}
+              onClick={() => navigate(id)}
+            >
+              <Icon />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
+      )}
       {settings && (
         <Modal title="设置" onClose={() => setSettings(false)}>
           <OperationProgress />
@@ -649,31 +698,6 @@ export default function MobileApp() {
           edit={openEditor}
           remove={remove}
         />
-      )}
-      {snapshot && selectedEntry && (
-        <Modal
-          title="工作详情"
-          onClose={() => {
-            if (canLeave()) setSelected(null);
-          }}
-          className="mobile-detail-dialog"
-        >
-          <Button className="mobile-detail-more" onClick={() => setActionId(selectedEntry.data.id)}>
-            更多操作
-          </Button>
-          <SpaceDetails
-            key={`${selectedEntry.data.id}:${formVersion}`}
-            entry={selectedEntry}
-            snapshot={snapshot}
-            edit={openEditor}
-            close={() => {
-              if (canLeave()) setSelected(null);
-            }}
-            run={run}
-            reload={reload}
-            onDirtyChange={detailDirty}
-          />
-        </Modal>
       )}
       {snapshot &&
         editor &&

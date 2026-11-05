@@ -122,10 +122,10 @@ it('双方都改同一 Notes 时整包不写入，包括包内其他新增对象
       revision: string;
     };
     await peer.service.execute({
-      type: 'notes.save',
+      type: 'notes.append',
       id: line.data.id,
       revision: note.revision,
-      body: note.body + peer.root,
+      text: peer.root,
     });
   }
   await sender.service.saveRecord(createRecord('project', { title: '冲突时也不能部分创建' }));

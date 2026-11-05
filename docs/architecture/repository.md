@@ -94,7 +94,7 @@ flowchart TD
 - 原文收集与 AI 识别共用消息来源去重，保留“待确认不能重复、已处理可明确重新分析”的规则。AI 输出容错仍仅在模型输入边界处理，不写进持久化数据契约。
 - 计划批次的最终跨对象校验统一由 `Workspace.applyBatch` 执行，移除上层重复校验；输入 Schema、归属检查与文件版本检查仍各自在对应边界执行。
 
-`X-Atlas-Contract` 已升级为 `atlas-lines-26`，以阻止旧网页静默调用已移除路由；标准业务 API 版本仍为 1，命令增加是兼容扩展，Markdown schemaVersion 未变化。具体迁移与命令列表见[标准业务 API](business-api.md)。
+`X-Atlas-Contract` 已升级为 `atlas-lines-27`，以阻止旧网页静默调用已移除路由；标准业务 API 版本仍为 1，命令增加是兼容扩展，Markdown schemaVersion 未变化。具体迁移与命令列表见[标准业务 API](business-api.md)。
 
 ## 持久化边界必须保证什么
 

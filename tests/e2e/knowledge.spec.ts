@@ -61,15 +61,28 @@ test('知识页复用业务导航，可编辑并预览业务线 Notes 的节点�
   await expect(content).toContainText('排除测量误差后再验证替代解释。');
   await expect(content).not.toContainText('atlas:');
   await expect(content).not.toContainText('纯完成不记笔记');
-  await expect(page.getByRole('button', { name: '编辑正文', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '编辑正文', exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: '编辑内容 · 方案会议', exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole('button', { name: '新增项目', exact: true })).toHaveCount(0);
   expect(await notes(page, line.data.id)).toBe(before);
 
-  await page.getByRole('button', { name: '编辑正文', exact: true }).click();
-  const editor = content.getByLabel('Notes 正文', { exact: true });
-  await editor.fill(`${before}\n\n## 随手补充\n\n今天继续补充实验记录。`);
-  await content.getByRole('button', { name: '保存正文', exact: true }).click();
-  await expect(content.getByRole('button', { name: '编辑正文', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '编辑内容 · 方案会议', exact: true }).click();
+  const editor = content.getByLabel('内部正文', { exact: true });
+  await expect(editor).toHaveValue('');
+  for (const text of await content
+    .locator('textarea')
+    .evaluateAll((inputs) => inputs.map((input) => (input as HTMLTextAreaElement).value))) {
+    expect(text).not.toMatch(/atlas:|TODO ·|[a-f0-9]{8}-[a-f0-9-]{27}/);
+  }
+  await editor.fill('今天继续补充实验记录。');
+  await page.screenshot({ path: '.test-vault/content-editor-desktop.png', fullPage: true });
+  await content.getByRole('button', { name: '保存内容', exact: true }).click();
+  await expect(
+    content.getByRole('button', { name: '编辑内容 · 方案会议', exact: true }),
+  ).toBeVisible();
+  await expect(content).toContainText('已联系实验室，等待提供材料。');
   await expect(content).toContainText('今天继续补充实验记录。');
   expect(await notes(page, line.data.id)).toContain('今天继续补充实验记录。');
 

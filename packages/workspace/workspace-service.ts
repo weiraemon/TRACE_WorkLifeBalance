@@ -34,17 +34,17 @@ export class WorkspaceService {
   ) {
     return this.vault.save(data, revision, options, companions);
   }
-  private async target(id: string, revision: string) {
-    const snapshot = await this.snapshot();
-    const matches = snapshot.entries.filter((entry) => entry.data.id === id);
-    if (matches.length !== 1 || matches[0].revision !== revision)
-      throw new VaultError('对象已更改或不存在，请重新加载', 409);
-    return matches[0];
-  }
   async complete(id: string, revision: string, completed: boolean, companions: FileChange[] = []) {
-    const entry = await this.target(id, revision);
-    if (!isSpaceItem(entry.data)) throw new VaultError('此对象不支持完成');
-    return this.saveRecord(entry.data, entry.revision, { completion: completed }, companions);
+    return this.vault.update(
+      id,
+      revision,
+      (data) => {
+        if (!isSpaceItem(data)) throw new VaultError('此对象不支持完成');
+        return data;
+      },
+      { completion: completed },
+      companions,
+    );
   }
   async reschedule(
     id: string,
@@ -54,24 +54,25 @@ export class WorkspaceService {
     location?: string | null,
     companions: FileChange[] = [],
   ) {
-    const entry = await this.target(id, revision);
-    const data = entry.data;
-    if (data.type !== 'milestone' && data.type !== 'todo')
-      throw new VaultError('只有节点或条目可以改期');
-    if (data.type === 'todo' && dueTime)
-      throw new VaultError('待办没有独立时刻，请修改所属节点或先升为节点');
-    return this.saveRecord(
-      {
-        ...data,
-        dueDate,
-        ...(data.type === 'milestone'
-          ? {
-              dueTime: dueDate ? (dueTime === undefined ? data.dueTime : dueTime) : null,
-              location: location === undefined ? data.location : location,
-            }
-          : {}),
+    return this.vault.update(
+      id,
+      revision,
+      (data) => {
+        if (data.type !== 'milestone' && data.type !== 'todo')
+          throw new VaultError('只有节点或条目可以改期');
+        if (data.type === 'todo' && dueTime)
+          throw new VaultError('待办没有独立时刻，请修改所属节点或先升为节点');
+        return {
+          ...data,
+          dueDate,
+          ...(data.type === 'milestone'
+            ? {
+                dueTime: dueDate ? (dueTime === undefined ? data.dueTime : dueTime) : null,
+                location: location === undefined ? data.location : location,
+              }
+            : {}),
+        };
       },
-      entry.revision,
       {},
       companions,
     );
@@ -254,8 +255,7 @@ export class WorkspaceService {
           command.location,
         );
       case 'work.comment': {
-        const entry = await this.target(command.id, command.revision);
-        return this.saveRecord(entry.data, entry.revision, {
+        return this.vault.update(command.id, command.revision, (data) => data, {
           comments: [
             {
               id: crypto.randomUUID(),
@@ -279,7 +279,9 @@ export class WorkspaceService {
       case 'notes.read':
         return this.vault.readContent(command.id);
       case 'notes.save':
-        return this.vault.saveContent(command.id, command.body, command.revision);
+        return this.vault.saveContent(command.id, command.body, command.revision, command.comments);
+      case 'notes.append':
+        return this.vault.appendContent(command.id, command.text, command.revision);
     }
   }
 }

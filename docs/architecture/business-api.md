@@ -44,11 +44,13 @@ Android 经 `api.ts` 的平台传输入口在本机调用同一版本的 `Worksp
 | GET  | /api/business/v1/workspace | version 与 snapshot                |
 | POST | /api/business/v1/commands  | version 与 result                  |
 
-Android 的写入命令响应可附带 `snapshot`，表示该批文件成功发布后的同一份工作快照。前端只将其交付给紧随写入的一次刷新，后续刷新仍重新读取目录。连续命令按请求顺序丢弃迟到响应，连接或切换目录会使待交付快照失效。发布失败不附带快照，Markdown 内容及 SHA-256 revision 继续作为权威事实。
+三端的写入命令响应可附带 `snapshot`，表示该批文件成功发布后的同一份工作快照。前端只将其交付给紧随写入的一次刷新，后续显式刷新仍重新读取目录。连续命令按请求顺序丢弃迟到响应，连接或切换目录会使待交付快照失效。发布失败不附带快照，Markdown 内容及 SHA-256 revision 继续作为权威事实。
+
+共享 Workspace 保存会话内的路径、对象与关联索引。普通创建、编辑、完成、改期、批注、Notes 与删除在同一串行操作中按索引定位，不扫描工作目录；实际读取及发布时仍核对受影响文件的内容 revision。成功发布后只替换索引中本批修改的文件，发布失败或恢复未完成批次使索引失效。首次读取、显式刷新、前台恢复、交换与备份等需要核对完整目录时重新扫描；应用外的新增、移动与结构变化在此时发现，不要求普通修改立即发现全目录变化。索引不单独持久化，不能覆盖文件冲突，也不成为第二份业务事实。Markdown 编辑限于正文、纪要及批注，结构由标准命令维护。
 
 除 session 外需要 X-Atlas-Token、X-Atlas-Vault；POST 使用 application/json。客户端必须读取最新快照中的 revision，修改前传回该版本。版本过期返回 409，输入不合法返回 400，会话不合法返回 403。JSON Schema 负责描述输入结构，跨对象关系和完成规则仍由服务端校验。
 
-业务接口版本是字符串 1；X-Atlas-Contract 继续负责整套网页／服务兼容校验，当前为 atlas-lines-26。升级后需重启服务并刷新网页。旧的 snapshot、records、content、notes、promote、delete-preview、delete-space 网页路由已移除，不保留兼容转发；读取工作快照和执行工作命令统一走 /api/business/v1。新增 notes.create 承接原有普通 Markdown 笔记创建能力。会话、连接目录、备份、本机打开与消息接入仍使用各自的应用／平台接口。
+业务接口版本是字符串 1；X-Atlas-Contract 继续负责整套网页／服务兼容校验，当前为 atlas-lines-27。升级后需重启服务并刷新网页。旧的 snapshot、records、content、notes、promote、delete-preview、delete-space 网页路由已移除，不保留兼容转发；读取工作快照和执行工作命令统一走 /api/business/v1。新增 notes.create 承接原有普通 Markdown 笔记创建能力。会话、连接目录、备份、本机打开与消息接入仍使用各自的应用／平台接口。
 
 | 命令 type          | 关键输入                                       | 用途                                                                  |
 | ------------------ | ---------------------------------------------- | --------------------------------------------------------------------- |
@@ -62,8 +64,9 @@ Android 的写入命令响应可附带 `snapshot`，表示该批文件成功发�
 | work.deletePreview | id                                             | 查看删除范围                                                          |
 | work.delete        | id、expectations                               | 按确认过的版本删除                                                    |
 | notes.create       | note（title、可选 kind / tag）                 | 创建普通 Markdown 笔记，保留原有文件名与标签校验                      |
-| notes.read         | id                                             | 读取同一份 Notes 正文                                                 |
-| notes.save         | id、revision、body                             | 保存业务线 Notes 全文                                                 |
+| notes.read         | id                                             | 读取只读汇总或单节点／条目内部正文与批注                                                 |
+| notes.save         | id、revision、body、可选 comments              | 仅保存单节点／条目内部正文与已有批注，不接收系统结构                                                 |
+| notes.append       | id、revision、text                             | 向业务线追加随手记，不接收或替换全文结构                              |
 | exchange.export    | 可选 baseline（回执）                          | 生成全量首次包或相对于回执的新增／更新增量包                          |
 | exchange.preview   | bundle                                         | 验证 JSON 包，匹配 UUID，返回冲突和绑定当前状态的预览版本             |
 | exchange.apply     | bundle、revision（预览版本）                   | 整包原子导入并生成确认回执，不直接接受文件变更                        |

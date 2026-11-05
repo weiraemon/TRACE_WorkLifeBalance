@@ -14,6 +14,7 @@ import { validateChange, type Entry, type RecordData, type Snapshot } from '../d
 import { canPromote } from '../domain/workspace';
 import type { Workspace } from './workspace';
 import { VaultError } from './errors';
+import { recordPath } from './layout';
 
 const itemHash = (item: ExchangeItem) =>
   exchangeHash({ data: exchangeRecord(item.data), body: item.body });
@@ -28,7 +29,7 @@ function localRecord(data: RecordData, entries: Entry[]): RecordData {
     target:
       current?.type === 'resource' && current.noteId === current.id
         ? current.target
-        : `ATLAS/knowledge/imported/${data.id}.md`,
+        : recordPath(data.id),
   };
 }
 async function checkedBundle(input: unknown) {
@@ -228,5 +229,5 @@ export async function applyExchange(vault: Workspace, input: unknown, revision: 
         skipped: result.preview.rows.filter((row) => row.status === 'same').length,
       },
     };
-  });
+  }, true);
 }

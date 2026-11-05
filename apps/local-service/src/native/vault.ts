@@ -9,7 +9,8 @@ import { validateChange, type Entry, type Snapshot } from '../../../../packages/
 import { Workspace } from '../../../../packages/workspace/workspace';
 import { VaultError } from '../../../../packages/workspace/errors';
 import { changesSchema, type FileChange } from '../../../../packages/workspace/file-change';
-import { decodeNote } from '../../../../packages/workspace/markdown';
+import { decodeNote, localizeNote } from '../../../../packages/workspace/markdown';
+import { layoutPath, recordPath, validLayout } from '../../../../packages/workspace/layout';
 
 export const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const execute = promisify(execFile);
@@ -99,6 +100,8 @@ export async function readText(filename: string) {
 }
 
 export class Vault extends Workspace {
+  private sources?: Map<string, string>;
+  private decodedFiles = new Map<string, { revision: string; entry: Entry | null }>();
   readonly sessionId = randomUUID();
   private closing = false;
   private tail: Promise<unknown> = Promise.resolve();
@@ -208,6 +211,7 @@ export class Vault extends Workspace {
     if (!acquired) throw new VaultError('工作目录正在被其他服务连接，请稍后重试', 409);
     try {
       await vault.resumeChanges();
+      await vault.initialize();
       return vault;
     } catch (error) {
       await vault.close();
@@ -222,7 +226,11 @@ export class Vault extends Workspace {
     if (data.token === this.lockToken) await fs.unlink(lock);
   }
   protected async readSource(relative: string) {
-    return readText(await this.safe(relative));
+    const cached = this.sources?.get(relative);
+    if (cached !== undefined) return cached;
+    const source = await readText(await this.safe(relative));
+    this.sources?.set(relative, source);
+    return source;
   }
   protected contentHash(source: string) {
     return hash(source);
@@ -265,16 +273,28 @@ export class Vault extends Workspace {
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       }
-      return fn();
+      this.sources = new Map();
+      try {
+        return await fn();
+      } finally {
+        this.sources = undefined;
+      }
     });
     this.tail = task.catch(() => {});
     return task;
   }
   async scan(): Promise<Snapshot> {
-    // shortcut: full scans suit R0; add an incremental index only after large-Vault measurements.
     const entries: Entry[] = [],
       files: Snapshot['files'] = [],
       issues: Snapshot['issues'] = [];
+    let canonical = false;
+    try {
+      validLayout(await readText(await this.safe(layoutPath)));
+      canonical = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    const decodedFiles = new Map<string, { revision: string; entry: Entry | null }>();
     try {
       await fs.access(await this.safe('.atlas/pending.json', true));
       issues.push({
@@ -322,8 +342,24 @@ export class Vault extends Workspace {
             continue;
           }
           const source = await readText(absolute);
-          const note = decodeNote(source);
-          if (note) entries.push({ data: note.data, path: filename, revision: hash(source) });
+          this.sources?.set(filename, source);
+          const revision = hash(source);
+          const cached = this.decodedFiles.get(filename);
+          let entry: Entry | null;
+          if (cached?.revision === revision) entry = cached.entry;
+          else {
+            const note = decodeNote(source);
+            entry = note ? { data: note.data, path: filename, revision } : null;
+          }
+          decodedFiles.set(filename, { revision, entry });
+          if (entry) {
+            entries.push(entry);
+            if (canonical && filename !== recordPath(entry.data.id))
+              issues.push({
+                path: filename,
+                message: '受管文件位置不符合固定 UUID 布局，请检查目录',
+              });
+          }
         } catch (error) {
           issues.push({
             path: filename,
@@ -332,7 +368,20 @@ export class Vault extends Workspace {
         }
       }
     };
-    await walk('');
+    if (canonical) {
+      files.push(
+        { path: 'ATLAS', directory: true },
+        { path: 'ATLAS/records', directory: true },
+        { path: layoutPath, directory: false },
+      );
+      try {
+        await fs.access(await this.safe('ATLAS/records'));
+        await walk('ATLAS/records');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    } else await walk('');
+    this.decodedFiles = decodedFiles;
     const counts = new Map<string, number>();
     for (const e of entries) counts.set(e.data.id, (counts.get(e.data.id) ?? 0) + 1);
     for (const e of entries)
@@ -348,7 +397,13 @@ export class Vault extends Workspace {
         });
       }
     }
-    return { root: this.root, vaultId: this.sessionId, entries, files, issues };
+    return this.rememberSnapshot({
+      root: this.root,
+      vaultId: this.sessionId,
+      entries,
+      files,
+      issues,
+    });
   }
   protected async atomic(relative: string, content: string, expected: string | null) {
     const target = await this.safe(relative, true),
@@ -421,11 +476,15 @@ export class Vault extends Workspace {
   }
   async recover() {
     if (this.closing) throw new VaultError('工作目录正在关闭', 409);
-    const task = this.tail.then(() => this.resumeChanges());
+    const task = this.tail.then(() => {
+      this.invalidateIndex();
+      return this.resumeChanges();
+    });
     this.tail = task.catch(() => {});
     return task;
   }
-  protected async commitChanges(changes: FileChange[]) {
+  protected async persistChanges(changes: FileChange[]) {
+    this.sources?.clear();
     changesSchema.parse(changes);
     if (!changes.length) return;
     if (new Set(changes.map((c) => c.path)).size !== changes.length)
@@ -528,20 +587,22 @@ export class Vault extends Workspace {
           (!decodeNote(current) || expectations[note.data.id] !== hash(current))
         )
           throw new VaultError('恢复冲突，请刷新并检查当前记录', 409);
-        changes.push({ path: target, content: file.content, current });
+        changes.push({ path: target, content: localizeNote(file.content, target), current });
       }
-      for (const change of changes)
-        if (change.current !== change.content)
-          await this.atomic(
-            change.path,
-            change.content,
-            change.current === null ? null : hash(change.current),
-          );
+      await this.commitChanges(
+        changes
+          .filter((change) => change.current !== change.content)
+          .map((change) => ({
+            path: change.path,
+            content: change.content,
+            expected: change.current === null ? null : hash(change.current),
+          })),
+      );
       return { restored: changes.length };
     });
   }
   async resolveResource(id: string) {
-    const snapshot = await this.scan();
+    const snapshot = await this.currentSnapshot();
     const entry = snapshot.entries.find((e) => e.data.id === id);
     if (entry?.data.type !== 'resource') throw new VaultError('资源不存在');
     const resource = entry.data;
@@ -554,13 +615,24 @@ export class Vault extends Workspace {
       await this.safe(target);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      const candidates = [];
-      if (resource.fingerprint)
-        for (const f of snapshot.files.filter(
-          (f) => !f.directory && path.extname(f.path) === path.extname(target),
-        ))
-          if (hash(await fs.readFile(await this.safe(f.path))) === resource.fingerprint)
-            candidates.push(f.path);
+      const candidates: string[] = [];
+      if (resource.fingerprint) {
+        const walk = async (relative: string) => {
+          for (const file of await fs.readdir(relative ? await this.safe(relative) : this.root, {
+            withFileTypes: true,
+          })) {
+            if (ignored.has(file.name) || file.isSymbolicLink()) continue;
+            const next = relative ? `${relative}/${file.name}` : file.name;
+            if (file.isDirectory()) await walk(next);
+            else if (
+              path.extname(next) === path.extname(target) &&
+              hash(await fs.readFile(await this.safe(next))) === resource.fingerprint
+            )
+              candidates.push(next);
+          }
+        };
+        await walk('');
+      }
       if (candidates.length !== 1) throw new VaultError('资源已移动且无法唯一定位，请编辑资源路径');
       target = candidates[0];
     }
