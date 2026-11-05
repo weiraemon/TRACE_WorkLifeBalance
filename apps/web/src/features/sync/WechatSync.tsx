@@ -11,7 +11,7 @@ import {
 import { api } from '../../api';
 import { desktopBridge } from '../../platform/desktop';
 import { Button, ErrorMessage, Field } from '../../components/ui';
-import { CandidateCard } from './MessageInbox';
+import { CandidateCard, Terms } from './MessageInbox';
 
 type Chat = {
   id: string;
@@ -112,11 +112,12 @@ export function WechatSync({
       ...current,
       rules: current.rules.map((rule) => (rule.id === id ? { ...rule, ...value } : rule)),
     }));
-  const saveRules = () =>
+  const saveSettings = (message: string) =>
     void run(async () => {
       await api('messages/settings', { settings, revision: view?.revision ?? null });
-      setNotice('微信会话规则已保存');
+      setNotice(message);
     });
+  const saveRules = () => saveSettings('微信会话规则已保存');
   const addRule = () =>
     setSettings((current) => ({
       ...current,
@@ -179,7 +180,7 @@ export function WechatSync({
           </p>
           <div className="segmented">
             <button aria-pressed={tab === 'global'} onClick={() => setTab('global')}>
-              微信同步设置
+              微信自动同步全局设置
             </button>
             <button aria-pressed={tab === 'rules'} onClick={() => setTab('rules')}>
               会话规则
@@ -269,6 +270,26 @@ export function WechatSync({
               </Field>
             )}
             <Button disabled={busy}>保存微信设置</Button>
+          </form>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveSettings('我的身份已保存');
+            }}
+          >
+            <h3>我的身份</h3>
+            <p className="hint">与 QQ 共用，用于姓名和班级条件。</p>
+            <Terms
+              label="本人姓名与称呼"
+              values={settings.names}
+              change={(names) => setSettings((current) => ({ ...current, names }))}
+            />
+            <Terms
+              label="班级名称与简称"
+              values={settings.classes}
+              change={(classes) => setSettings((current) => ({ ...current, classes }))}
+            />
+            <Button disabled={busy}>保存身份设置</Button>
           </form>
           <div className="message-bulk-actions">
             <Button
@@ -587,27 +608,16 @@ export function WechatSync({
                   </div>
                 )}
                 {(['aliases', 'senders', 'keywords'] as const).map((field) => (
-                  <Field
+                  <Terms
                     key={field}
                     label={
                       { aliases: '本会话中的别名', senders: '指定发送人', keywords: '关键词' }[
                         field
                       ]
                     }
-                  >
-                    <input
-                      value={rule[field].join('、')}
-                      placeholder="多个值用、分隔"
-                      onChange={(event) =>
-                        updateRule(rule.id, {
-                          [field]: event.target.value
-                            .split(/[、,]/)
-                            .map((part) => part.trim())
-                            .filter(Boolean),
-                        })
-                      }
-                    />
-                  </Field>
+                    values={rule[field]}
+                    change={(values) => updateRule(rule.id, { [field]: values })}
+                  />
                 ))}
                 <Field label="限定项目">
                   <select
@@ -668,28 +678,6 @@ export function WechatSync({
               </fieldset>
             );
           })}
-          <h3>我的身份关键词</h3>
-          <p className="hint">与 QQ 共用，用于姓名和班级条件。</p>
-          {(['names', 'classes'] as const).map((field) => (
-            <Field key={field} label={field === 'names' ? '本人姓名与称呼' : '班级名称与简称'}>
-              <input
-                value={settings[field].join('、')}
-                placeholder="多个值用、分隔"
-                onChange={(event) =>
-                  setSettings({
-                    ...settings,
-                    [field]: event.target.value
-                      .split(/[、,]/)
-                      .map((part) => part.trim())
-                      .filter(Boolean),
-                  })
-                }
-              />
-            </Field>
-          ))}
-          <Button disabled={busy} onClick={saveRules}>
-            保存规则与身份关键词
-          </Button>
         </>
       )}
       {mode === 'pending' && (
