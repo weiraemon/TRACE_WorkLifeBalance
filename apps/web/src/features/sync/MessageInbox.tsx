@@ -102,7 +102,7 @@ const split = (text: string) => [
       .filter(Boolean),
   ),
 ];
-function Terms({
+export function Terms({
   label,
   values,
   change,

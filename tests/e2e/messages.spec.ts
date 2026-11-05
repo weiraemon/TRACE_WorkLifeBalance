@@ -16,6 +16,32 @@ async function openSync(page: Page, kind: 'QQ' | '微信') {
     .click();
 }
 
+test('微信全局身份与会话词条使用 QQ 的逗号输入方式', async ({ page }) => {
+  await connect(page);
+  await openSync(page, '微信');
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('button', { name: '微信自动同步全局设置' })).toBeVisible();
+  await dialog.getByLabel('本人姓名与称呼').fill('张三,小张');
+  await dialog.getByLabel('班级名称与简称').fill('软件一班，软件二班');
+  await dialog.getByRole('button', { name: '保存身份设置' }).click();
+  await expect(dialog).toContainText('我的身份已保存');
+  await expect(dialog.getByLabel('本人姓名与称呼')).toHaveValue('张三，小张');
+  await dialog.getByRole('button', { name: '会话规则', exact: true }).click();
+  await expect(dialog.getByLabel('本人姓名与称呼')).toHaveCount(0);
+  await dialog.getByRole('button', { name: '添加群聊规则' }).click();
+  await dialog.getByLabel('会话名称').fill('测试群');
+  await dialog.getByLabel('本会话中的别名').fill('阿海,大海');
+  await dialog.getByLabel('指定发送人').fill('辅导员，老师');
+  await dialog.getByLabel('关键词').fill('通知,报名');
+  await dialog.getByRole('button', { name: '保存此规则' }).click();
+  await expect(dialog).toContainText('微信会话规则已保存');
+  await expect(dialog.getByLabel('本会话中的别名')).toHaveValue('阿海，大海');
+  await expect(dialog.getByLabel('指定发送人')).toHaveValue('辅导员，老师');
+  await expect(dialog.getByLabel('关键词')).toHaveValue('通知，报名');
+  await dialog.getByRole('button', { name: '微信自动同步全局设置' }).click();
+  await expect(dialog.getByLabel('班级名称与简称')).toHaveValue('软件一班，软件二班');
+});
+
 test('微信私聊可按微信号搜索，并区分微信号与内部 ID', async ({ page }) => {
   await connect(page);
   await page.route('**/api/messages', async (route) => {
