@@ -156,7 +156,7 @@ public class ChaosFilesPlugin extends Plugin {
                 switch (method) {
                     case "wifiRequest": resolve(call, wifiRequest(input.getString("url"), input.getString("body"), operation)); break;
                     case "remember": config().edit().putString("tree", store.tree.toString()).commit(); resolve(call, null); break;
-                    case "scan": resolve(call, store.scan()); break;
+                    case "scan": resolve(call, store.scanWorkspace()); break;
                     case "read": resolve(call, store.read(input.getString("path"))); break;
                     case "fingerprint": resolve(call, store.fingerprint(input.getString("path"))); break;
                     case "commit": store.commit(input.getJSONArray("changes")); resolve(call, null); break;

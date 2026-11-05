@@ -45,6 +45,28 @@ async function setup() {
   return { root, vault, business, project, line };
 }
 
+it('会话索引支撑创建、编辑、改期、完成和 Notes 保存，不扫描目录或读取无关文件', async () => {
+  const { vault, business, project, line } = await setup();
+  const scan = vi.spyOn(vault, 'scan');
+  const reads = vi.spyOn(fs, 'readFile');
+  await business.createPlan({ kind: 'event', title: '定点操作', lineId: line.data.id });
+  let node = vault
+    .takePublishedSnapshot()!
+    .entries.find((entry) => entry.data.type === 'milestone' && !entry.data.pool)!;
+  node = await business.reschedule(node.data.id, node.revision, '2099-01-01');
+  node = await business.complete(node.data.id, node.revision, true);
+  await business.saveRecord({ ...node.data, title: '修改标题' }, node.revision);
+  const note = await vault.readContent(node.data.id);
+  await vault.saveContent(node.data.id, '修改批注正文', note.revision);
+  expect(scan).not.toHaveBeenCalled();
+  expect(
+    reads.mock.calls.some(([file]) => String(file) === path.join(vault.root, project.path)),
+  ).toBe(false);
+  expect((await vault.readContent(node.data.id)).body).toContain('修改批注正文');
+  scan.mockRestore();
+  reads.mockRestore();
+});
+
 it('工作快照等待整个实际、完成与 Notes 批次发布，不读取半成品', async () => {
   const { business, line } = await setup();
   await business.createPlan({
@@ -165,7 +187,9 @@ it('标准命令创建计划、改期和完成复用 main 的待办池、Notes �
     (entry) => entry.data.id === (moved.data as { milestoneId: string }).milestoneId,
   )!;
   expect(pool.data).toHaveProperty('pool', true);
-  expect((await vault.readContent(moved.data.id)).body).toContain('必须保留的条目批注');
+  expect(
+    (await vault.readContent(moved.data.id)).comments?.map((comment) => comment.text).join('\n'),
+  ).toContain('必须保留的条目批注');
   const latestNode = state.entries.find((entry) => entry.data.id === node.data.id)!;
   await business.execute({
     type: 'work.complete',

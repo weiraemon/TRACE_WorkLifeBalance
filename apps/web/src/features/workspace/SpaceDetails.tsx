@@ -92,7 +92,7 @@ export function SpaceDetails({
           key={snapshot.vaultId + item.id}
           id={item.id}
           revision={note?.revision}
-          editable={item.type === 'workline'}
+          editable={item.type === 'milestone' || item.type === 'todo'}
           reload={reload}
           onDirtyChange={onDirtyChange}
         />

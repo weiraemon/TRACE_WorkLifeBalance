@@ -11,7 +11,7 @@ export function createAndroidTransport(
   let switching = false;
   const activate = async (directory: DirectorySession) => {
     const next = new AndroidWorkspace(directory, native, report);
-    const snapshot = await next.snapshot();
+    const snapshot = await next.initialize();
     vault = next;
     service = new WorkspaceService(next);
     return snapshot;

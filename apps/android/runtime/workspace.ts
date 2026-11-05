@@ -1,7 +1,8 @@
 import { Workspace } from '../../../packages/workspace/workspace';
-import { decodeNote } from '../../../packages/workspace/markdown';
+import { decodeNote, localizeNote } from '../../../packages/workspace/markdown';
 import { changesSchema, type FileChange } from '../../../packages/workspace/file-change';
 import { validateChange, type Entry, type Snapshot } from '../../../packages/domain/index';
+import { layoutPath, recordPath } from '../../../packages/workspace/layout';
 
 export type NativeCall = <T>(method: string, input?: unknown) => Promise<T>;
 export type DirectorySession = { root: string; vaultId: string };
@@ -17,14 +18,8 @@ type ScannedFile = {
 export class AndroidWorkspace extends Workspace {
   private tail: Promise<unknown> = Promise.resolve();
   private lastScan?: { fingerprint: string; snapshot: Snapshot };
-  private scannedFiles?: ScannedFile[];
+  private decodedFiles = new Map<string, { revision: string; entry: Entry | null }>();
   private sources = new Map<string, string>();
-  private publishedSnapshot?: Snapshot;
-  takePublishedSnapshot() {
-    const snapshot = this.publishedSnapshot;
-    this.publishedSnapshot = undefined;
-    return snapshot;
-  }
   constructor(
     readonly directory: DirectorySession,
     readonly native: NativeCall,
@@ -53,13 +48,11 @@ export class AndroidWorkspace extends Workspace {
     return this.native<T>(method, { ...input, vaultId: this.directory.vaultId });
   }
   async scan(): Promise<Snapshot> {
-    this.publishedSnapshot = undefined;
     const files = await this.call<ScannedFile[]>('scan');
-    this.scannedFiles = files;
     this.sources = new Map(
       files.flatMap((file) => (file.source === undefined ? [] : [[file.path, file.source]])),
     );
-    return this.decodeFiles(files);
+    return this.rememberSnapshot(await this.decodeFiles(files));
   }
   private async decodeFiles(files: ScannedFile[]): Promise<Snapshot> {
     const fingerprint = JSON.stringify(
@@ -68,13 +61,29 @@ export class AndroidWorkspace extends Workspace {
     if (this.lastScan?.fingerprint === fingerprint) return this.lastScan.snapshot;
     const entries: Entry[] = [];
     const issues: Snapshot['issues'] = [];
+    const canonical = files.some((file) => file.path === layoutPath);
+    const decodedFiles = new Map<string, { revision: string; entry: Entry | null }>();
     for (const [index, file] of files.entries()) {
       if (index % 20 === 0) await this.progress('正在解析工作目录', index, files.length);
       try {
         if (file.error) throw new Error(file.error);
         if (file.source === undefined) continue;
-        const note = decodeNote(file.source);
-        if (note) entries.push({ data: note.data, path: file.path, revision: file.revision! });
+        const cached = this.decodedFiles.get(file.path);
+        let entry: Entry | null;
+        if (file.revision && cached?.revision === file.revision) entry = cached.entry;
+        else {
+          const note = decodeNote(file.source);
+          entry = note ? { data: note.data, path: file.path, revision: file.revision! } : null;
+        }
+        if (file.revision) decodedFiles.set(file.path, { revision: file.revision, entry });
+        if (entry) {
+          entries.push(entry);
+          if (canonical && file.path !== recordPath(entry.data.id))
+            issues.push({
+              path: file.path,
+              message: '受管文件位置不符合固定 UUID 布局，请检查目录',
+            });
+        }
       } catch (error) {
         issues.push({
           path: file.path,
@@ -103,20 +112,16 @@ export class AndroidWorkspace extends Workspace {
       files: files.map(({ path, directory }) => ({ path, directory })),
       issues,
     };
+    this.decodedFiles = decodedFiles;
     this.lastScan = { fingerprint, snapshot };
     return snapshot;
   }
   protected async readSource(path: string) {
-    // A scan already read and hashed these exact bytes. Publication checks their revisions again.
+    // Sources live only within one serialized operation; publication rechecks the real file.
     const scanned = this.sources.get(path);
     if (scanned !== undefined) return scanned;
     const source = await this.call<string>('read', { path });
-    if (
-      this.publishedSnapshot &&
-      this.scannedFiles?.find((file) => file.path === path)?.revision !==
-        (await this.contentHash(source))
-    )
-      this.publishedSnapshot = undefined;
+    this.sources.set(path, source);
     return source;
   }
   protected async contentHash(source: string) {
@@ -131,41 +136,11 @@ export class AndroidWorkspace extends Workspace {
   protected atomic(path: string, content: string, expected: string | null) {
     return this.commitChanges([{ path, content, expected }]);
   }
-  protected async commitChanges(changes: FileChange[]) {
+  protected async persistChanges(changes: FileChange[]) {
     const parsed = changesSchema.parse(changes);
-    this.publishedSnapshot = undefined;
     this.sources.clear();
     if (!parsed.length) return;
     await this.call('commit', { changes: parsed });
-    if (!this.scannedFiles) return;
-    const files = new Map(this.scannedFiles.map((file) => [file.path, file]));
-    for (const change of parsed) {
-      const parts = change.path.split('/');
-      if (
-        parts.some(
-          (part) =>
-            ['.git', '.obsidian', '.atlas', 'node_modules'].includes(part) ||
-            part.startsWith('.chaos-'),
-        )
-      )
-        continue;
-      if (change.content === null) files.delete(change.path);
-      else {
-        files.set(change.path, {
-          path: change.path,
-          directory: false,
-          ...(change.path.toLowerCase().endsWith('.md')
-            ? { source: change.content, revision: await this.contentHash(change.content) }
-            : {}),
-        });
-        for (let depth = 1; depth < parts.length; depth++) {
-          const path = parts.slice(0, depth).join('/');
-          if (!files.has(path)) files.set(path, { path, directory: true });
-        }
-      }
-    }
-    this.scannedFiles = [...files.values()];
-    this.publishedSnapshot = await this.decodeFiles(this.scannedFiles);
   }
   backups() {
     return this.serialized(() =>
@@ -200,7 +175,11 @@ export class AndroidWorkspace extends Workspace {
         const current = matches[0];
         if (revision !== null && (!current || revision !== current.revision))
           throw new Error('恢复遇到未确认的文件：' + file.path);
-        changes.push({ path: target, content: file.content, expected: revision });
+        changes.push({
+          path: target,
+          content: localizeNote(file.content, target),
+          expected: revision,
+        });
       }
       await this.commitChanges(changes);
       return { restored: changes.length };
@@ -208,7 +187,7 @@ export class AndroidWorkspace extends Workspace {
   }
   open(id: string) {
     return this.serialized(async () => {
-      const snapshot = await this.scan();
+      const snapshot = await this.currentSnapshot();
       const entry = snapshot.entries.find((entry) => entry.data.id === id);
       if (entry?.data.type !== 'resource') throw new Error('资源不存在');
       const resource = entry.data;

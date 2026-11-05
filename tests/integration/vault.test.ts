@@ -33,7 +33,7 @@ describe('R0.1 真正的 Markdown 文件安全闭环', () => {
     const v = await make();
     const first = await v.createMarkdown({ title: '讨论 / 结论', kind: 'meeting', tag: '科研' });
     const second = await v.createMarkdown({ title: '讨论 / 结论', tag: '科研' });
-    expect(first.path).toMatch(/^ATLAS\/knowledge\/科研\/讨论 - 结论-.*\.md$/);
+    expect(first.path).toMatch(/^ATLAS\/records\/[a-f0-9]{2}\/[a-f0-9-]{36}\.md$/);
     expect(second.path).not.toBe(first.path);
     expect(first.data).toMatchObject({
       type: 'resource',
@@ -48,7 +48,8 @@ describe('R0.1 真正的 Markdown 文件安全闭环', () => {
     await v.save({ ...current.data, kind: 'draft' }, current.revision);
     expect(await fs.readFile(absolute, 'utf8')).toContain('用户的会议正文');
     await fs.rename(absolute, path.join(v.root, '会议.md'));
-    expect(await v.resolveResource(first.data.id)).toMatchObject({ target: '会议.md' });
+    await expect(v.resolveResource(first.data.id)).rejects.toThrow();
+    expect(await fs.readFile(path.join(v.root, '会议.md'), 'utf8')).toContain('用户的会议正文');
     expect((await v.scan()).issues).toEqual([]);
   });
   it('非法标签和符号链接不创建笔记，解除资料引用不修改原 Markdown', async () => {
@@ -84,7 +85,16 @@ describe('R0.1 真正的 Markdown 文件安全闭环', () => {
     roots.push(outside);
     await fs.mkdir(path.join(v.root, 'ATLAS/knowledge'), { recursive: true });
     await fs.symlink(outside, path.join(v.root, 'ATLAS/knowledge/链接'), 'junction');
-    await expect(v.createMarkdown({ title: '拒绝', tag: '链接' })).rejects.toThrow('链接');
+    await v.createMarkdown({ title: '标签不决定路径', tag: '链接' });
+    let unsafeId = randomUUID();
+    while (
+      await fs.stat(path.join(v.root, 'ATLAS/records', unsafeId.slice(0, 2))).catch(() => null)
+    )
+      unsafeId = randomUUID();
+    await fs.symlink(outside, path.join(v.root, 'ATLAS/records', unsafeId.slice(0, 2)), 'junction');
+    await expect(
+      v.save(record('project', { id: unsafeId, title: '拒绝符号链接' })),
+    ).rejects.toThrow('链接');
     expect(await fs.readdir(outside)).toEqual([]);
   });
   it('保留正文、其他 YAML 字段和注释，包括 CRLF 与空行', () => {
@@ -118,11 +128,10 @@ describe('R0.1 真正的 Markdown 文件安全闭环', () => {
     await expect(v.save({ ...first.data, title: '错误覆盖' }, first.revision)).rejects.toThrow(
       '更改',
     );
-    await fs.rename(filename, path.join(v.root, '改名.md'));
     const current = (await v.scan()).entries[0];
     expect(current.data.id).toBe(first.data.id);
     await v.save({ ...current.data, title: '继续科研' }, current.revision);
-    expect(await fs.readFile(path.join(v.root, '改名.md'), 'utf8')).toContain('Obsidian 新增内容');
+    expect(await fs.readFile(filename, 'utf8')).toContain('Obsidian 新增内容');
     await v.close();
     opened.splice(opened.indexOf(v), 1);
     const reopened = await Vault.open(v.root);
@@ -132,14 +141,15 @@ describe('R0.1 真正的 Markdown 文件安全闭环', () => {
   it('重复 ID、非法 YAML、普通笔记不被写入', async () => {
     const v = await make();
     const e = await v.save(record('project', { title: 'A' }));
-    await fs.copyFile(path.join(v.root, e.path), path.join(v.root, '副本.md'));
-    await fs.writeFile(path.join(v.root, '损坏.md'), '---\natlas: [oops\n---\n正文');
-    await fs.writeFile(path.join(v.root, '普通.md'), '---\ntags: [hello]\n---\n原始知识');
+    const directory = path.join(v.root, path.dirname(e.path));
+    await fs.copyFile(path.join(v.root, e.path), path.join(directory, '副本.md'));
+    await fs.writeFile(path.join(directory, '损坏.md'), '---\natlas: [oops\n---\n正文');
+    await fs.writeFile(path.join(directory, '普通.md'), '---\ntags: [hello]\n---\n原始知识');
     const snapshot = await v.scan();
     expect(snapshot.issues.some((i) => i.message.includes('重复 ID'))).toBe(true);
     expect(snapshot.issues.some((i) => i.message.includes('Frontmatter'))).toBe(true);
     await expect(v.save({ ...e.data, title: 'B' }, e.revision)).rejects.toThrow('重复 ID');
-    expect(await fs.readFile(path.join(v.root, '普通.md'), 'utf8')).toBe(
+    expect(await fs.readFile(path.join(directory, '普通.md'), 'utf8')).toBe(
       '---\ntags: [hello]\n---\n原始知识',
     );
   });
@@ -172,7 +182,10 @@ describe('R0.1 真正的 Markdown 文件安全闭环', () => {
     await fs.symlink(outside, path.join(v.root, 'link'), 'junction');
     await expect(v.safe('link/escape.md', true)).rejects.toThrow('链接');
     await expect(Vault.open(v.root)).rejects.toThrow('已由');
-    expect((await v.scan()).issues.some((i) => i.path === 'link')).toBe(true);
+    const controlled = path.join(v.root, 'ATLAS/records/link');
+    await fs.mkdir(path.dirname(controlled), { recursive: true });
+    await fs.symlink(outside, controlled, 'junction');
+    expect((await v.scan()).issues.some((i) => i.path === 'ATLAS/records/link')).toBe(true);
   });
   it('写入失败保留原文，中断临时文件不自动提升', async () => {
     const v = await make();
@@ -189,7 +202,10 @@ describe('R0.1 真正的 Markdown 文件安全闭环', () => {
     );
     rename.mockRestore();
     expect(await fs.readFile(path.join(v.root, first.path), 'utf8')).toBe(original);
-    await fs.writeFile(path.join(v.root, 'interrupted.md.atlas-tmp-test'), 'unfinished');
+    await fs.writeFile(
+      path.join(v.root, path.dirname(first.path), 'interrupted.md.atlas-tmp-test'),
+      'unfinished',
+    );
     expect((await v.scan()).issues.some((i) => i.message.includes('中断'))).toBe(true);
   });
   it('资源移动以稳定笔记 ID 或唯一内容指纹恢复关联', async () => {

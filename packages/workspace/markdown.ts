@@ -49,3 +49,12 @@ export function updateNote(source: string, data: RecordData) {
 }
 export const newNote = (data: RecordData) =>
   `---\n${stringify({ atlas: { managed: true, record: data } })}---\n\n# ${'title' in data ? data.title : 'ATLAS ' + data.type}\n\n`;
+
+export function localizeNote(source: string, path: string) {
+  const note = decodeNote(source);
+  return note?.data.type === 'resource' &&
+    note.data.noteId === note.data.id &&
+    note.data.target !== path
+    ? updateNote(source, { ...note.data, target: path })
+    : source;
+}

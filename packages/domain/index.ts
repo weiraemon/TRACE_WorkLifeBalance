@@ -1,5 +1,5 @@
 import { z } from 'zod';
-export const recordContract = 'atlas-lines-26';
+export const recordContract = 'atlas-lines-27';
 export const noteKinds = ['note', 'idea', 'meeting', 'draft'] as const;
 export const noteKindLabel = { note: '笔记', idea: '灵感', meeting: '纪要', draft: '待细化' };
 export const noteTagSchema = z
@@ -174,7 +174,20 @@ export const isSpaceItem = (record: RecordData): record is SpaceItem =>
 export type Entry = { data: RecordData; path: string; revision: string };
 export type DeletePreview = { entries: Entry[]; blockedReason: string | null };
 export type DeleteResult = { deletedIds: string[] };
-export type NoteContent = { body: string; revision: string; path: string };
+export type NoteComment = { id: string; date: string; text: string };
+export type NoteContent = {
+  body: string;
+  revision: string;
+  path: string;
+  comments?: NoteComment[];
+  intro?: string;
+  sections?: (NoteContent & {
+    id: string;
+    title: string;
+    heading: string;
+    kind: 'milestone' | 'todo';
+  })[];
+};
 export type Snapshot = {
   entries: Entry[];
   files: { path: string; directory: boolean }[];

@@ -26,18 +26,41 @@ import {
   refreshHeadings,
   unbindSections,
   nodeHeading,
+  displayNotes,
+  editableSection,
+  replaceContent,
 } from './line-notes';
 
 import { VaultError } from './errors';
 import type { FileChange } from './file-change';
 import { decodeNote, frontmatter, newNote, updateNote } from './markdown';
+import { layoutPath, layoutSource, recordPath, checkRelocationLinks } from './layout';
 
 // Platform adapters implement file safety and publication; business rules stay here.
 export abstract class Workspace {
+  private indexedSnapshot?: Snapshot;
+  private publishedSnapshot?: Snapshot;
+  protected rememberSnapshot(snapshot: Snapshot) {
+    this.indexedSnapshot = snapshot;
+    this.publishedSnapshot = undefined;
+    return snapshot;
+  }
+  protected currentSnapshot(): Promise<Snapshot> {
+    return this.indexedSnapshot ? Promise.resolve(this.indexedSnapshot) : this.scan();
+  }
+  protected invalidateIndex() {
+    this.indexedSnapshot = undefined;
+    this.publishedSnapshot = undefined;
+  }
+  takePublishedSnapshot() {
+    const snapshot = this.publishedSnapshot;
+    this.publishedSnapshot = undefined;
+    return snapshot;
+  }
   async progress(_phase: string, _completed: number, _total: number): Promise<void> {}
   abstract scan(): Promise<Snapshot>;
-  snapshot(): Promise<Snapshot> {
-    return this.serialized(() => this.scan());
+  snapshot(refresh = true): Promise<Snapshot> {
+    return this.serialized(() => (refresh ? this.scan() : this.currentSnapshot()));
   }
   protected abstract readSource(relative: string): Promise<string>;
   protected abstract contentHash(source: string): string | Promise<string>;
@@ -48,7 +71,75 @@ export abstract class Workspace {
     content: string,
     expected: string | null,
   ): Promise<void>;
-  protected abstract commitChanges(changes: FileChange[]): Promise<void>;
+  protected abstract persistChanges(changes: FileChange[]): Promise<void>;
+  protected async commitChanges(changes: FileChange[]) {
+    this.publishedSnapshot = undefined;
+    try {
+      if (
+        changes.length &&
+        this.indexedSnapshot &&
+        !this.indexedSnapshot.files.some((file) => file.path === layoutPath) &&
+        this.indexedSnapshot.entries.every((entry) => entry.path === recordPath(entry.data.id)) &&
+        !changes.some((change) => change.path === layoutPath)
+      )
+        changes = [...changes, { path: layoutPath, content: layoutSource, expected: null }];
+      await this.persistChanges(changes);
+      const snapshot = this.indexedSnapshot;
+      if (!snapshot || snapshot.issues.length) {
+        this.invalidateIndex();
+        return;
+      }
+      const entries = new Map(snapshot.entries.map((entry) => [entry.path, entry]));
+      const files = new Map(snapshot.files.map((file) => [file.path, file]));
+      for (const change of changes) {
+        const parts = change.path.split('/');
+        if (
+          parts.some(
+            (part) =>
+              ['.git', '.obsidian', '.atlas', 'node_modules'].includes(part) ||
+              part.startsWith('.chaos-'),
+          )
+        )
+          continue;
+        entries.delete(change.path);
+        if (change.content === null) files.delete(change.path);
+        else {
+          files.set(change.path, { path: change.path, directory: false });
+          for (let depth = 1; depth < parts.length; depth++) {
+            const path = parts.slice(0, depth).join('/');
+            files.set(path, { path, directory: true });
+          }
+          if (change.path.toLowerCase().endsWith('.md')) {
+            const note = decodeNote(change.content);
+            if (note)
+              entries.set(change.path, {
+                data: note.data,
+                path: change.path,
+                revision: await this.contentHash(change.content),
+              });
+          }
+        }
+      }
+      const next = {
+        ...snapshot,
+        entries: [...entries.values()],
+        files: [...files.values()],
+        issues: [] as Snapshot['issues'],
+      };
+      for (const entry of next.entries) {
+        try {
+          validateChange(entry.data, next.entries);
+        } catch (error) {
+          next.issues.push({ path: entry.path, message: '关联或时间诊断：' + String(error) });
+        }
+      }
+      this.rememberSnapshot(next);
+      this.publishedSnapshot = next;
+    } catch (error) {
+      this.invalidateIndex();
+      throw error;
+    }
+  }
   private async recordBody(entry: Entry) {
     const source = await this.readSource(entry.path);
     if ((await this.contentHash(source)) !== entry.revision)
@@ -95,7 +186,7 @@ export abstract class Workspace {
   private createLineParts(line: BusinessLine): RecordData[] {
     const now = new Date().toISOString(),
       notesId = crypto.randomUUID();
-    const relative = `ATLAS/knowledge/业务线/${notesId}.md`;
+    const relative = recordPath(notesId);
     const notes = createRecord(
       'resource',
       {
@@ -154,12 +245,12 @@ export abstract class Workspace {
       const existing = matches[0];
       const relative =
         existing?.path ??
-        (data.type === 'resource' && data.noteId === data.id
-          ? data.target
-          : `ATLAS/${data.type}/${data.id}.md`);
+        (data.type === 'resource' && data.noteId === data.id ? data.target : recordPath(data.id));
       let source = existing ? await this.readSource(relative) : newNote(data);
-      if (existing && (await this.contentHash(source)) !== existing.revision)
-        throw new VaultError('文件已被外部修改：' + relative, 409);
+      if (existing && (await this.contentHash(source)) !== existing.revision) {
+        this.invalidateIndex();
+        throw new VaultError('文件已更改，检测到外部修改：' + relative, 409);
+      }
       source =
         existing && JSON.stringify(existing.data) !== JSON.stringify(data)
           ? updateNote(source, data)
@@ -180,10 +271,38 @@ export abstract class Workspace {
     options: SaveOptions = {},
     companions: FileChange[] = [],
   ): Promise<Entry> {
+    const data = parseRecord(input);
+    return this.saveResolved(() => data, revision, options, companions);
+  }
+  update(
+    id: string,
+    revision: string,
+    transform: (data: RecordData) => RecordData,
+    options: SaveOptions = {},
+    companions: FileChange[] = [],
+  ): Promise<Entry> {
+    return this.saveResolved(
+      (snapshot) => {
+        const matches = snapshot.entries.filter((entry) => entry.data.id === id);
+        if (matches.length !== 1 || matches[0].revision !== revision)
+          throw new VaultError('对象已更改或不存在，请重新加载', 409);
+        return transform(matches[0].data);
+      },
+      revision,
+      options,
+      companions,
+    );
+  }
+  private saveResolved(
+    resolve: (snapshot: Snapshot) => RecordData,
+    revision: string | undefined,
+    options: SaveOptions,
+    companions: FileChange[],
+  ): Promise<Entry> {
     return this.serialized(async () => {
-      let data = parseRecord(input);
       const settings = saveOptionsSchema.parse(options);
-      const snapshot = await this.scan();
+      const snapshot = await this.currentSnapshot();
+      let data = parseRecord(resolve(snapshot));
       const matches = snapshot.entries.filter((e) => e.data.id === data.id);
       if (matches.length > 1) throw new VaultError('重复 ID，拒绝写入', 409);
       const existing = matches[0];
@@ -414,7 +533,16 @@ export abstract class Workspace {
           bodies.set(newLine.notesId!, putSection(newBody, 'node', data.id, found.text));
         }
       }
-      if (data.type === 'milestone' || data.type === 'todo') {
+      if (
+        (data.type === 'milestone' &&
+          existing?.data.type === 'milestone' &&
+          (data.title !== existing.data.title ||
+            data.dueDate !== existing.data.dueDate ||
+            data.dueTime !== existing.data.dueTime)) ||
+        (data.type === 'todo' &&
+          existing?.data.type === 'todo' &&
+          (data.title !== existing.data.title || data.kind !== existing.data.kind))
+      ) {
         const line = lineFor(data, virtual)!;
         const body = await this.notesBody(line, virtual, bodies);
         bodies.set(
@@ -450,9 +578,12 @@ export abstract class Workspace {
       if (!published && existing) return existing;
       if (!published) throw new VaultError('记录已发布但无法读取，请检查诊断', 409);
       const source = await this.readSource(published.path);
+      const publishedRevision = await this.contentHash(source);
+      if (publishedRevision !== (await this.contentHash(published.content!)))
+        this.invalidateIndex();
       const note = decodeNote(source);
       if (note?.data.id !== data.id) throw new VaultError('记录已发布但无法读取，请检查诊断', 409);
-      return { data: note.data, path: published.path, revision: await this.contentHash(source) };
+      return { data: note.data, path: published.path, revision: publishedRevision };
     });
   }
 
@@ -469,9 +600,10 @@ export abstract class Workspace {
       files?: FileChange[];
       result: T;
     }>,
+    refresh = false,
   ): Promise<T> {
     return this.serialized(async () => {
-      const snapshot = await this.scan();
+      const snapshot = await (refresh ? this.scan() : this.currentSnapshot());
       if (snapshot.issues.length) throw new VaultError('工作目录存在诊断，请先处理后再写入', 409);
       const batch = await build({
         snapshot,
@@ -497,14 +629,10 @@ export abstract class Workspace {
   async createMarkdown(input: unknown): Promise<Entry> {
     const fields = noteInputSchema.parse(input);
     return this.serialized(async () => {
+      await this.currentSnapshot();
       const id = crypto.randomUUID(),
         now = new Date().toISOString();
-      const name =
-        fields.title
-          .replace(/[<>:"/\\|?*\x00-\x1f]/g, '-')
-          .replace(/[. ]+$/g, '')
-          .slice(0, 60) || '笔记';
-      const relative = `ATLAS/knowledge/${fields.tag || '未分类'}/${name}-${id}.md`;
+      const relative = recordPath(id);
       const data = createRecord(
         'resource',
         {
@@ -517,12 +645,12 @@ export abstract class Workspace {
         now,
       );
       const source = newNote(data);
-      await this.atomic(relative, source, null);
+      await this.commitChanges([{ path: relative, content: source, expected: null }]);
       return { data, path: relative, revision: await this.contentHash(source) };
     });
   }
   private async contentSource(id: string) {
-    const snapshot = await this.scan();
+    const snapshot = await this.currentSnapshot();
     const matches = snapshot.entries.filter((e) => e.data.id === id);
     if (matches.length !== 1 || !isSpaceItem(matches[0].data))
       throw new VaultError('工作对象不存在或 ID 重复', 409);
@@ -535,8 +663,17 @@ export abstract class Workspace {
     if (!note || note.data.type !== 'resource' || note.data.noteId !== note.data.id)
       throw new VaultError('Notes 不存在', 409);
     const source = await this.readSource(note.path);
-    if ((await this.contentHash(source)) !== note.revision)
-      throw new VaultError('Notes 已被外部修改，请重新加载', 409);
+    const decoded = decodeNote(source);
+    if (!decoded || JSON.stringify(decoded.data) !== JSON.stringify(note.data))
+      throw new VaultError('Notes 结构已被外部修改，请重新加载', 409);
+    const revision = await this.contentHash(source);
+    if (revision !== note.revision)
+      this.rememberSnapshot({
+        ...snapshot,
+        entries: snapshot.entries.map((entry) =>
+          entry.path === note.path ? { ...note, revision } : entry,
+        ),
+      });
     const header = frontmatter.exec(source);
     if (!header || header.index !== 0) throw new VaultError('Notes 管理字段损坏');
     return { source, note, item, header: header[0], body: source.slice(header[0].length) };
@@ -544,33 +681,110 @@ export abstract class Workspace {
   async readContent(id: string): Promise<NoteContent> {
     return this.serialized(async () => {
       const { source, note, item, body } = await this.contentSource(id);
-      const text =
-        item.type === 'workline'
-          ? body
-          : (section(body, item.type === 'todo' ? 'item' : 'node', item.id)?.text ?? '');
-      return { body: text, revision: await this.contentHash(source), path: note.path };
+      const revision = await this.contentHash(source);
+      if (item.type === 'milestone' || item.type === 'todo') {
+        const content = editableSection(body, item);
+        return { body: content.body, comments: content.comments, revision, path: note.path };
+      }
+      const snapshot = await this.currentSnapshot();
+      let intro = body;
+      const sections: NonNullable<NoteContent['sections']> = [];
+      for (const { data } of snapshot.entries) {
+        if (
+          (data.type !== 'milestone' && data.type !== 'todo') ||
+          lineFor(data, snapshot.entries)?.id !== item.id
+        )
+          continue;
+        const found = section(body, data.type === 'todo' ? 'item' : 'node', data.id);
+        if (!found) continue;
+        const content = editableSection(body, data);
+        sections.push({
+          id: data.id,
+          title: data.title,
+          heading:
+            data.type === 'milestone'
+              ? `${data.dueDate ?? '未定日期'}${data.dueTime ? ' ' + data.dueTime : ''} · ${data.title}`
+              : `${data.kind === 'idea' ? 'IDEA' : 'TODO'} · ${data.title}`,
+          kind: data.type,
+          body: content.body,
+          comments: content.comments,
+          revision,
+          path: note.path,
+        });
+        if (data.type === 'milestone') intro = putSection(intro, 'node', data.id, null);
+      }
+      sections.sort(
+        (a, b) =>
+          section(body, a.kind === 'todo' ? 'item' : 'node', a.id)!.from -
+          section(body, b.kind === 'todo' ? 'item' : 'node', b.id)!.from,
+      );
+      return {
+        body: displayNotes(body),
+        intro: displayNotes(intro),
+        sections,
+        revision,
+        path: note.path,
+      };
     });
   }
-  async saveContent(id: string, body: string, revision: string): Promise<NoteContent> {
+  async saveContent(
+    id: string,
+    body: string,
+    revision: string,
+    comments?: { id: string; text: string }[],
+  ): Promise<NoteContent> {
     return this.serialized(async () => {
       const current = await this.contentSource(id);
-      if (current.item.type !== 'workline')
-        throw new VaultError('请在业务线 Notes 中编辑全文，条目使用添加批注');
+      if (current.item.type !== 'milestone' && current.item.type !== 'todo')
+        throw new VaultError('业务线 Notes 为只读汇总，请编辑具体节点或条目的内部内容');
       if ((await this.contentHash(current.source)) !== revision)
         throw new VaultError('文件已被外部修改，未覆盖正文；请保留草稿并重新加载', 409);
-      await this.commitChanges([
-        { path: current.note.path, expected: revision, content: current.header + body },
-      ]);
-      return {
+      const snapshot = await this.currentSnapshot();
+      const item = current.item;
+      const node =
+        item.type === 'milestone'
+          ? item
+          : snapshot.entries.find((entry) => entry.data.id === item.milestoneId)?.data;
+      if (node?.type !== 'milestone') throw new VaultError('所属节点不存在');
+      const updated = replaceContent(
+        current.body,
+        node,
+        current.item.type === 'todo' ? current.item : undefined,
         body,
-        revision: await this.contentHash(current.header + body),
+        comments,
+      );
+      await this.commitChanges([
+        { path: current.note.path, expected: revision, content: current.header + updated },
+      ]);
+      const content = editableSection(updated, current.item);
+      return {
+        body: content.body,
+        comments: content.comments,
+        revision: await this.contentHash(current.header + updated),
         path: current.note.path,
       };
     });
   }
+  async appendContent(id: string, text: string, revision: string) {
+    return this.serialized(async () => {
+      const current = await this.contentSource(id);
+      if (current.item.type !== 'workline') throw new VaultError('随手记须属于业务线');
+      if (/<!--\s*\/?atlas:/i.test(text)) throw new VaultError('不能提交系统结构标记');
+      if ((await this.contentHash(current.source)) !== revision)
+        throw new VaultError('Notes 已更改，请刷新后重试', 409);
+      await this.commitChanges([
+        {
+          path: current.note.path,
+          expected: revision,
+          content: current.source.trimEnd() + `\n\n## 随手记 · ${localDay()}\n\n${text.trim()}\n`,
+        },
+      ]);
+      return {};
+    });
+  }
   async promote(id: string, revision: string): Promise<Entry> {
     return this.serialized(async () => {
-      const snapshot = await this.scan(),
+      const snapshot = await this.currentSnapshot(),
         matches = snapshot.entries.filter((e) => e.data.id === id);
       if (matches.length > 1) throw new VaultError('重复 ID，拒绝升线', 409);
       const entry = matches[0];
@@ -649,12 +863,12 @@ export abstract class Workspace {
       ];
       for (const data of parts) validateChange(data, virtual);
       await this.commitChanges(await this.prepareChanges(snapshot.entries, parts, bodies));
-      return (await this.scan()).entries.find((e) => e.data.id === id)!;
+      return (await this.currentSnapshot()).entries.find((e) => e.data.id === id)!;
     });
   }
 
   async deletePreview(id: string): Promise<DeletePreview> {
-    const snapshot = await this.scan();
+    const snapshot = await this.currentSnapshot();
     const entries = spaceSubtree(snapshot.entries, id);
     if (!entries.length) throw new VaultError('工作内容不存在或无法读取', 409);
     const root = entries.find((e) => e.data.id === id)!.data;
@@ -674,7 +888,7 @@ export abstract class Workspace {
         preview.entries.some((e) => expectations[e.data.id] !== e.revision)
       )
         throw new VaultError('删除范围或文件已更改，请重新检查后再删除', 409);
-      const snapshot = await this.scan(),
+      const snapshot = await this.currentSnapshot(),
         ids = new Set(preview.entries.map((e) => e.data.id));
       const paths = new Set(preview.entries.map((e) => e.path));
       const brokenResources = snapshot.entries.filter(
@@ -723,7 +937,7 @@ export abstract class Workspace {
 
   async deleteActual(id: string, revision: string): Promise<DeleteResult> {
     return this.serialized(async () => {
-      const snapshot = await this.scan();
+      const snapshot = await this.currentSnapshot();
       const entries = snapshot.entries.filter((entry) => entry.data.id === id);
       const entry = entries[0];
       if (entries.length !== 1 || entry.data.type !== 'actual' || entry.revision !== revision)
@@ -731,5 +945,63 @@ export abstract class Workspace {
       await this.commitChanges([{ path: entry.path, expected: revision, content: null }]);
       return { deletedIds: [id] };
     });
+  }
+  async initialize() {
+    return this.serialized(async () => {
+      const snapshot = await this.scan();
+      if (!snapshot.files.some((file) => file.path === layoutPath)) {
+        if (snapshot.issues.length)
+          throw new VaultError('工作目录存在诊断，未转换文件路径，请先检查目录', 409);
+        await this.organizeSnapshot(snapshot);
+      }
+      const next = await this.currentSnapshot();
+      this.takePublishedSnapshot();
+      return next;
+    });
+  }
+  private async organizeSnapshot(snapshot: Snapshot) {
+    const moves = new Map(
+      snapshot.entries
+        .filter((entry) => entry.path !== recordPath(entry.data.id))
+        .map((entry) => [entry.path, recordPath(entry.data.id)]),
+    );
+    const changes: FileChange[] = [];
+    const records = new Set(snapshot.entries.map((entry) => entry.path));
+    for (const file of snapshot.files) {
+      if (file.directory || !/\.md$/i.test(file.path)) continue;
+      const source = await this.readSource(file.path);
+      const header = frontmatter.exec(source);
+      checkRelocationLinks(
+        source.slice(header?.index === 0 ? header[0].length : 0),
+        file.path,
+        moves,
+      );
+      if (!records.has(file.path)) continue;
+      const entry = snapshot.entries.find((entry) => entry.path === file.path)!;
+      if ((await this.contentHash(source)) !== entry.revision)
+        throw new VaultError('文件已更改，停止整理', 409);
+      const destination = recordPath(entry.data.id);
+      const data = entry.data;
+      const updated =
+        data.type === 'resource' &&
+        data.location === 'vault' &&
+        (data.noteId === data.id || moves.has(data.target))
+          ? updateNote(source, {
+              ...data,
+              target: data.noteId === data.id ? destination : moves.get(data.target)!,
+            })
+          : source;
+      if (destination !== entry.path) {
+        changes.push(
+          { path: destination, content: updated, expected: null },
+          { path: entry.path, content: null, expected: entry.revision },
+        );
+      } else if (updated !== source)
+        changes.push({ path: entry.path, content: updated, expected: entry.revision });
+    }
+    if (!snapshot.files.some((file) => file.path === layoutPath))
+      changes.push({ path: layoutPath, content: layoutSource, expected: null });
+    await this.commitChanges(changes);
+    return { moved: moves.size };
   }
 }

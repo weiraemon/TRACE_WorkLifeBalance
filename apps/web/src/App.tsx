@@ -122,14 +122,14 @@ export default function App() {
     if (!snapshot) return;
     let pending = false;
     let previousDay = localDay();
-    const synchronize = () => {
+    const synchronize = (read = true) => {
       const today = localDay();
       if (today !== previousDay) {
         const yesterday = previousDay;
         setDate((selectedDate) => (selectedDate === yesterday ? today : selectedDate));
         previousDay = today;
       }
-      if (document.hidden || pending) return;
+      if (!read || document.hidden || pending) return;
       pending = true;
       void reload()
         .catch((e) => setError(String(e)))
@@ -137,13 +137,14 @@ export default function App() {
           pending = false;
         });
     };
-    const timer = setInterval(synchronize, 5000);
-    window.addEventListener('focus', synchronize);
-    document.addEventListener('visibilitychange', synchronize);
+    const activate = () => synchronize();
+    const timer = setInterval(() => synchronize(false), 5000);
+    window.addEventListener('focus', activate);
+    document.addEventListener('visibilitychange', activate);
     return () => {
       clearInterval(timer);
-      window.removeEventListener('focus', synchronize);
-      document.removeEventListener('visibilitychange', synchronize);
+      window.removeEventListener('focus', activate);
+      document.removeEventListener('visibilitychange', activate);
     };
   }, [Boolean(snapshot), reload]);
   const goWorkspace = (id?: string) => {

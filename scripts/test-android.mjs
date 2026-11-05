@@ -124,7 +124,7 @@ function nativeTests() {
     'com.chaos.workbench.test/androidx.test.runner.AndroidJUnitRunner',
   );
   fs.writeFileSync(path.join(output, 'instrumentation.txt'), instrumentation);
-  assert.match(instrumentation, /OK \(12 tests\)/);
+  assert.match(instrumentation, /OK \(13 tests\)/);
   assert.doesNotMatch(instrumentation, /FAILURES|INSTRUMENTATION_FAILED/);
   // Remove only the reserved synthetic fault fixtures before timing business UI operations.
   const fixtures = device('shell', 'readlink', '-f', directory + '/instrumentation');
@@ -241,7 +241,6 @@ try {
     0,
     '时间选择不应触发完整目录读取',
   );
-  await page.evaluate(() => globalThis.chaosScanListener.remove());
   await nav('工作空间');
   await nav('编辑');
   assert.equal(
@@ -269,6 +268,13 @@ try {
       '单文件实际保存失败',
     );
   timings.simpleActualSaveMs = Date.now() - simpleStarted;
+  assert.equal(
+    await page.evaluate(() => globalThis.chaosIdleScans),
+    0,
+    '保存与紧随其后的界面刷新不应扫描目录',
+  );
+  await page.evaluate(() => globalThis.chaosScanListener.remove());
+  checks.push('实际保存与保存后刷新均不扫描工作目录');
   await nav('今日已做');
   const simpleRecord = page.locator('[data-actual-id]').filter({ hasText: '单文件保存性能验收' });
   await simpleRecord.dispatchEvent('pointerdown', {
@@ -316,8 +322,18 @@ try {
     await dialog.waitFor({ state: 'hidden' });
   }
   const node = page.getByRole('article', { name: '节点 · 方案讨论', exact: true });
+  // Repeated runs can inherit older synthetic nodes with the same title.
+  while ((await node.count()) > 1) {
+    const count = await node.count();
+    await node.last().getByRole('button', { name: '节点操作 · 方案讨论', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: '删除', exact: true }).click();
+    await eventually(async () => assert.equal(await node.count(), count - 1), '清理重复合成节点');
+  }
   if (!(await page.getByRole('checkbox', { name: '完成 整理讨论材料', exact: true }).count())) {
-    await node.getByRole('button', { name: '待办', exact: true }).click();
+    await node
+      .locator('.mobile-node-tools')
+      .getByRole('button', { name: '待办', exact: true })
+      .click();
     await page.getByRole('dialog').getByLabel('标题', { exact: true }).fill('整理讨论材料');
     await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click();
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
@@ -340,6 +356,11 @@ try {
   await page.getByRole('button', { name: '上一条业务线', exact: true }).click();
   await page.screenshot({ path: path.join(output, 'vertical-line.png') });
   checks.push('项目、业务线、节点和待办创建；竖向业务线与切线');
+  await page.getByRole('button', { name: '条目操作 · 整理讨论材料', exact: true }).click();
+  await page.getByRole('button', { name: '添加批注／纪要', exact: true }).click();
+  await page.getByLabel('批注 / 纪要', { exact: true }).fill('内容编辑验收原文');
+  await page.getByRole('button', { name: '保存批注', exact: true }).click();
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
   await nav('笔记');
   const notesOpened = Date.now();
   await page.getByRole('button', { name: '打开业务线 下一步研究', exact: true }).click();
@@ -348,6 +369,17 @@ try {
     .getByRole('heading', { name: '下一步研究', exact: true })
     .waitFor();
   timings.notesOpenMs = Date.now() - notesOpened;
+  await page.getByRole('button', { name: '编辑内容 · 整理讨论材料', exact: true }).click();
+  const internal = page.getByLabel('内部正文', { exact: true });
+  for (const value of await page
+    .locator('.notes-content textarea')
+    .evaluateAll((fields) => fields.map((field) => field.value)))
+    assert.doesNotMatch(value, /atlas:|[a-f0-9]{8}-[a-f0-9-]{27}/);
+  await internal.fill('只修改条目的内部内容');
+  await page.screenshot({ path: path.join(output, 'content-editor.png') });
+  await page.getByRole('button', { name: '保存内容', exact: true }).click();
+  await internal.waitFor({ state: 'hidden' });
+  checks.push('仅编辑 TODO 内部正文和批注，输入框不包含 UUID、结构标记或子项');
   await page.getByLabel('随手记', { exact: true }).fill('先验证关键假设，再决定下一步。');
   await page.getByRole('button', { name: '记到笔记', exact: true }).click();
   await eventually(
@@ -417,7 +449,9 @@ try {
   await page.getByRole('button', { name: '关闭对话框', exact: true }).click();
   await eventually(
     async () =>
-      assert.ok(!(await page.locator('.markdown-body').innerText()).includes(restoreMarker)),
+      assert.ok(
+        !(await page.locator('.notes-content').first().innerText()).includes(restoreMarker),
+      ),
     '手动恢复没有还原 Notes',
   );
   checks.push('回顾、手动备份与恢复');

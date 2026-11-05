@@ -142,7 +142,7 @@ const server = http.createServer(async (req, res) => {
           await vault.recover();
           await rememberVault(configPath, vault.root);
           connectionError = '';
-          return send(res, 200, await vault.scan());
+          return send(res, 200, await vault.initialize());
         }
         switching = true;
         try {
@@ -159,7 +159,7 @@ const server = http.createServer(async (req, res) => {
           vault = next;
           defaultRoot = next.root;
           connectionError = '';
-          return send(res, 200, await next.scan());
+          return send(res, 200, await next.snapshot(false));
         } finally {
           switching = false;
         }
@@ -221,11 +221,14 @@ const server = http.createServer(async (req, res) => {
           version: businessApiVersion,
           snapshot: await workspaceServiceFor(active).snapshot(),
         });
-      if (url.pathname === '/api/business/v1/commands' && req.method === 'POST')
+      if (url.pathname === '/api/business/v1/commands' && req.method === 'POST') {
+        const result = await workspaceServiceFor(active).execute(await body(req));
         return send(res, 200, {
           version: businessApiVersion,
-          result: await workspaceServiceFor(active).execute(await body(req)),
+          result,
+          snapshot: active.takePublishedSnapshot(),
         });
+      }
       if (url.pathname === '/api/messages' && req.method === 'GET') {
         const { state, revision } = await messageServiceFor(active).messageInbox();
         return send(res, 200, {

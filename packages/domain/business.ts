@@ -163,6 +163,23 @@ export const businessCommandSchema = z.discriminatedUnion('type', [
     .strict(),
   z.object({ type: z.literal('notes.create'), note: noteInputSchema }).strict(),
   z.object({ type: z.literal('notes.read'), id: z.string().uuid() }).strict(),
-  z.object({ type: z.literal('notes.save'), ...target, body: z.string().max(500000) }).strict(),
+  z
+    .object({
+      type: z.literal('notes.save'),
+      ...target,
+      body: z.string().max(500000),
+      comments: z
+        .array(z.object({ id: z.string().uuid(), text: z.string().max(30000) }).strict())
+        .max(1000)
+        .optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('notes.append'),
+      ...target,
+      text: z.string().trim().min(1).max(30000),
+    })
+    .strict(),
 ]);
 export type BusinessCommand = z.input<typeof businessCommandSchema>;

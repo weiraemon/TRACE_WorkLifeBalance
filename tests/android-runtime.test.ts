@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { createAndroidTransport } from '../apps/android/runtime/index';
 import { AndroidWorkspace, type NativeCall } from '../apps/android/runtime/workspace';
 import { WorkspaceService } from '../packages/workspace/workspace-service';
-import { createRecord, localDay, type Snapshot } from '../packages/domain/index';
+import { createRecord, localDay, type Entry, type Snapshot } from '../packages/domain/index';
 import { isComplete } from '../packages/domain/workspace';
 import type { FileChange } from '../packages/workspace/file-change';
 import type { ExchangeBundle, ExchangePreview, ExchangeReceipt } from '../packages/domain/exchange';
@@ -60,7 +60,7 @@ async function fixture() {
   return { files, native, workspace, service, project, line };
 }
 
-it('Android 保存只完整扫描一次，读取仍按真实内容指纹识别外部修改', async () => {
+it('Android 冷会话首次建立索引，显式刷新按内容指纹识别外部修改', async () => {
   const { native, files, project } = await fixture();
   let scans = 0;
   const measured: NativeCall = (method, input) => {
@@ -87,6 +87,68 @@ it('Android 保存只完整扫描一次，读取仍按真实内容指纹识别�
   ).toMatchObject({ title: '外部编辑' });
 });
 
+it('已加载索引后的改期、完成与批注只读目标文件，不扫描目录且拒绝陈旧版本', async () => {
+  const { native, line } = await fixture();
+  const calls: string[] = [];
+  const workspace = new AndroidWorkspace(
+    { root: 'content://test/tree/local', vaultId: 'session' },
+    (method, input) => {
+      calls.push(method);
+      return native(method, input);
+    },
+  );
+  const service = new WorkspaceService(workspace);
+  let node = await service.saveRecord(
+    createRecord('milestone', { title: '操作性能', lineId: line.data.id }),
+  );
+  const commands = [
+    { type: 'work.reschedule' as const, dueDate: '2099-01-01' },
+    { type: 'work.complete' as const, completed: true },
+    { type: 'work.comment' as const, text: '一次扫描中的纪要' },
+  ];
+  for (const command of commands) {
+    calls.length = 0;
+    const original = node;
+    node = (await service.execute({
+      ...command,
+      id: node.data.id,
+      revision: node.revision,
+    })) as Entry;
+    expect(calls).toEqual(
+      command.type === 'work.complete'
+        ? ['read', 'commit', 'read']
+        : ['read', 'read', 'commit', 'read'],
+    );
+    expect(workspace.takePublishedSnapshot()).toBeDefined();
+    calls.length = 0;
+    await expect(
+      service.execute({ ...command, id: original.data.id, revision: original.revision }),
+    ).rejects.toThrow();
+    expect(calls).toEqual([]);
+  }
+});
+
+it('只重新解析内容指纹变化的 Markdown，外部改坏和删除仍更新诊断与关联', async () => {
+  const { files, workspace, service, project, line } = await fixture();
+  const before = await service.snapshot();
+  const unchangedLine = before.entries.find((entry) => entry.data.id === line.data.id);
+  await service.saveRecord({ ...project.data, title: '只改一个文件' }, project.revision);
+  const after = workspace.takePublishedSnapshot()!;
+  expect(after.entries.find((entry) => entry.data.id === line.data.id)).toBe(unchangedLine);
+  expect(after.entries.find((entry) => entry.data.id === project.data.id)?.data).toMatchObject({
+    title: '只改一个文件',
+  });
+  files.set(project.path, files.get(project.path)!.replace('type: project', 'type: invalid'));
+  const broken = await service.snapshot();
+  expect(broken.entries.some((entry) => entry.data.id === project.data.id)).toBe(false);
+  expect(broken.issues.some((issue) => issue.path === project.path)).toBe(true);
+  expect(broken.issues.some((issue) => issue.path === line.path)).toBe(true);
+  files.delete(line.path);
+  expect((await service.snapshot()).entries.some((entry) => entry.data.id === line.data.id)).toBe(
+    false,
+  );
+});
+
 it('Android 同次扫描复用原文，Notes 和交换不逐文件再跨桥读取，下一次请求仍识别外部修改', async () => {
   const { native, files, line } = await fixture();
   const calls: string[] = [];
@@ -110,7 +172,7 @@ it('Android 同次扫描复用原文，Notes 和交换不逐文件再跨桥读�
   expect(await service.execute({ type: 'notes.read', id: line.data.id })).toMatchObject({
     body: expect.stringContaining('外部新增正文'),
   });
-  expect(calls).toEqual(['scan']);
+  expect(calls).toEqual(['read']);
   calls.length = 0;
   await service.execute({ type: 'exchange.export' });
   expect(calls).toEqual(['scan']);

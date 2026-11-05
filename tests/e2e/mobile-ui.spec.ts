@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { connect, seed, write, snapshot, notes, localDay } from './helpers';
+import { connect, seed, write, snapshot, notes, localDay, headers } from './helpers';
 
 test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 test.beforeEach(async ({ page }) => {
@@ -98,6 +98,17 @@ test('实际录入和已做分开，保存关联与本次完成仍联合发布',
 test('笔记复用导览，随手记保留原正文且未保存内容有离开保护', async ({ page }) => {
   const data = await snapshot(page),
     line = data.entries.find((entry) => entry.data.type === 'workline')!;
+  const todo = data.entries.find((entry) => entry.data.type === 'todo')!;
+  await page.request.post('/api/business/v1/commands', {
+    headers: await headers(page),
+    data: {
+      type: 'work.comment',
+      id: todo.data.id,
+      revision: todo.revision,
+      text: '原有批注',
+    },
+  });
+  await page.reload();
   await nav(page, '笔记');
   await page.getByRole('button', { name: '打开业务线 论文研究', exact: true }).click();
   await page.getByLabel('随手记', { exact: true }).fill('手机上的一个新想法');
@@ -108,13 +119,18 @@ test('笔记复用导览，随手记保留原正文且未保存内容有离开�
   await page.getByRole('button', { name: '记到笔记', exact: true }).click();
   await expect(page.getByLabel('随手记', { exact: true })).toHaveValue('');
   expect(await notes(page, line.data.id)).toContain('手机上的一个新想法');
-  await page.getByRole('button', { name: '编辑正文', exact: true }).click();
-  await page.getByLabel('Notes 正文', { exact: true }).fill('原有正文与手机编辑');
+  await page
+    .getByRole('button', {
+      name: `编辑内容 · ${'title' in todo.data ? todo.data.title : ''}`,
+      exact: true,
+    })
+    .click();
+  await page.getByLabel('内部正文', { exact: true }).fill('原有正文与手机编辑');
   await nav(page, '工作空间');
   await nav(page, '笔记');
   await page.getByRole('button', { name: '打开业务线 论文研究', exact: true }).click();
-  await expect(page.getByLabel('Notes 正文', { exact: true })).toHaveValue('原有正文与手机编辑');
-  await page.getByRole('button', { name: '保存正文', exact: true }).click();
+  await expect(page.getByLabel('内部正文', { exact: true })).toHaveValue('原有正文与手机编辑');
+  await page.getByRole('button', { name: '保存内容', exact: true }).click();
   await expect(page.getByText('原有正文与手机编辑', { exact: true })).toBeVisible();
 });
 

@@ -105,7 +105,9 @@ it('拖动条目和节点跨线时迁移 Notes，保留 ID、日期、下属条�
     milestoneId: target.data.id,
   });
   expect((await vault.readContent(line.data.id)).body).not.toContain('待办批注随条目移动');
-  expect((await vault.readContent(target.data.id)).body).toContain('待办批注随条目移动');
+  expect(
+    (await vault.readContent(todo.data.id)).comments?.map((comment) => comment.text).join('\n'),
+  ).toContain('待办批注随条目移动');
   const currentNode = await latest(node),
     currentLine = await latest(destination);
   await vault.save(currentNode.data, currentNode.revision, {
@@ -178,7 +180,9 @@ it('拖入更早节点时仍归入目标线待办池，保留独立日期及批�
     (e) => e.data.type === 'milestone' && e.data.pool && e.data.lineId === line.data.id,
   )!;
   expect(moved.data).toMatchObject({ milestoneId: pool.data.id, dueDate: '2026-10-25' });
-  expect((await vault.readContent(pool.data.id)).body).toContain('日期和批注保留');
+  expect(
+    (await vault.readContent(todo.data.id)).comments?.map((comment) => comment.text).join('\n'),
+  ).toContain('日期和批注保留');
   expect((await vault.scan()).issues).toEqual([]);
 });
 it('待办日期越过节点后进入本线待办池，Notes 批注移动且冲突仍受保护', async () => {
@@ -199,10 +203,16 @@ it('待办日期越过节点后进入本线待办池，Notes 批注移动且冲�
     milestoneId: pool.data.id,
     dueDate: '2026-10-26',
   });
-  expect((await vault.readContent(pool.data.id)).body).toContain('需要一起移动的批注');
-  const original = (await vault.readContent(node.data.id)).body;
+  expect(
+    (await vault.readContent(todo.data.id)).comments?.map((comment) => comment.text).join('\n'),
+  ).toContain('需要一起移动的批注');
+  const original =
+    (await vault.readContent(node.data.id)).comments?.map((comment) => comment.text).join('\n') ??
+    '';
   expect(original).toContain('节点自身纪要');
-  expect(original).toContain('留在原节点的想法');
+  expect(
+    (await vault.readContent(idea.data.id)).comments?.map((comment) => comment.text).join('\n'),
+  ).toContain('留在原节点的想法');
   expect(original).not.toContain('需要一起移动的批注');
   expect(state.issues).toEqual([]);
   await expect(
@@ -231,8 +241,10 @@ it('每线自动建立专属 Notes 和池，批注真实保存、按节点和条
   expect(notes.body).toContain('已联系实验室');
   expect(notes.body).not.toContain('替代解释');
   expect(before.body).not.toContain('atlas:node');
-  expect((await vault.readContent(todo.data.id)).body).toContain('已联系实验室');
-  expect(await fs.readFile(path.join(vault.root, notes.path), 'utf8')).toContain(notes.body);
+  expect(
+    (await vault.readContent(todo.data.id)).comments?.map((comment) => comment.text).join('\n'),
+  ).toContain('已联系实验室');
+  expect(await fs.readFile(path.join(vault.root, notes.path), 'utf8')).toContain('<!-- atlas:node');
 });
 it('创建批注、实际表单批注共用原文；关联和完成分离，重复批注 ID 不重复插入', async () => {
   const { vault, record, write, line, node, todo, idea, latest } = await setup();
@@ -296,7 +308,9 @@ it.each(['todo', 'idea', 'node'])('%s 升线平级独立，仅移动相应正文
     expect((await latest(actual)).data).toHaveProperty('milestoneIds', []);
     expect(newText).toContain('2026-10-25 09:30');
     expect(newText).toContain('TODO批注');
-    expect((await vault.readContent(todo.data.id)).body).toContain('TODO批注');
+    expect(
+      (await vault.readContent(todo.data.id)).comments?.map((comment) => comment.text).join('\n'),
+    ).toContain('TODO批注');
     const after = await vault.scan();
     expect(
       after.entries.some(
@@ -333,20 +347,17 @@ it('完成节点批量完成条目、可重新打开；不会完成业务线或�
     '待办池',
   );
 });
-it('Notes 外部修改产生冲突，移动后按稳定 ID 找回，保留其他字段和自由正文', async () => {
-  const { vault, line } = await setup();
-  const first = await vault.readContent(line.data.id),
+it('Notes 外部修改产生冲突，定点编辑保留其他字段和自由正文', async () => {
+  const { vault, line, node } = await setup();
+  const first = await vault.readContent(node.data.id),
     absolute = path.join(vault.root, first.path);
   await fs.appendFile(absolute, '\n用户自由正文\n');
-  await expect(vault.saveContent(line.data.id, '网页草稿', first.revision)).rejects.toThrow(
+  await expect(vault.saveContent(node.data.id, '网页草稿', first.revision)).rejects.toThrow(
     '外部修改',
   );
-  const moved = path.join(vault.root, '论文Notes.md');
-  await fs.rename(absolute, moved);
   const current = await vault.readContent(line.data.id);
-  expect(current.path).toBe('论文Notes.md');
-  await vault.saveContent(line.data.id, current.body + '\n新结论', current.revision);
-  expect(await fs.readFile(moved, 'utf8')).toContain('用户自由正文');
+  await vault.appendContent(line.data.id, '新结论', current.revision);
+  expect(await fs.readFile(absolute, 'utf8')).toContain('用户自由正文');
 });
 it('中断发布留下短期日志，重新连接完成升线，正文只移动一次且不生成备份', async () => {
   const { vault, todo, line, comment, latest } = await setup();

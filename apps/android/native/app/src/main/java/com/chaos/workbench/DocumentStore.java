@@ -271,10 +271,27 @@ final class DocumentStore implements AutoCloseable {
         } finally { delete(first); delete(second); delete(moved); }
     }
     JSONArray scan() throws Exception {
+        return scanTree(root(), "", false);
+    }
+    JSONArray scanWorkspace() throws Exception {
+        check();
+        Uri marker = find("ATLAS/layout.json");
+        if (marker == null) return scan();
+        JSONObject layout = new JSONObject(read(marker, 65536));
+        if (layout.optInt("version") != 1 || !"ATLAS/records".equals(layout.optString("records")))
+            throw new IOException("工作目录布局版本不支持，停止写入");
+        return scanTree(find("ATLAS/records"), "ATLAS/records/", true);
+    }
+    private JSONArray scanTree(Uri base, String prefix, boolean canonical) throws Exception {
         check(); JSONArray result = new JSONArray();
+        if (canonical) {
+            result.put(new JSONObject().put("path", "ATLAS").put("directory", true));
+            result.put(new JSONObject().put("path", "ATLAS/records").put("directory", true));
+            result.put(new JSONObject().put("path", "ATLAS/layout.json").put("directory", false));
+        }
         operation.update("正在扫描工作目录", 0, -1);
         List<java.util.concurrent.Callable<Void>> reads = new ArrayList<>();
-        walk(root(), "", result, 0, reads);
+        if (base != null) walk(base, prefix, result, 0, reads);
         java.util.concurrent.ExecutorService readers = java.util.concurrent.Executors.newFixedThreadPool(4);
         try {
             operation.update("正在读取工作文件", 0, reads.size());

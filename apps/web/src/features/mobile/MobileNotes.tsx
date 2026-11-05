@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { CheckIcon } from '@radix-ui/react-icons';
-import { localDay, type BusinessLine, type Snapshot } from '../../../../../packages/domain/index';
-import { readContent, saveContent } from '../../api';
+import { type BusinessLine, type Snapshot } from '../../../../../packages/domain/index';
+import { readContent, appendContent } from '../../api';
 import { Button, ErrorMessage, Field } from '../../components/ui';
 import { useDraftState, useDraftSaving } from '../drafts/useDraftState';
 import { NotesContent } from '../workspace/NotesContent';
@@ -44,11 +44,7 @@ export function MobileNotes({
           setError('');
           try {
             const note = await readContent(line.id);
-            await saveContent(
-              line.id,
-              note.body.trimEnd() + `\n\n## 随手记 · ${localDay()}\n\n${memo.trim()}\n`,
-              note.revision,
-            );
+            await appendContent(line.id, memo.trim(), note.revision);
             setMemo('');
             onDirtyChange(false);
             await reload();

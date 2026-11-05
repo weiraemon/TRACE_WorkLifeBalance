@@ -23,13 +23,13 @@ function memoryWorkspace(Base = Workspace) {
         if (note) entries.push({ data: note.data, path, revision: await this.contentHash(source) });
       }
       for (const { data } of entries) validateChange(data, entries);
-      return {
+      return this.rememberSnapshot({
         root: 'memory',
         vaultId: 'test-session',
         entries,
         issues: [],
         files: [...this.files.keys()].map((path) => ({ path, directory: false })),
-      };
+      });
     }
     protected async readSource(path: string) {
       const source = this.files.get(path);
@@ -51,7 +51,7 @@ function memoryWorkspace(Base = Workspace) {
     protected async atomic(path: string, content: string, expected: string | null) {
       await this.commitChanges([{ path, content, expected }]);
     }
-    protected async commitChanges(changes: FileChange[]) {
+    protected async persistChanges(changes: FileChange[]) {
       if (new Set(changes.map((change) => change.path)).size !== changes.length)
         throw new VaultError('同一文件不能重复发布');
       for (const change of changes) {

@@ -47,5 +47,11 @@ export async function openResource(id: string, native = true) {
   else if (result.url) window.open(result.url, '_blank', 'noopener,noreferrer');
 }
 export const readContent = (id: string) => command<NoteContent>({ type: 'notes.read', id });
-export const saveContent = (id: string, body: string, revision: string) =>
-  command<NoteContent>({ type: 'notes.save', id, body, revision });
+export const saveContent = (
+  id: string,
+  body: string,
+  revision: string,
+  comments?: { id: string; text: string }[],
+) => command<NoteContent>({ type: 'notes.save', id, body, revision, comments });
+export const appendContent = (id: string, text: string, revision: string) =>
+  command({ type: 'notes.append', id, text, revision });

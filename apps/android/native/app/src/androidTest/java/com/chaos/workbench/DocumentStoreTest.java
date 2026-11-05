@@ -15,6 +15,24 @@ import static org.junit.Assert.*;
 
 /** Real SAF tests. Run only against the explicitly selected synthetic emulator directory. */
 public class DocumentStoreTest {
+    @Test public void workspaceScanUsesLayoutMarkerAndSkipsUnrelatedFiles() throws Exception {
+        String path = "instrumentation/layout-" + UUID.randomUUID() + ".md";
+        try (DocumentStore store = new DocumentStore(context, tree, device)) {
+            String marker = store.read("ATLAS/layout.json");
+            store.commit(new JSONArray().put(change(path, null, "合成非业务文件")));
+            try {
+                try (OutputStream output = context.getContentResolver().openOutputStream(store.resource(path), "wt")) { output.write(new byte[]{(byte)0xff}); }
+                JSONArray files = store.scanWorkspace();
+                for (int i = 0; i < files.length(); i++) assertFalse(files.getJSONObject(i).getString("path").startsWith("instrumentation/"));
+                try (OutputStream output = context.getContentResolver().openOutputStream(store.resource("ATLAS/layout.json"), "wt")) { output.write("{\"version\":99}".getBytes(StandardCharsets.UTF_8)); }
+                try { store.scanWorkspace(); fail("应拒绝未知布局版本，不能退回重复转换"); }
+                catch (java.io.IOException expected) { assertTrue(expected.getMessage().contains("布局版本")); }
+            } finally {
+                try (OutputStream output = context.getContentResolver().openOutputStream(store.resource("ATLAS/layout.json"), "wt")) { output.write(marker.getBytes(StandardCharsets.UTF_8)); }
+                android.provider.DocumentsContract.deleteDocument(context.getContentResolver(), store.resource(path));
+            }
+        }
+    }
     @Test public void benchmarksSmallMarkdownBatch() throws Exception {
         String prefix = "instrumentation/benchmark-" + UUID.randomUUID() + "/";
         JSONArray changes = new JSONArray();

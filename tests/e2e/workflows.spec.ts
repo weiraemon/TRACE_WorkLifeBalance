@@ -8,7 +8,7 @@ test.beforeEach(async ({ page }) => connect(page));
 test('首页先写内容再绑定业务线，可快速创建 TODO / IDEA，TODO 安排到所选日，IDEA 保持无期限，不产生实际时间', async ({
   page,
 }) => {
-  const { line } = await seed(page);
+  const { line, node } = await seed(page);
   await page.getByRole('tab', { name: '待办 / 节点', exact: true }).click();
   const capture = page.getByRole('region', { name: '快速创建 TODO / IDEA' });
   for (const kind of ['idea', 'todo']) {
@@ -324,24 +324,24 @@ test('节点创建时写纪要和新标签，Notes 包含日期与名称；无�
 });
 
 test('Notes 保存外部修改冲突保留草稿，界面窄屏不横向溢出', async ({ page }) => {
-  const { line } = await seed(page);
+  const { line, node } = await seed(page);
   await nav(page, '工作空间');
   await page
     .getByRole('region', { name: '业务线 · 论文研究', exact: true })
-    .locator('.line-title')
+    .locator(`[data-space-id="${node.data.id}"] .point-title`)
     .first()
     .click();
   const detail = page.getByRole('complementary', { name: '工作详情' });
-  await expect(detail.getByRole('button', { name: '编辑正文', exact: true })).toBeVisible();
-  await detail.getByRole('button', { name: '编辑正文', exact: true }).click();
-  const input = detail.getByLabel('Notes 正文', { exact: true });
+  await expect(detail.getByRole('button', { name: '编辑内容', exact: true })).toBeVisible();
+  await detail.getByRole('button', { name: '编辑内容', exact: true }).click();
+  const input = detail.getByLabel('内部正文', { exact: true });
   await input.fill('网页未保存草稿');
   const s = await snapshot(page),
     l = s.entries.find((e) => e.data.id === line.data.id)!.data;
   if (l.type !== 'workline') throw new Error();
   const resource = s.entries.find((e) => e.data.id === l.notesId)!;
   await fs.appendFile(path.join(s.root, resource.path), '\n外部新增正文');
-  await detail.getByRole('button', { name: '保存正文', exact: true }).click();
+  await detail.getByRole('button', { name: '保存内容', exact: true }).click();
   await expect(detail.getByRole('alert')).toContainText('外部修改');
   await expect(input).toHaveValue('网页未保存草稿');
   page.once('dialog', (dialog) => dialog.accept());
