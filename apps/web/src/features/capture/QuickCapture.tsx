@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { type Snapshot, type Todo, type Milestone } from '../../../../../packages/domain/index';
-import { activeLines } from '../../../../../packages/domain/workspace';
+import { activeLines, isComplete } from '../../../../../packages/domain/workspace';
 import { createRecord } from '../../api';
 import { Button, Field, ErrorMessage } from '../../components/ui';
 import { ImportancePicker } from '../../components/Importance';
@@ -36,8 +36,11 @@ export function QuickCapture({
   const lines = activeLines(snapshot.entries);
   const nodes = snapshot.entries
     .map((e) => e.data)
-    .filter((r): r is Milestone => r.type === 'milestone' && r.lineId === lineId);
-  const chosen = nodeId || nodes.find((r) => r.pool)?.id || '';
+    .filter(
+      (r): r is Milestone =>
+        r.type === 'milestone' && r.lineId === lineId && !isComplete(r, snapshot.entries),
+    );
+  const chosen = nodes.find((r) => r.id === nodeId)?.id || nodes.find((r) => r.pool)?.id || '';
   const applyParsedText = (value: string) => {
     const parsed = parseQuickCapture(value, snapshot.entries, today);
     setTitle(parsed.title);

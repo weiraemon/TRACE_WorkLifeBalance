@@ -222,6 +222,7 @@ export function WorkItemForm({
             level={type}
             value={location}
             onChange={setLocation}
+            originalMilestoneId={item?.type === 'todo' ? item.milestoneId : undefined}
           />
         )}
         <fieldset className="primary-settings">

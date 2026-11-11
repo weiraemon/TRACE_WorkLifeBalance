@@ -10,6 +10,7 @@ export function initialLocation(
   const records = entries.map((e) => e.data);
   let milestoneId = item?.type === 'todo' ? item.milestoneId : String(defaults.milestoneId ?? '');
   const point = records.find((r) => r.id === milestoneId);
+  if (!item && point?.type === 'milestone' && isComplete(point, entries)) milestoneId = '';
   let lineId =
     item?.type === 'milestone'
       ? item.lineId
@@ -40,11 +41,13 @@ export function WorkLocationPicker({
   level,
   value,
   onChange,
+  originalMilestoneId,
 }: {
   entries: Entry[];
   level: 'workline' | 'milestone' | 'todo';
   value: WorkLocation;
   onChange: (value: WorkLocation) => void;
+  originalMilestoneId?: string;
 }) {
   const records = entries.map((e) => e.data);
   const options = (items: typeof records) => (
@@ -108,7 +111,14 @@ export function WorkLocationPicker({
             value={value.milestoneId}
             onChange={(e) => onChange({ ...value, milestoneId: e.target.value })}
           >
-            {options(records.filter((r) => r.type === 'milestone' && r.lineId === value.lineId))}
+            {options(
+              records.filter(
+                (r) =>
+                  r.type === 'milestone' &&
+                  r.lineId === value.lineId &&
+                  (!isComplete(r, entries) || r.id === originalMilestoneId),
+              ),
+            )}
           </select>
         </Field>
       )}

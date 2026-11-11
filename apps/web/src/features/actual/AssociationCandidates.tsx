@@ -31,6 +31,7 @@ export function AssociationCandidates({
       return (
         line &&
         records.get(node.id)?.type === 'milestone' &&
+        !isComplete(node, snapshot.entries) &&
         project?.type === 'project' &&
         !project.completedAt &&
         !isComplete(line, snapshot.entries) &&

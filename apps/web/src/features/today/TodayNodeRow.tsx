@@ -71,9 +71,15 @@ export function TodayNodeRow({
         </span>
         {milestone.dueTime && <time>{milestone.dueTime}</time>}
       </button>
-      <button className="record-source" aria-label={`记一段 · ${milestone.title}`} onClick={record}>
-        记一段
-      </button>
+      {!done && (
+        <button
+          className="record-source"
+          aria-label={`记一段 · ${milestone.title}`}
+          onClick={record}
+        >
+          记一段
+        </button>
+      )}
       <div
         ref={preview}
         id={`node-preview-${milestone.id}`}
