@@ -3,7 +3,7 @@ import type { Milestone, Snapshot, Todo } from '../../../../../packages/domain/i
 import { isComplete } from '../../../../../packages/domain/workspace';
 import { Button } from '../../components/ui';
 import { importanceLabel } from '../../components/Importance';
-import type { Editor } from '../../types/editor';
+import type { AssociationSelection, Editor } from '../../types/editor';
 import type { useWorkspaceDrag } from './useWorkspaceDrag';
 import { TodoRows } from './TodoRows';
 import { NodeTagIcon } from './NodeTagIcon';
@@ -15,6 +15,7 @@ export type MilestonePointProps = {
   edit: (editor: Editor) => void;
   toggle: (item: Todo | Milestone) => void;
   drag: ReturnType<typeof useWorkspaceDrag>;
+  association?: AssociationSelection;
 };
 export function MilestonePoint({
   point,
@@ -24,6 +25,7 @@ export function MilestonePoint({
   edit,
   toggle,
   drag,
+  association,
 }: MilestonePointProps) {
   const done = isComplete(point, snapshot.entries);
   return (
@@ -31,7 +33,7 @@ export function MilestonePoint({
       className={`milestone-point${point.pool ? ' todo-pool' : ''}${done ? ' milestone-done' : ''}`}
       key={point.id}
       data-space-id={point.id}
-      {...drag.targetProps(point.id)}
+      {...(!association && drag.targetProps(point.id))}
       aria-label={`关键节点 · ${point.title}`}
     >
       {!point.pool && (
@@ -51,12 +53,20 @@ export function MilestonePoint({
             <button
               className={`point-dot priority-${point.importance}${point.tags.length ? ' node-tagged' : ''}`}
               role="checkbox"
-              aria-checked={done}
-              aria-label={`完成节点 ${point.title}`}
+              aria-checked={association ? association.has(point.id) : done}
+              aria-label={`${association ? '关联节点' : '完成节点'} ${point.title}`}
               title={`${point.title} · ${point.tags.join(' · ')} · ${importanceLabel(point.importance)}`}
-              onClick={() => toggle(point)}
+              onClick={() => (association ? association.toggle(point.id) : toggle(point))}
             >
-              {point.tags[0] ? <NodeTagIcon tag={point.tags[0]} /> : done ? <CheckIcon /> : null}
+              {association ? (
+                association.has(point.id) ? (
+                  <CheckIcon />
+                ) : null
+              ) : point.tags[0] ? (
+                <NodeTagIcon tag={point.tags[0]} />
+              ) : done ? (
+                <CheckIcon />
+              ) : null}
               {done && point.tags[0] && <CheckIcon className="node-completion-mark" />}
             </button>
           </div>
@@ -64,8 +74,10 @@ export function MilestonePoint({
       )}
       <button
         className="point-title"
-        onClick={() => select(point.id)}
-        {...(!point.pool && drag.sourceProps(point))}
+        onClick={() =>
+          association ? !point.pool && association.toggle(point.id) : select(point.id)
+        }
+        {...(!association && !point.pool && drag.sourceProps(point))}
       >
         {point.title}
       </button>
@@ -74,7 +86,8 @@ export function MilestonePoint({
         todos={todos}
         select={select}
         toggle={toggle}
-        drag={drag}
+        drag={association ? undefined : drag}
+        association={association}
       />
       <Button
         className="add-todo"

@@ -1,5 +1,16 @@
+import { associationMode, resumeRecording } from './helpers';
 import { test, expect } from '@playwright/test';
-import { connect, seed, nav, write, refresh, snapshot, notes, localDay } from './helpers';
+import {
+  selectTime,
+  connect,
+  seed,
+  nav,
+  write,
+  refresh,
+  snapshot,
+  notes,
+  localDay,
+} from './helpers';
 
 test.beforeEach(async ({ page }) => connect(page));
 
@@ -188,19 +199,19 @@ test('今日优先显示定时节点，悬浮看全部条目，记一段保留�
     '等 小王',
   );
   const form = page.getByRole('form', { name: '实际工作录入', exact: true });
-  await expect(form.getByRole('region', { name: '待选池', exact: true })).toBeVisible();
+  await expect(form.getByRole('region', { name: '待选池', exact: true })).toHaveCount(0);
   await form.getByLabel('具体事件', { exact: true }).fill('直接推进会议节点');
-  await form.getByLabel('开始时间', { exact: true }).fill('10:00');
-  await form.getByLabel('结束时间', { exact: true }).fill('11:00');
+  await selectTime(form, '10:00', '11:00');
   await list.getByRole('button', { name: '记一段 · 方案会议', exact: true }).click();
   await list.getByRole('button', { name: '记一段 · 找人要材料', exact: true }).click();
   await expect(form.getByLabel('具体事件', { exact: true })).toHaveValue('直接推进会议节点');
-  await expect(
-    form.getByRole('checkbox', { name: '本次完成 找人要材料', exact: true }),
-  ).not.toBeChecked();
-  await form.getByLabel('批注 · 方案会议', { exact: true }).fill('会议确定了下一步方案');
+
   await form.getByRole('button', { name: '保存实际工作', exact: true }).click();
-  await expect(form.getByLabel('具体事件', { exact: true })).toHaveValue('');
+  const mode = await associationMode(page);
+  await mode.getByLabel('批注 · 方案会议', { exact: true }).fill('会议确定了下一步方案');
+  await mode.getByRole('button', { name: '保存关联并返回已做', exact: true }).click();
+  await expect(mode).toHaveCount(0);
+  await resumeRecording(page);
   await expect(form.getByRole('region', { name: '已选择', exact: true })).toHaveCount(0);
   const state = await snapshot(page);
   expect(state.entries.find((e) => e.data.type === 'actual')?.data).toMatchObject({

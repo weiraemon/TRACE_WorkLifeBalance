@@ -1,5 +1,6 @@
+import { resumeRecording } from './helpers';
 import { expect, test } from '@playwright/test';
-import { connect, snapshot, write, nav, refresh } from './helpers';
+import { selectTime, connect, snapshot, write, nav, refresh } from './helpers';
 
 test.use({ timezoneId: 'Asia/Shanghai' });
 
@@ -52,12 +53,11 @@ test('午夜自动换日，空白记录更新时间，快速收集草稿保留',
   await expect(page.getByLabel('查看日期', { exact: true })).toHaveValue('2026-11-02');
   await expect(page.getByLabel('要做什么', { exact: true })).toHaveValue('留到明天继续安排');
   await page.getByRole('tab', { name: '今日已做', exact: true }).click();
-  await expect(form.locator('.capture-date')).toHaveText('记录日期 · 2026-11-02');
+  await expect(form.locator('.capture-date')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '重新加载 Vault', exact: true })).toBeEnabled();
   await page.clock.setSystemTime(new Date('2026-11-02T10:45:00+08:00'));
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(form.getByLabel('开始时间', { exact: true })).toHaveValue('10:15');
-  await expect(form.getByLabel('结束时间', { exact: true })).toHaveValue('10:45');
+  await expect(form.getByLabel('已选时间', { exact: true })).toHaveText('10:00–10:30 · 30 分钟');
 });
 
 test('跨天保留实际记录草稿及原日期时间，保存后使用新日期', async ({ page }) => {
@@ -65,22 +65,23 @@ test('跨天保留实际记录草稿及原日期时间，保存后使用新日�
   await connect(page);
   const form = page.getByRole('form', { name: '实际工作录入', exact: true });
   await form.getByLabel('具体事件', { exact: true }).fill('昨天的实验尚未提交');
-  await form.getByLabel('开始时间', { exact: true }).fill('22:00');
-  await form.getByLabel('结束时间', { exact: true }).fill('23:00');
+  await selectTime(form, '22:00', '23:00');
   await page.clock.setSystemTime(new Date('2026-11-02T09:00:00+08:00'));
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await expect(page.getByLabel('查看日期', { exact: true })).toHaveValue('2026-11-02');
   await expect(form.getByLabel('具体事件', { exact: true })).toHaveValue('昨天的实验尚未提交');
-  await expect(form.getByLabel('开始时间', { exact: true })).toHaveValue('22:00');
-  await expect(form.getByLabel('结束时间', { exact: true })).toHaveValue('23:00');
+  await expect(form.getByLabel('已选时间', { exact: true })).toHaveText('22:00–23:00 · 60 分钟');
   await expect(form.locator('.capture-date')).toContainText('正在记录历史日期');
   await expect(form.getByLabel('记录日期', { exact: true })).toHaveValue('2026-11-01');
   await form.getByRole('button', { name: '保存实际工作', exact: true }).click();
-  await expect(form.getByLabel('具体事件', { exact: true })).toHaveValue('');
+  await expect(
+    page.getByRole('button', { name: '编辑记录 · 昨天的实验尚未提交', exact: true }),
+  ).toBeVisible();
+  await resumeRecording(page);
   expect(
     (await snapshot(page)).entries.find((entry) => entry.data.type === 'actual')?.data,
   ).toMatchObject({ date: '2026-11-01', startTime: '22:00', endTime: '23:00' });
-  await expect(form.locator('.capture-date')).toHaveText('记录日期 · 2026-11-02');
+  await expect(page.getByLabel('查看日期', { exact: true })).toHaveValue('2026-11-01');
 });
 
 test('唤醒后立即同步新增安排，手动选择的历史日期不跳走', async ({ page }) => {

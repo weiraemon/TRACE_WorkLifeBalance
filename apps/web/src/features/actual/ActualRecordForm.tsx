@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { clock, localDay, type Snapshot } from '../../../../../packages/domain/index';
+import { clock, localDay, minutes, type Snapshot } from '../../../../../packages/domain/index';
 import { createRecord, save } from '../../api';
 import { Modal, Field, Button, ErrorMessage, DatePicker } from '../../components/ui';
 import { useDraftState, useDraftSaving, clearDraft } from '../drafts/useDraftState';
 import type { Editor } from '../../types/editor';
 import type { RecordSource } from './types';
 import { useActualAssociations } from './useActualAssociations';
-import { ActualAssociationPicker } from './ActualAssociationPicker';
+import { HalfHourGrid, halfHourAvailability } from './HalfHourGrid';
 export function ActualRecordForm({
   editor,
   snapshot,
@@ -15,6 +15,7 @@ export function ActualRecordForm({
   embedded = false,
   source,
   onDirtyChange,
+  onSaved,
 }: {
   editor: Editor;
   snapshot: Snapshot;
@@ -23,21 +24,22 @@ export function ActualRecordForm({
   embedded?: boolean;
   source?: RecordSource;
   onDirtyChange?: (dirty: boolean) => void;
+  onSaved?: (id: string, date: string) => void;
 }) {
   const old = editor.entry?.data.type === 'actual' ? editor.entry.data : undefined;
   const draftKey = `${snapshot.root}:actual:${old?.id ?? 'new'}`;
   const now = new Date(),
     minute = Math.min(1439, now.getHours() * 60 + now.getMinutes());
+  const defaultDate = String(editor.defaults?.date ?? localDay());
+  const availableDefaults = halfHourAvailability(snapshot.entries, defaultDate, old?.id);
+  const recent = availableDefaults.slice(0, Math.floor(minute / 30)).lastIndexOf(true);
+  const defaultSlot = Math.max(0, recent >= 0 ? recent : availableDefaults.findIndex(Boolean));
+  const defaultStart = String(editor.defaults?.startTime ?? clock(defaultSlot * 30));
+  const defaultEnd = String(editor.defaults?.endTime ?? clock((defaultSlot + 1) * 30));
   const [baseRevision] = useDraftState(draftKey + ':revision', editor.entry?.revision ?? '');
   const [id] = useDraftState(draftKey + ':id', () => old?.id ?? crypto.randomUUID());
-  const [startTime, setStart] = useDraftState(
-    draftKey + ':start',
-    old?.startTime ?? String(editor.defaults?.startTime ?? clock(Math.max(0, minute - 30))),
-  );
-  const [endTime, setEnd] = useDraftState(
-    draftKey + ':end',
-    old?.endTime ?? String(editor.defaults?.endTime ?? clock(minute || 1)),
-  );
+  const [startTime, setStart] = useDraftState(draftKey + ':start', old?.startTime ?? defaultStart);
+  const [endTime, setEnd] = useDraftState(draftKey + ':end', old?.endTime ?? defaultEnd);
   const [description, setDescription] = useDraftState(
     draftKey + ':description',
     old?.description ?? '',
@@ -65,25 +67,24 @@ export function ActualRecordForm({
   }, [associationState, onDirtyChange]);
   const [error, setError] = useState(''),
     [busy, setBusy] = useDraftSaving(draftKey);
-  const defaultDate = String(editor.defaults?.date ?? localDay());
   useEffect(() => {
     if (old || edited.current || selection.itemIds.length || selection.milestoneIds.length || busy)
       return;
     setDate(defaultDate);
-    setStart(String(editor.defaults?.startTime ?? clock(Math.max(0, minute - 30))));
-    setEnd(String(editor.defaults?.endTime ?? clock(minute || 1)));
+    setStart(defaultStart);
+    setEnd(defaultEnd);
   }, [
     old,
     defaultDate,
-    minute,
-    editor.defaults?.startTime,
-    editor.defaults?.endTime,
+    defaultStart,
+    defaultEnd,
     selection.itemIds.length,
     selection.milestoneIds.length,
     busy,
   ]);
   const form = (
     <form
+      className="actual-record-form"
       inert={busy}
       aria-label="实际工作录入"
       onChangeCapture={() => {
@@ -127,6 +128,7 @@ export function ActualRecordForm({
           clearDraft(draftKey);
           onDirtyChange?.(false);
           close();
+          onSaved?.(id, date);
         } catch (e) {
           setError(e instanceof Error ? e.message : String(e));
         } finally {
@@ -134,47 +136,49 @@ export function ActualRecordForm({
         }
       }}
     >
-      {embedded && (
-        <p className={`capture-date${date !== localDay() ? ' historical-date' : ''}`}>
-          记录日期 · {date}
-          {date !== localDay() && <strong>正在记录历史日期</strong>}
-        </p>
-      )}
-      <Field label="具体事件">
-        <textarea
-          required
-          autoFocus={!embedded}
-          rows={2}
-          placeholder="写下这段时间具体做了什么…"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-        />
-      </Field>
-      <div className="actual-time-fields">
-        {(!embedded || date !== defaultDate) && (
-          <Field label="记录日期" wide>
-            <DatePicker value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
-          </Field>
+      <div className="actual-entry-main">
+        {embedded && date !== localDay() && (
+          <p className={`capture-date${date !== localDay() ? ' historical-date' : ''}`}>
+            记录日期 · {date}
+            {date !== localDay() && <strong>正在记录历史日期</strong>}
+          </p>
         )}
-        <Field label="开始时间">
-          <input
-            type="time"
+        <HalfHourGrid
+          available={halfHourAvailability(snapshot.entries, date, old?.id)}
+          startTime={startTime}
+          endTime={endTime}
+          onChange={(start, end) => {
+            edited.current = true;
+            setEdited(true);
+            onDirtyChange?.(true);
+            setStart(start);
+            setEnd(end);
+          }}
+        />
+        <div className="actual-date-field">
+          {(!embedded || date !== defaultDate) && (
+            <Field label="记录日期" wide>
+              <DatePicker
+                value={date}
+                onChange={(e) => e.target.value && setDate(e.target.value)}
+              />
+            </Field>
+          )}
+        </div>
+        <output className="selected-time-range" aria-label="已选时间">
+          {startTime}–{endTime} · {minutes(endTime) - minutes(startTime)} 分钟
+        </output>
+        <Field label="具体事件">
+          <textarea
             required
-            value={startTime}
-            onChange={(e) => setStart(e.target.value)}
+            autoFocus={!embedded}
+            rows={4}
+            placeholder="做了什么？"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
           />
-        </Field>
-        <Field label="结束时间">
-          <input
-            type="time"
-            required
-            value={endTime === '24:00' ? '00:00' : endTime}
-            onChange={(e) => setEnd(e.target.value === '00:00' ? '24:00' : e.target.value)}
-          />
-          {endTime === '24:00' && <small>当日 24:00</small>}
         </Field>
       </div>
-      <ActualAssociationPicker snapshot={snapshot} selection={selection} date={date} />
       <ErrorMessage message={error} />
       <div className="form-actions">
         <Button

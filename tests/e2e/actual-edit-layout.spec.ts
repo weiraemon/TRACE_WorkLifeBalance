@@ -1,7 +1,46 @@
 import { test, expect } from '@playwright/test';
-import { connect, seed, write, refresh, snapshot, nav, headers, notes, localDay } from './helpers';
+import {
+  selectTime,
+  connect,
+  seed,
+  write,
+  refresh,
+  snapshot,
+  nav,
+  headers,
+  notes,
+  localDay,
+} from './helpers';
 
 test.beforeEach(async ({ page }) => connect(page));
+
+test('旧分钟记录编辑正文保留时间，重新选格后使用半小时边界', async ({ page }) => {
+  await seed(page);
+  const original = await write(page, 'actual', {
+    date: localDay(),
+    startTime: '10:15',
+    endTime: '10:45',
+    description: '旧分钟记录',
+  });
+  await refresh(page);
+  await page.getByRole('button', { name: '编辑记录 · 旧分钟记录', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByLabel('已选时间', { exact: true })).toHaveText('10:15–10:45 · 30 分钟');
+  await expect(dialog.locator('input[type="time"]')).toHaveCount(0);
+  await dialog.getByLabel('具体事件', { exact: true }).fill('仅修正事件正文');
+  await dialog.getByRole('button', { name: '保存实际工作', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(
+    (await snapshot(page)).entries.find((entry) => entry.data.id === original.data.id)?.data,
+  ).toMatchObject({ startTime: '10:15', endTime: '10:45' });
+  await page.getByRole('button', { name: '编辑记录 · 仅修正事件正文', exact: true }).click();
+  await selectTime(dialog, '11:00', '11:30');
+  await dialog.getByRole('button', { name: '保存实际工作', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(
+    (await snapshot(page)).entries.find((entry) => entry.data.id === original.data.id)?.data,
+  ).toMatchObject({ startTime: '11:00', endTime: '11:30' });
+});
 
 test('回顾和今日均可修改实际记录，改日期时间正文保留 ID、关联、完成事实与 Notes', async ({
   page,
@@ -25,8 +64,7 @@ test('回顾和今日均可修改实际记录，改日期时间正文保留 ID�
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByLabel('记录日期', { exact: true })).toHaveValue(localDay(previous));
   await dialog.getByLabel('记录日期', { exact: true }).fill(localDay());
-  await dialog.getByLabel('开始时间', { exact: true }).fill('15:00');
-  await dialog.getByLabel('结束时间', { exact: true }).fill('16:00');
+  await selectTime(dialog, '15:00', '16:00');
   await dialog.getByLabel('具体事件', { exact: true }).fill('修正后的讨论记录');
   await dialog.getByRole('button', { name: '保存实际工作', exact: true }).click();
   await expect(dialog).toHaveCount(0);
@@ -77,12 +115,10 @@ test('实际记录修改保留冲突草稿，不覆盖外部修改，也拒绝�
   await nav(page, '回顾');
   await page.getByRole('button', { name: '编辑记录 · 原始记录', exact: true }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByLabel('开始时间', { exact: true }).fill('11:30');
-  await dialog.getByLabel('结束时间', { exact: true }).fill('12:30');
-  await dialog.getByRole('button', { name: '保存实际工作', exact: true }).click();
-  await expect(dialog.getByRole('alert')).toContainText('重叠');
-  await dialog.getByLabel('开始时间', { exact: true }).fill('09:00');
-  await dialog.getByLabel('结束时间', { exact: true }).fill('10:00');
+  await expect(
+    dialog.getByRole('button', { name: '11:30–12:00，已记录', exact: true }),
+  ).toBeDisabled();
+  await selectTime(dialog, '09:00', '10:00');
   await dialog.getByLabel('具体事件', { exact: true }).fill('网页里的未保存修改');
   const response = await page.request.post('/api/business/v1/commands', {
     headers: await headers(page),
@@ -138,19 +174,16 @@ test('三栏与紧凑清单尺寸固定，可选字段直接可用，浮层和�
       .evaluate((el) => el.getBoundingClientRect().height),
   ).toBe(48);
   const form = page.getByRole('form', { name: '实际工作录入', exact: true });
-  await expect(form.getByRole('region', { name: '待选池', exact: true })).toBeVisible();
+  await expect(form.getByRole('region', { name: '待选池', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: '记一段 · 方案会议', exact: true }).click();
-  await form.getByLabel('批注 · 方案会议', { exact: true }).fill('长内容'.repeat(100));
+  await form.getByLabel('具体事件', { exact: true }).fill('长内容'.repeat(100));
   await expect.poll(sizes).toEqual(original);
   await page.getByRole('button', { name: '编辑记录 · 布局检查记录', exact: true }).click();
   const dialog = page.getByRole('dialog');
   const before = await dialog.boundingBox();
-  const dateField = await dialog.getByLabel('记录日期', { exact: true }).boundingBox();
-  const startField = await dialog.getByLabel('开始时间', { exact: true }).boundingBox();
-  const endField = await dialog.getByLabel('结束时间', { exact: true }).boundingBox();
-  expect(dateField!.y).toBe(startField!.y);
-  expect(startField!.y).toBe(endField!.y);
-  await expect(dialog.getByRole('region', { name: '待选池', exact: true })).toBeVisible();
+  await expect(dialog.getByLabel('记录日期', { exact: true })).toBeVisible();
+  await expect(dialog.getByLabel('已选时间', { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('region', { name: '待选池', exact: true })).toHaveCount(0);
   await dialog.getByLabel('具体事件', { exact: true }).fill('很长的编辑内容'.repeat(200));
   await expect.poll(() => dialog.boundingBox()).toEqual(before);
   await expect.poll(sizes).toEqual(original);

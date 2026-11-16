@@ -2,18 +2,21 @@ import { CheckIcon } from '@radix-ui/react-icons';
 import type { Todo, Entry } from '../../../../../packages/domain/index';
 import { isComplete } from '../../../../../packages/domain/workspace';
 import type { useWorkspaceDrag } from './useWorkspaceDrag';
+import type { AssociationSelection } from '../../types/editor';
 export function TodoRows({
   todos,
   entries,
   select,
   toggle,
   drag,
+  association,
 }: {
   todos: Todo[];
   entries: Entry[];
   select?: (id: string) => void;
   toggle?: (todo: Todo) => void;
   drag?: ReturnType<typeof useWorkspaceDrag>;
+  association?: AssociationSelection;
 }) {
   return (
     <ul className="todo-rows">
@@ -30,18 +33,18 @@ export function TodoRows({
               type="button"
               role="checkbox"
               className={`todo-check priority-${todo.importance}`}
-              aria-label={`完成 ${todo.title}`}
-              aria-checked={done}
+              aria-label={`${association ? '关联条目' : '完成'} ${todo.title}`}
+              aria-checked={association ? association.has(todo.id) : done}
               disabled={!toggle}
-              onClick={() => toggle?.(todo)}
+              onClick={() => (association ? association.toggle(todo.id) : toggle?.(todo))}
             >
-              {done && <CheckIcon />}
+              {(association ? association.has(todo.id) : done) && <CheckIcon />}
             </button>
             <div>
               {select ? (
                 <button
                   className="todo-title"
-                  onClick={() => select(todo.id)}
+                  onClick={() => (association ? association.toggle(todo.id) : select(todo.id))}
                   {...drag?.sourceProps(todo)}
                 >
                   {todo.kind === 'idea' ? 'IDEA · ' : ''}

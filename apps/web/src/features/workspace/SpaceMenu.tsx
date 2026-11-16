@@ -184,6 +184,18 @@ export function SpaceMenu({
               添加批注
             </button>
           )}
+          {!pool && (item.type === 'todo' || item.type === 'milestone') && (
+            <button
+              role="menuitem"
+              className="button"
+              onClick={() => {
+                edit({ type: item.type, entry: menu.entry, defaults: { associate: true } });
+                setMenu(null);
+              }}
+            >
+              关联做过的事
+            </button>
+          )}
           {!pool && (
             <button
               role="menuitem"

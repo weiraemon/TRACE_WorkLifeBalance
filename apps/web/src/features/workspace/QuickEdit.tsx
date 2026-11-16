@@ -33,6 +33,7 @@ export function QuickEdit({
     };
     const find = (element: EventTarget | null) => {
       if (!(element instanceof Element)) return null;
+      if (element.closest('.association-workspace-dialog')) return null;
       const trigger = element.closest<HTMLElement>(triggers);
       const container = trigger?.closest<HTMLElement>('[data-space-id]');
       const entry = snapshot.entries.find((e) => e.data.id === container?.dataset.spaceId);

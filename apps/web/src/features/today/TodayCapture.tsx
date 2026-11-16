@@ -14,6 +14,7 @@ export function TodayCapture({
   dismissEditor,
   reload,
   source,
+  onRecorded,
 }: {
   snapshot: Snapshot;
   date: string;
@@ -21,6 +22,7 @@ export function TodayCapture({
   dismissEditor: () => void;
   reload: () => Promise<void>;
   source?: RecordSource;
+  onRecorded: (id: string, date: string) => void;
 }) {
   const [mode, setMode] = useState(0);
   const [version, setVersion] = useState(0);
@@ -57,6 +59,7 @@ export function TodayCapture({
                 editor={editor ?? { type: 'actual', defaults: { date } }}
                 snapshot={snapshot}
                 reload={reload}
+                onSaved={onRecorded}
                 close={() => {
                   setIgnoredSource(source?.request);
                   setVersion((v) => v + 1);
