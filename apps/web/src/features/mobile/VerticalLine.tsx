@@ -1,11 +1,5 @@
-import { useRef, useState } from 'react';
-import {
-  CheckIcon,
-  DotsHorizontalIcon,
-  PlusIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-} from '@radix-ui/react-icons';
+import { useRef } from 'react';
+import { CheckIcon, PlusIcon } from '@radix-ui/react-icons';
 import {
   localDay,
   type BusinessLine,
@@ -20,7 +14,7 @@ import {
 } from '../../../../../packages/domain/workspace';
 import { Button } from '../../components/ui';
 import { NodeTagIcon } from '../workspace/NodeTagIcon';
-import type { Editor } from '../../types/editor';
+import type { AssociationSelection, Editor } from '../../types/editor';
 
 export function VerticalLine({
   snapshot,
@@ -30,7 +24,8 @@ export function VerticalLine({
   select,
   edit,
   toggle,
-  actions,
+  showOlder,
+  association,
 }: {
   snapshot: Snapshot;
   line: BusinessLine;
@@ -39,9 +34,9 @@ export function VerticalLine({
   select: (id: string) => void;
   edit: (editor: Editor) => void;
   toggle: (id: string) => void;
-  actions: (id: string) => void;
+  showOlder: boolean;
+  association?: AssociationSelection;
 }) {
-  const [older, setOlder] = useState(false);
   const gesture = useRef<{ x: number; y: number } | null>(null);
   const suppressClick = useRef(false);
   const index = lines.findIndex((item) => item.id === line.id);
@@ -50,12 +45,15 @@ export function VerticalLine({
     if (next) changeLine(next.id);
   };
   const visible = (item: Milestone | Todo) =>
-    older || !shouldHideCompleted(item, snapshot.entries, localDay());
+    showOlder || !shouldHideCompleted(item, snapshot.entries, localDay());
   const points = snapshot.entries
-    .map((entry) => entry.data)
-    .filter(
-      (item): item is Milestone =>
-        item.type === 'milestone' && item.lineId === line.id && visible(item),
+    .flatMap(({ data }) =>
+      data.type === 'milestone' &&
+      data.lineId === line.id &&
+      visible(data) &&
+      (!association || !isComplete(data, snapshot.entries))
+        ? [data]
+        : [],
     )
     .sort(compareMilestones);
   return (
@@ -64,7 +62,7 @@ export function VerticalLine({
       aria-label={`业务线 · ${line.title}`}
       onPointerDown={(event) => {
         suppressClick.current = false;
-        if ((event.target as Element).closest('input, textarea, select, a')) return;
+        if ((event.target as Element).closest('input, textarea, select')) return;
         gesture.current = { x: event.clientX, y: event.clientY };
       }}
       onPointerCancel={() => {
@@ -88,44 +86,36 @@ export function VerticalLine({
           suppressClick.current = false;
         }
       }}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget.querySelector('h1')) return;
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+          event.preventDefault();
+          change(event.key === 'ArrowRight' ? 1 : -1);
+        }
+      }}
     >
-      <div className="mobile-line-switcher">
-        <Button disabled={index <= 0} aria-label="上一条业务线" onClick={() => change(-1)}>
-          <ChevronLeftIcon />
-        </Button>
-        <span aria-live="polite">
-          {index + 1} / {lines.length} · 左右滑动切换
-        </span>
-        <Button
-          disabled={index >= lines.length - 1}
-          aria-label="下一条业务线"
-          onClick={() => change(1)}
-        >
-          <ChevronRightIcon />
-        </Button>
-      </div>
       <div className="mobile-line-title">
-        <h1>{line.title}</h1>
-        <Button aria-label={`业务线操作 · ${line.title}`} onClick={() => actions(line.id)}>
-          <DotsHorizontalIcon />
+        <h1 data-space-id={line.id} tabIndex={0}>
+          {line.title}
+        </h1>
+        <Button
+          aria-label="添加节点"
+          onClick={() => edit({ type: 'milestone', defaults: { lineId: line.id } })}
+        >
+          <PlusIcon />
         </Button>
       </div>
-      <label className="mobile-show-older">
-        <input
-          type="checkbox"
-          checked={older}
-          onChange={(event) => setOlder(event.target.checked)}
-        />
-        显示较早完成的内容
-      </label>
       <div className="mobile-vertical-track">
         {points.map((point) => {
           const done = isComplete(point, snapshot.entries);
           const todos = snapshot.entries
-            .map((entry) => entry.data)
-            .filter(
-              (item): item is Todo =>
-                item.type === 'todo' && item.milestoneId === point.id && visible(item),
+            .flatMap(({ data }) =>
+              data.type === 'todo' &&
+              data.milestoneId === point.id &&
+              visible(data) &&
+              (!association || !isComplete(data, snapshot.entries))
+                ? [data]
+                : [],
             )
             .sort(
               (a, b) =>
@@ -140,59 +130,22 @@ export function VerticalLine({
               data-space-id={point.id}
               aria-label={`${point.pool ? '待办池' : '节点'} · ${point.title}`}
             >
-              <div className="mobile-node-meta">
-                {point.pool ? (
-                  <span>未安排期限</span>
-                ) : (
-                  <>
-                    <button
-                      aria-label={`调整日期 · ${point.title}`}
-                      onClick={() => actions(point.id)}
-                    >
-                      {point.dueDate ?? '日期未定'}
-                      {point.dueTime && <strong>{point.dueTime}</strong>}
-                    </button>
-                    <span>{point.tags.join(' · ')}</span>
-                    {point.location && <span>{point.location}</span>}
-                  </>
-                )}
-                <div className="mobile-node-tools">
-                  {!point.pool && (
-                    <Button
-                      aria-label={`节点操作 · ${point.title}`}
-                      onClick={() => actions(point.id)}
-                    >
-                      <DotsHorizontalIcon />
-                    </Button>
-                  )}
-                  <Button
-                    onClick={() => edit({ type: 'todo', defaults: { milestoneId: point.id } })}
-                  >
-                    <PlusIcon />
-                    待办
-                  </Button>
-                  <Button
-                    onClick={() =>
-                      edit({ type: 'todo', defaults: { milestoneId: point.id, kind: 'idea' } })
-                    }
-                  >
-                    <PlusIcon />
-                    想法
-                  </Button>
-                </div>
-              </div>
-              <div className="mobile-node-axis">
-                {point.pool ? (
-                  <span className="mobile-pool-dot" />
-                ) : (
+              <div className="mobile-node-heading">
+                {!point.pool && (
                   <button
                     className={`mobile-node-dot priority-${point.importance}`}
                     role="checkbox"
-                    aria-checked={done}
-                    aria-label={`完成节点 ${point.title}`}
-                    onClick={() => toggle(point.id)}
+                    aria-checked={association ? association.has(point.id) : done}
+                    aria-label={`${association ? '关联节点' : '完成节点'} ${point.title}`}
+                    onClick={() => (association ? association.toggle(point.id) : toggle(point.id))}
                   >
-                    {done ? (
+                    {association ? (
+                      association.has(point.id) ? (
+                        <CheckIcon />
+                      ) : (
+                        <span />
+                      )
+                    ) : done ? (
                       <CheckIcon />
                     ) : point.tags[0] ? (
                       <NodeTagIcon tag={point.tags[0]} />
@@ -201,67 +154,67 @@ export function VerticalLine({
                     )}
                   </button>
                 )}
+                <button
+                  className={`mobile-node-name${done ? ' mobile-completed' : ''}`}
+                  onClick={() =>
+                    association ? !point.pool && association.toggle(point.id) : select(point.id)
+                  }
+                >
+                  <strong>
+                    {point.pool
+                      ? '待办池'
+                      : `${point.dueDate ?? '未定日期'}${point.dueTime ? ` ${point.dueTime}` : ''}`}
+                  </strong>
+                  {!point.pool && <span>{point.title}</span>}
+                </button>
+                <Button
+                  aria-label={`添加 TODO / IDEA · ${point.title}`}
+                  onClick={() => edit({ type: 'todo', defaults: { milestoneId: point.id } })}
+                >
+                  <PlusIcon />
+                </Button>
               </div>
-              <div className="mobile-node-content">
-                <div className="mobile-node-heading">
-                  <button
-                    className={done ? 'mobile-completed' : ''}
-                    onClick={() => select(point.id)}
-                  >
-                    {point.title}
-                  </button>
-                </div>
-                <ul className="mobile-todos">
-                  {todos.map((todo) => {
-                    const completed = isComplete(todo, snapshot.entries);
-                    return (
-                      <li key={todo.id} data-space-id={todo.id}>
-                        <button
-                          className={`mobile-todo-check priority-${todo.importance}`}
-                          role="checkbox"
-                          aria-checked={completed}
-                          aria-label={`完成 ${todo.title}`}
-                          onClick={() => toggle(todo.id)}
-                        >
-                          {completed && <CheckIcon />}
-                        </button>
-                        <button
-                          className={`mobile-todo-title${completed ? ' mobile-completed' : ''}`}
-                          onClick={() => select(todo.id)}
-                        >
-                          {todo.kind === 'idea' && <small>IDEA</small>}
-                          {todo.title}
-                          {(todo.dueDate || todo.direction !== 'self') && (
-                            <small>
-                              {todo.dueDate}
-                              {todo.direction !== 'self'
-                                ? ` · ${todo.direction === 'from' ? '等' : '找'} ${todo.person}`
-                                : ''}
-                            </small>
-                          )}
-                        </button>
-                        <Button
-                          aria-label={`条目操作 · ${todo.title}`}
-                          onClick={() => actions(todo.id)}
-                        >
-                          <DotsHorizontalIcon />
-                        </Button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
+              <ul className="mobile-todos">
+                {todos.map((todo) => {
+                  const completed = isComplete(todo, snapshot.entries);
+                  return (
+                    <li key={todo.id} data-space-id={todo.id}>
+                      <button
+                        className={`mobile-todo-check priority-${todo.importance}`}
+                        role="checkbox"
+                        aria-checked={association ? association.has(todo.id) : completed}
+                        aria-label={`${association ? '关联条目' : '完成'} ${todo.title}`}
+                        onClick={() =>
+                          association ? association.toggle(todo.id) : toggle(todo.id)
+                        }
+                      >
+                        {(association ? association.has(todo.id) : completed) && <CheckIcon />}
+                      </button>
+                      <button
+                        className={`mobile-todo-title${completed ? ' mobile-completed' : ''}`}
+                        onClick={() =>
+                          association ? association.toggle(todo.id) : select(todo.id)
+                        }
+                      >
+                        {todo.kind === 'idea' && <small>IDEA · </small>}
+                        {todo.title}
+                        {(todo.dueDate || todo.direction !== 'self') && (
+                          <small className="mobile-todo-meta">
+                            {todo.dueDate}
+                            {todo.direction !== 'self'
+                              ? ` · ${todo.direction === 'from' ? '等' : '找'} ${todo.person}`
+                              : ''}
+                          </small>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             </article>
           );
         })}
       </div>
-      <Button
-        className="mobile-primary-add"
-        onClick={() => edit({ type: 'milestone', defaults: { lineId: line.id } })}
-      >
-        <PlusIcon />
-        添加节点
-      </Button>
     </section>
   );
 }

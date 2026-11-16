@@ -93,6 +93,7 @@ export function SpaceDetails({
           id={item.id}
           revision={note?.revision}
           editable={item.type === 'milestone' || item.type === 'todo'}
+          startEditing={item.type === 'milestone' || item.type === 'todo'}
           reload={reload}
           onDirtyChange={onDirtyChange}
         />

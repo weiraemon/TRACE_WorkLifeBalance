@@ -6,7 +6,7 @@ import { connect, seed, nav, write, refresh, snapshot, notes, headers, localDay 
 
 test.beforeEach(async ({ page }) => connect(page));
 
-test('知识页复用业务导航，可编辑并预览业务线 Notes 的节点、TODO 与 IDEA 层级，并同步外部修改', async ({
+test('工作空间中直接查看并编辑业务线 Notes，保留节点、TODO 与 IDEA 层级及外部修改', async ({
   page,
 }) => {
   const { project, line, node, todo, idea } = await seed(page);
@@ -38,13 +38,12 @@ test('知识页复用业务导航，可编辑并预览业务线 Notes 的节点�
   });
   await refresh(page);
   const before = await notes(page, line.data.id);
-  await nav(page, '知识');
+  await nav(page, '工作空间');
   const explorer = page.getByRole('navigation', { name: '业务导航', exact: true });
-  const content = page.getByRole('region', { name: '业务线 Notes', exact: true });
-  await expect(content).toContainText('选择一条业务线查看 Notes');
-  await explorer.getByRole('button', { name: '定位业务线 · 论文研究', exact: true }).click();
+  const content = page.getByRole('complementary', { name: '工作详情', exact: true });
+  await page.locator('.business-track .line-title').filter({ hasText: '论文研究' }).click();
   await expect(
-    content.getByRole('heading', { level: 1, name: '论文研究', exact: true }),
+    content.getByRole('heading', { level: 2, name: '论文研究', exact: true }),
   ).toBeVisible();
   await expect(
     content.getByRole('heading', { level: 2, name: `${localDay()} 09:00 · 方案会议`, exact: true }),
@@ -65,7 +64,7 @@ test('知识页复用业务导航，可编辑并预览业务线 Notes 的节点�
   await expect(
     page.getByRole('button', { name: '编辑内容 · 方案会议', exact: true }),
   ).toBeVisible();
-  await expect(page.getByRole('button', { name: '新增项目', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '新增项目', exact: true })).toHaveCount(1);
   expect(await notes(page, line.data.id)).toBe(before);
 
   await page.getByRole('button', { name: '编辑内容 · 方案会议', exact: true }).click();
@@ -107,7 +106,7 @@ test('知识页复用业务导航，可编辑并预览业务线 Notes 的节点�
   await page.setViewportSize({ width: 600, height: 1000 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await expect(
-    content.getByRole('heading', { level: 1, name: '论文研究', exact: true }),
+    content.getByRole('heading', { level: 2, name: '论文研究', exact: true }),
   ).toBeVisible();
   await page.screenshot({ path: '.test-vault/knowledge-notes-mobile.png', fullPage: true });
 });
@@ -116,7 +115,7 @@ test('快速切换业务线不混入迟到的 Notes，搜索和无匹配提示�
   const { project, line } = await seed(page);
   const other = await write(page, 'workline', { title: '另一条线', projectId: project.data.id });
   await refresh(page);
-  await nav(page, '知识');
+  await nav(page, '工作空间');
   await page.route('**/api/business/v1/commands', async (route) => {
     const input = route.request().postDataJSON();
     if (input.type === 'notes.read' && input.id === line.data.id)
@@ -124,22 +123,23 @@ test('快速切换业务线不混入迟到的 Notes，搜索和无匹配提示�
     await route.continue();
   });
   const explorer = page.getByRole('navigation', { name: '业务导航', exact: true });
-  const content = page.getByRole('region', { name: '业务线 Notes', exact: true });
-  await explorer.getByRole('button', { name: '定位业务线 · 论文研究', exact: true }).click();
-  await explorer.getByRole('button', { name: '定位业务线 · 另一条线', exact: true }).click();
+  const content = page.getByRole('complementary', { name: '工作详情', exact: true });
+  await page.locator('.business-track .line-title').filter({ hasText: '论文研究' }).click();
+  await page.locator('.business-track .line-title').filter({ hasText: '另一条线' }).click();
   await expect(
-    content.getByRole('heading', { level: 1, name: '另一条线', exact: true }),
+    content.getByRole('heading', { level: 2, name: '另一条线', exact: true }),
   ).toBeVisible();
   await page.waitForTimeout(400);
-  await expect(content.getByRole('heading', { level: 1 })).toHaveText('另一条线');
   await expect(
-    explorer.getByRole('button', { name: '定位业务线 · 另一条线', exact: true }),
-  ).toHaveAttribute('aria-current', 'location');
+    content.getByRole('heading', { level: 2, name: '另一条线', exact: true }),
+  ).toBeVisible();
   await page.getByLabel('搜索工作', { exact: true }).fill('不存在的名称');
-  await expect(content).toContainText('没有匹配的工作');
+  await expect(page.locator('.workspace-content')).toContainText('没有匹配的工作');
   await expect(explorer.locator('.workspace-nav-tree button')).toHaveCount(0);
   await page.getByLabel('搜索工作', { exact: true }).fill('');
-  await explorer.getByRole('button', { name: '定位业务线 · 论文研究', exact: true }).click();
-  await expect(content.getByRole('heading', { level: 1 })).toHaveText('论文研究');
+  await page.locator('.business-track .line-title').filter({ hasText: '论文研究' }).click();
+  await expect(
+    content.getByRole('heading', { level: 2, name: '论文研究', exact: true }),
+  ).toBeVisible();
   expect((await snapshot(page)).entries.find((e) => e.data.id === other.data.id)).toBeDefined();
 });

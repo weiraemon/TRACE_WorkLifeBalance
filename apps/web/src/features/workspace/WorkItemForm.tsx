@@ -12,6 +12,7 @@ import type { Editor } from '../../types/editor';
 import { WorkLocationPicker, initialLocation } from './WorkLocationPicker';
 import { useDraftState, useDraftSaving, clearDraft } from '../drafts/useDraftState';
 import { parseQuickCapture } from '../capture/quickCaptureParser';
+import { NodeActualMatcher } from '../actual/NodeActualMatcher';
 export const spaceLabel = { project: '项目', workline: '业务线', milestone: '节点', todo: '条目' };
 export function WorkItemForm({
   editor,
@@ -19,16 +20,19 @@ export function WorkItemForm({
   close,
   reload,
   onDirtyChange,
+  actions,
 }: {
   editor: Editor;
   snapshot: Snapshot;
   close: () => void;
   reload: () => Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
+  actions?: () => void;
 }) {
   const type = editor.type as keyof typeof spaceLabel;
   const item = editor.entry && isSpaceItem(editor.entry.data) ? editor.entry.data : undefined;
   const defaults = editor.defaults ?? {};
+  const [matching, setMatching] = useState(Boolean(defaults.associate));
   const draftKey = `${snapshot.root}:work:${item?.id ?? JSON.stringify([type, defaults])}`;
   const [baseRevision] = useDraftState(draftKey + ':revision', editor.entry?.revision ?? '');
   const [wasEdited, setEdited] = useDraftState(draftKey + ':edited', false);
@@ -99,6 +103,15 @@ export function WorkItemForm({
     if (!location.lineId && line?.data.type === 'workline')
       setLocation({ projectId: line.data.projectId, lineId: line.data.id, milestoneId: '' });
   };
+  if (matching && editor.entry && (type === 'milestone' || type === 'todo'))
+    return (
+      <NodeActualMatcher
+        entry={editor.entry}
+        snapshot={snapshot}
+        reload={reload}
+        close={() => (defaults.associate ? closeForm() : setMatching(false))}
+      />
+    );
   return (
     <Modal
       className="editor-dialog"
@@ -205,6 +218,11 @@ export function WorkItemForm({
             )}
           </div>
         )}
+        {item && (type === 'todo' || (type === 'milestone' && !pool)) && (
+          <Button type="button" onClick={() => setMatching(true)}>
+            关联做过的事
+          </Button>
+        )}
         <Field label="标题">
           <input required autoFocus value={title} onChange={(e) => setTitle(e.target.value)} />
         </Field>
@@ -223,6 +241,10 @@ export function WorkItemForm({
             value={location}
             onChange={setLocation}
             originalMilestoneId={item?.type === 'todo' ? item.milestoneId : undefined}
+            compact={
+              (type === 'todo' || type === 'milestone') &&
+              Boolean(item || defaults.lineId || defaults.milestoneId)
+            }
           />
         )}
         <fieldset className="primary-settings">
@@ -292,6 +314,11 @@ export function WorkItemForm({
         </div>
         <ErrorMessage message={error} />
         <div className="form-actions">
+          {actions && (
+            <Button type="button" onClick={actions}>
+              更多操作
+            </Button>
+          )}
           <Button type="button" onClick={closeForm}>
             取消
           </Button>

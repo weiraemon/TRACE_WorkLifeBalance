@@ -42,14 +42,17 @@ export function WorkLocationPicker({
   value,
   onChange,
   originalMilestoneId,
+  compact = false,
 }: {
   entries: Entry[];
   level: 'workline' | 'milestone' | 'todo';
   value: WorkLocation;
   onChange: (value: WorkLocation) => void;
   originalMilestoneId?: string;
+  compact?: boolean;
 }) {
   const records = entries.map((e) => e.data);
+  const line = records.find((record) => record.id === value.lineId && record.type === 'workline');
   const options = (items: typeof records) => (
     <>
       <option value="">请选择</option>
@@ -63,65 +66,74 @@ export function WorkLocationPicker({
   const poolId = (lineId: string) =>
     records.find((r) => r.type === 'milestone' && r.lineId === lineId && r.pool)?.id ?? '';
   return (
-    <div className="location-picker">
-      <Field label="所属项目">
-        <select
-          required
-          value={value.projectId}
-          onChange={(e) => {
-            const lines = records.filter(
-              (r) =>
-                r.type === 'workline' && r.projectId === e.target.value && !isComplete(r, entries),
-            );
-            const lineId = lines.length === 1 ? lines[0].id : '';
-            onChange({ projectId: e.target.value, lineId, milestoneId: poolId(lineId) });
-          }}
-        >
-          {options(
-            records.filter(
-              (r) => r.type === 'project' && (!isComplete(r, entries) || r.id === value.projectId),
-            ),
-          )}
-        </select>
-      </Field>
-      {level !== 'workline' && (
-        <Field label="所属业务线">
+    <details
+      className={`location-context${compact ? '' : ' location-context-expanded'}`}
+      open={!compact}
+    >
+      <summary>归属 · {line?.type === 'workline' ? line.title : '选择项目与业务线'}</summary>
+      <div className="location-picker">
+        <Field label="所属项目">
           <select
             required
-            value={value.lineId}
-            onChange={(e) =>
-              onChange({ ...value, lineId: e.target.value, milestoneId: poolId(e.target.value) })
-            }
-          >
-            {options(
-              records.filter(
+            value={value.projectId}
+            onChange={(e) => {
+              const lines = records.filter(
                 (r) =>
                   r.type === 'workline' &&
-                  r.projectId === value.projectId &&
-                  (!isComplete(r, entries) || r.id === value.lineId),
-              ),
-            )}
-          </select>
-        </Field>
-      )}
-      {level === 'todo' && (
-        <Field label="所属节点">
-          <select
-            required
-            value={value.milestoneId}
-            onChange={(e) => onChange({ ...value, milestoneId: e.target.value })}
+                  r.projectId === e.target.value &&
+                  !isComplete(r, entries),
+              );
+              const lineId = lines.length === 1 ? lines[0].id : '';
+              onChange({ projectId: e.target.value, lineId, milestoneId: poolId(lineId) });
+            }}
           >
             {options(
               records.filter(
                 (r) =>
-                  r.type === 'milestone' &&
-                  r.lineId === value.lineId &&
-                  (!isComplete(r, entries) || r.id === originalMilestoneId),
+                  r.type === 'project' && (!isComplete(r, entries) || r.id === value.projectId),
               ),
             )}
           </select>
         </Field>
-      )}
-    </div>
+        {level !== 'workline' && (
+          <Field label="所属业务线">
+            <select
+              required
+              value={value.lineId}
+              onChange={(e) =>
+                onChange({ ...value, lineId: e.target.value, milestoneId: poolId(e.target.value) })
+              }
+            >
+              {options(
+                records.filter(
+                  (r) =>
+                    r.type === 'workline' &&
+                    r.projectId === value.projectId &&
+                    (!isComplete(r, entries) || r.id === value.lineId),
+                ),
+              )}
+            </select>
+          </Field>
+        )}
+        {level === 'todo' && (
+          <Field label="所属节点">
+            <select
+              required
+              value={value.milestoneId}
+              onChange={(e) => onChange({ ...value, milestoneId: e.target.value })}
+            >
+              {options(
+                records.filter(
+                  (r) =>
+                    r.type === 'milestone' &&
+                    r.lineId === value.lineId &&
+                    (!isComplete(r, entries) || r.id === originalMilestoneId),
+                ),
+              )}
+            </select>
+          </Field>
+        )}
+      </div>
+    </details>
   );
 }

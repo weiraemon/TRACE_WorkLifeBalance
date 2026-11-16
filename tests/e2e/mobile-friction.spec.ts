@@ -1,5 +1,6 @@
+import { associationMode } from './helpers';
 import { expect, test } from '@playwright/test';
-import { connect, seed, write, snapshot, headers, localDay, notes } from './helpers';
+import { selectTime, connect, seed, write, snapshot, headers, localDay, notes } from './helpers';
 
 test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 test.beforeEach(async ({ page }) => {
@@ -17,15 +18,7 @@ const nav = (page: import('@playwright/test').Page, name: string) =>
 test('实际正文、时间、关联和批注跨页面、录入类型、刷新及网页入口保留', async ({ page }) => {
   await nav(page, '编辑');
   await page.getByLabel('具体事件', { exact: true }).fill('应当留存的实际草稿');
-  await page.getByLabel('开始时间', { exact: true }).fill('08:15');
-  await expect(page.getByLabel('结束时间', { exact: true })).toHaveAttribute('type', 'time');
-  await page.getByLabel('结束时间', { exact: true }).fill('09:15');
-  await page
-    .locator('.actual-pool-choice')
-    .filter({ hasText: '找人要材料' })
-    .getByRole('button', { name: '加入', exact: true })
-    .click();
-  await page.getByLabel('批注 · 找人要材料', { exact: true }).fill('关联批注也要保留');
+  await selectTime(page, '08:00', '09:00');
   await page.getByRole('button', { name: '待办／节点', exact: true }).click();
   await page.getByLabel('要做什么', { exact: true }).fill('另一个收集草稿');
   await nav(page, '今日已做');
@@ -35,15 +28,11 @@ test('实际正文、时间、关联和批注跨页面、录入类型、刷新�
   await expect(page.getByLabel('具体事件', { exact: true })).toHaveValue('应当留存的实际草稿');
   await page.reload();
   await nav(page, '编辑');
-  await expect(page.getByLabel('开始时间', { exact: true })).toHaveValue('08:15');
-  await expect(page.getByLabel('结束时间', { exact: true })).toHaveValue('09:15');
-  await expect(page.getByLabel('批注 · 找人要材料', { exact: true })).toHaveValue(
-    '关联批注也要保留',
-  );
+  await expect(page.getByLabel('已选时间', { exact: true })).toHaveText('08:00–09:00 · 60 分钟');
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('/');
   await expect(page.getByLabel('具体事件', { exact: true })).toHaveValue('应当留存的实际草稿');
-  await expect(page.getByLabel('结束时间', { exact: true })).toHaveAttribute('type', 'time');
+  await expect(page.getByLabel('结束时间', { exact: true })).toHaveCount(0);
 });
 
 test('过期事件完整滚动，改期等待中可用 Android 返回键关闭', async ({ page }) => {
@@ -105,8 +94,17 @@ test('业务线入口的识别保持归属，待选节点按当天优先且删�
   await expect(dialog.getByLabel('所属项目', { exact: true })).toHaveValue(projectId);
   await expect(dialog.getByLabel('所属业务线', { exact: true })).toHaveValue(line.data.id);
   await dialog.getByRole('button', { name: '取消', exact: true }).click();
-  await nav(page, '编辑');
-  await expect(page.locator('.actual-pool-choice').first()).toContainText('今日优先节点');
+  await write(page, 'actual', {
+    date: localDay(),
+    startTime: '04:00',
+    endTime: '04:30',
+    description: '用于选择工作空间',
+  });
+  await page.reload();
+  await nav(page, '今日已做');
+  const mode = await associationMode(page);
+  await mode.getByRole('button', { name: '打开业务线 论文研究', exact: true }).click();
+  await expect(mode.locator('.mobile-node-name').first()).toContainText('今日优先节点');
   const auth = await headers(page);
   const preview = await page.request
     .post('/api/business/v1/commands', {
@@ -125,10 +123,12 @@ test('业务线入口的识别保持归属，待选节点按当天优先且删�
     },
   });
   await page.reload();
-  await nav(page, '编辑');
-  await expect(page.locator('.actual-pool-choice').filter({ hasText: '今日优先节点' })).toHaveCount(
-    0,
-  );
+  await nav(page, '今日已做');
+  const nextMode = await associationMode(page);
+  await nextMode.getByRole('button', { name: '打开业务线 论文研究', exact: true }).click();
+  await expect(
+    nextMode.getByRole('checkbox', { name: '关联节点 今日优先节点', exact: true }),
+  ).toHaveCount(0);
 });
 
 test('已做记录支持长按和网页右键删除', async ({ page }) => {
@@ -190,8 +190,7 @@ test('恢复实际编辑草稿时保留原版本，外部更新后仍拒绝覆�
 test('保存等待中切页再返回保持忙碌状态，保护正在发布的草稿', async ({ page }) => {
   await nav(page, '编辑');
   await page.getByLabel('具体事件', { exact: true }).fill('正在发布的草稿');
-  await page.getByLabel('开始时间', { exact: true }).fill('05:00');
-  await page.getByLabel('结束时间', { exact: true }).fill('05:30');
+  await selectTime(page, '05:00', '05:30');
   let release!: () => void;
   const hold = new Promise<void>((resolve) => {
     release = resolve;
@@ -209,14 +208,17 @@ test('保存等待中切页再返回保持忙碌状态，保护正在发布的�
     true,
   );
   release();
-  await expect(page.getByLabel('具体事件', { exact: true })).toHaveValue('');
+  await expect(
+    page.getByRole('button', { name: '编辑记录 · 正在发布的草稿', exact: true }),
+  ).toBeVisible();
 });
 
 test('随手记保存中切页再返回，发布完成清理草稿且正文只追加一次', async ({ page }) => {
   const data = await snapshot(page);
   const line = data.entries.find((entry) => entry.data.type === 'workline')!;
-  await nav(page, '笔记');
+  await nav(page, '工作空间');
   await page.getByRole('button', { name: '打开业务线 论文研究', exact: true }).click();
+  await page.locator('.workspace-line-notes > summary').click();
   await page.getByLabel('随手记', { exact: true }).fill('跨页面等待的唯一随手记');
   let release!: () => void;
   const hold = new Promise<void>((resolve) => {
@@ -227,9 +229,10 @@ test('随手记保存中切页再返回，发布完成清理草稿且正文只�
     await route.continue();
   });
   await page.getByRole('button', { name: '记到笔记', exact: true }).click();
+  await nav(page, '今日已做');
   await nav(page, '工作空间');
-  await nav(page, '笔记');
   await page.getByRole('button', { name: '打开业务线 论文研究', exact: true }).click();
+  await page.locator('.workspace-line-notes > summary').click();
   await expect(page.getByRole('button', { name: '记到笔记', exact: true })).toBeDisabled();
   release();
   await expect(page.getByLabel('随手记', { exact: true })).toHaveValue('');

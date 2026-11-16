@@ -1,8 +1,19 @@
+import { associationMode, resumeRecording } from './helpers';
 import { test, expect, type Route } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { recordContract } from '../../packages/domain/index';
-import { connect, write, refresh, snapshot, headers, localDay, nav, notes } from './helpers';
+import {
+  selectTime,
+  connect,
+  write,
+  refresh,
+  snapshot,
+  headers,
+  localDay,
+  nav,
+  notes,
+} from './helpers';
 
 test.beforeEach(async ({ page }) => connect(page));
 
@@ -27,12 +38,14 @@ for (const children of [false, true]) {
     await refresh(page);
     await page.getByRole('button', { name: '记一段 · 例会', exact: true }).click();
     const form = page.getByRole('form', { name: '实际工作录入', exact: true });
-    await form.getByRole('checkbox', { name: '本次完成节点 例会', exact: true }).check();
     await form.getByLabel('具体事件', { exact: true }).fill('完成例会');
-    await form.getByLabel('开始时间', { exact: true }).fill('09:00');
-    await form.getByLabel('结束时间', { exact: true }).fill('09:30');
+    await selectTime(form, '09:00', '09:30');
     await form.getByRole('button', { name: '保存实际工作', exact: true }).click();
-    await expect(form.getByLabel('具体事件', { exact: true })).toHaveValue('');
+    const mode = await associationMode(page);
+    await mode.getByRole('checkbox', { name: '本次完成节点 例会', exact: true }).check();
+    await mode.getByRole('button', { name: '保存关联并返回已做', exact: true }).click();
+    await expect(mode).toHaveCount(0);
+    await resumeRecording(page);
     await expect(page.getByRole('checkbox', { name: '完成节点 例会', exact: true })).toBeChecked();
     await expect(page.locator('.today-todos > li').first()).toContainText('后续安排');
     await nav(page, '工作空间');
@@ -83,13 +96,15 @@ test('迟到的旧快照不能覆盖实际完成、重要性、日期属性和 N
   expect(response.ok()).toBe(true);
   await page.getByRole('button', { name: '记一段 · 例会', exact: true }).click();
   const form = page.getByRole('form', { name: '实际工作录入', exact: true });
-  await form.getByRole('checkbox', { name: '本次完成节点 例会', exact: true }).check();
-  await form.getByLabel('批注 · 例会', { exact: true }).fill('唯一一份会议结论');
   await form.getByLabel('具体事件', { exact: true }).fill('完成例会');
-  await form.getByLabel('开始时间', { exact: true }).fill('09:00');
-  await form.getByLabel('结束时间', { exact: true }).fill('09:30');
+  await selectTime(form, '09:00', '09:30');
   await form.getByRole('button', { name: '保存实际工作', exact: true }).click();
-  await expect(form.getByLabel('具体事件', { exact: true })).toHaveValue('');
+  const mode = await associationMode(page);
+  await mode.getByRole('checkbox', { name: '本次完成节点 例会', exact: true }).check();
+  await mode.getByLabel('批注 · 例会', { exact: true }).fill('唯一一份会议结论');
+  await mode.getByRole('button', { name: '保存关联并返回已做', exact: true }).click();
+  await expect(mode).toHaveCount(0);
+  await resumeRecording(page);
   const checkbox = page.getByRole('checkbox', { name: '完成节点 例会', exact: true });
   await expect(checkbox).toBeChecked();
   const delayedResponse = page.waitForResponse((r) =>

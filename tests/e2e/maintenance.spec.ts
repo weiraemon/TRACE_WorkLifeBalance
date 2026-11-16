@@ -213,9 +213,8 @@ test('静蓝主题覆盖各页并记住选择，切换不改变数据或重要�
   await page.screenshot({ path: '.test-vault/theme-blue-today.png', fullPage: true });
   await nav(page, '工作空间');
   await page.screenshot({ path: '.test-vault/theme-blue-workspace.png', fullPage: true });
-  await nav(page, '知识');
-  await page.getByRole('button', { name: '定位业务线 · 论文研究', exact: true }).click();
-  await expect(page.getByRole('region', { name: '业务线 Notes', exact: true })).toBeVisible();
+  await page.locator('.business-track .line-title').first().click();
+  await expect(page.getByRole('complementary', { name: '工作详情', exact: true })).toBeVisible();
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'blue');
   await expect(page.getByRole('region', { name: '做了什么', exact: true })).toBeVisible();
@@ -297,7 +296,7 @@ test('回顾可视化展示投入与计划实际，时间线点击拖动和右�
   await expect(timeline.locator('.actual-content')).toBeInViewport();
   await nav(page, '今日');
   await expect(page.getByLabel('查看日期', { exact: true })).toHaveValue(localDay());
-  await expect(page.locator('.capture-date')).toContainText(localDay());
+  await expect(page.locator('.capture-date')).toHaveCount(0);
   await nav(page, '回顾');
   await expect(page.getByLabel('回顾日期', { exact: true })).toHaveValue(localDay(yesterday));
   await page.getByLabel('回顾日期', { exact: true }).fill(localDay());

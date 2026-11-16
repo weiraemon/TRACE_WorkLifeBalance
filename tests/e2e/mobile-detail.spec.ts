@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { connect, seed, write, nav as desktopNav } from './helpers';
+import { connect, seed, write, longPress, nav as desktopNav } from './helpers';
 
 test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
@@ -20,7 +20,7 @@ test('节点详情使用整页、正文留白和图标操作，返回保留位�
   await page.getByRole('button', { name: '打开业务线 论文研究', exact: true }).click();
   const trigger = page
     .getByRole('article', { name: `节点 · ${title}`, exact: true })
-    .locator('.mobile-node-heading button');
+    .locator('.mobile-node-name');
   await trigger.scrollIntoViewIfNeeded();
   const scroll = await page.locator('.mobile-main').evaluate((element) => element.scrollTop);
   await trigger.click();
@@ -34,8 +34,9 @@ test('节点详情使用整页、正文留白和图标操作，返回保留位�
       shadow: getComputedStyle(element).boxShadow,
     })),
   ).toEqual({ position: 'static', shadow: 'none' });
-  const more = page.getByRole('button', { name: '更多操作', exact: true });
-  await expect(more).toHaveText('');
+  await expect(
+    page.locator('.mobile-topbar').getByRole('button', { name: '更多操作', exact: true }),
+  ).toHaveCount(0);
   for (const width of [320, 390, 640]) {
     await page.setViewportSize({ width, height: 844 });
     for (const theme of ['sage', 'blue']) {
@@ -50,12 +51,9 @@ test('节点详情使用整页、正文留白和图标操作，返回保留位�
     }
   }
   await page.setViewportSize({ width: 390, height: 844 });
-  await more.click();
-  await expect(
-    page.getByRole('dialog').getByRole('button', { name: '编辑', exact: true }),
-  ).toBeVisible();
+  await longPress(detail.getByRole('heading', { name: title, exact: true }));
+  await expect(page.getByRole('dialog', { name: '编辑节点', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '关闭对话框', exact: true }).click();
-  await detail.getByRole('button', { name: '编辑内容', exact: true }).click();
   await detail.getByLabel('内部正文', { exact: true }).fill('返回后继续编辑的正文');
   await page.getByRole('button', { name: '返回', exact: true }).click();
   await expect(detail).toHaveCount(0);

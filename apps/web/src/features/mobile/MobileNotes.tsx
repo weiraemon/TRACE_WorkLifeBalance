@@ -33,7 +33,6 @@ export function MobileNotes({
   const resource = snapshot.entries.find((entry) => entry.data.id === line.notesId);
   return (
     <section className="mobile-notes" aria-label={`笔记 · ${line.title}`}>
-      <h1>{line.title}</h1>
       <form
         inert={busy}
         className="mobile-memo"

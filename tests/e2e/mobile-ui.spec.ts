@@ -1,5 +1,6 @@
+import { associationMode, longPress } from './helpers';
 import { expect, test } from '@playwright/test';
-import { connect, seed, write, snapshot, notes, localDay, headers } from './helpers';
+import { selectTime, connect, seed, write, snapshot, notes, localDay, headers } from './helpers';
 
 test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 test.beforeEach(async ({ page }) => {
@@ -14,25 +15,26 @@ const nav = (page: import('@playwright/test').Page, name: string) =>
     .getByRole('button', { name, exact: true })
     .click();
 
-test('六个入口、项目清单和竖向业务线共享数据，滑动切线有等价按钮', async ({ page }) => {
+test('五个入口、项目清单和竖向业务线共享数据，滑动切线有等价键盘操作', async ({ page }) => {
   const data = await snapshot(page);
   const project = data.entries.find((entry) => entry.data.type === 'project')!;
   for (let index = 0; index < 5; index++)
     await write(page, 'workline', { title: `探索业务线 ${index + 1}`, projectId: project.data.id });
   await page.reload();
   await nav(page, '工作空间');
-  await expect(page.locator('.mobile-navigation button')).toHaveCount(6);
+  await expect(page.locator('.mobile-navigation button')).toHaveCount(5);
   await expect(page.locator('.mobile-project')).toHaveCount(1);
   await expect(page.locator('.mobile-line-row')).toHaveCount(6);
   await page.getByRole('button', { name: '打开业务线 论文研究', exact: true }).click();
   await expect(page.getByRole('heading', { name: '论文研究', exact: true })).toBeVisible();
   await expect(page.locator('.mobile-node').last()).toContainText('待办池');
-  await page.getByRole('button', { name: '下一条业务线' }).click();
+  await page.getByRole('heading', { name: '论文研究', exact: true }).press('ArrowRight');
   await expect(page.getByRole('heading', { name: '探索业务线 1' })).toBeVisible();
-  await page.getByRole('button', { name: '上一条业务线' }).click();
+  await page.getByRole('heading', { name: '探索业务线 1', exact: true }).press('ArrowLeft');
   await page.getByRole('checkbox', { name: '完成 找人要材料', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: '完成 找人要材料', exact: true })).toBeChecked();
-  await page.getByRole('button', { name: '条目操作 · 找人要材料', exact: true }).click();
+  await longPress(page.locator('.mobile-todo-title').filter({ hasText: '找人要材料' }));
+  await page.getByRole('button', { name: '更多操作', exact: true }).click();
   await expect(
     page.getByRole('dialog').getByRole('button', { name: '重新打开', exact: true }),
   ).toBeVisible();
@@ -44,7 +46,7 @@ test('六个入口、项目清单和竖向业务线共享数据，滑动切线�
   await page.screenshot({ path: 'test-results/mobile-workspace.png' });
 });
 
-test('手机节点日期和操作位于轴线左侧，设置精简说明且桌面保留原说明', async ({ page }) => {
+test('手机节点全宽紧凑排列，设置精简说明且桌面保留原说明', async ({ page }) => {
   await nav(page, '工作空间');
   await page.getByRole('button', { name: '打开业务线 论文研究', exact: true }).click();
   const point = page.getByRole('article', { name: '节点 · 方案会议', exact: true });
@@ -54,11 +56,10 @@ test('手机节点日期和操作位于轴线左侧，设置精简说明且桌�
       await page.evaluate((theme) => {
         document.documentElement.dataset.theme = theme;
       }, theme);
-      const axis = await point.locator('.mobile-node-axis').boundingBox();
-      for (const control of await point.locator('.mobile-node-meta button').all()) {
-        const bounds = await control.boundingBox();
-        expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(axis!.x + 1);
-      }
+      await expect(point.locator('.mobile-node-axis')).toHaveCount(0);
+      expect((await point.boundingBox())!.width).toBeGreaterThan(width - 80);
+      const header = await point.locator('.mobile-node-heading').boundingBox();
+      expect(header!.height).toBeLessThan(90);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
@@ -78,14 +79,14 @@ test('手机节点日期和操作位于轴线左侧，设置精简说明且桌�
 test('实际录入和已做分开，保存关联与本次完成仍联合发布', async ({ page }) => {
   await nav(page, '编辑');
   await page.getByLabel('具体事件', { exact: true }).fill('在手机上完成材料整理');
-  await page.getByLabel('开始时间', { exact: true }).fill('09:00');
-  await page.getByLabel('结束时间', { exact: true }).fill('10:00');
-  const candidate = page.locator('.actual-pool-choice').filter({ hasText: '找人要材料' });
-  await candidate.getByRole('button', { name: '加入', exact: true }).click();
-  await page.getByLabel('本次完成 找人要材料', { exact: true }).check();
+  await selectTime(page, '09:00', '10:00');
   await page.getByRole('button', { name: '保存实际工作', exact: true }).click();
-  await expect(page.getByLabel('具体事件', { exact: true })).toHaveValue('');
-  await nav(page, '今日已做');
+  const mode = await associationMode(page);
+  await mode.getByRole('button', { name: '打开业务线 论文研究', exact: true }).click();
+  await mode.getByRole('checkbox', { name: '关联条目 找人要材料', exact: true }).check();
+  await mode.getByLabel('本次完成 找人要材料', { exact: true }).check();
+  await mode.getByRole('button', { name: '保存关联并返回已做', exact: true }).click();
+  await expect(mode).toHaveCount(0);
   await expect(page.locator('.mobile-total')).toContainText('1.0');
   await expect(page.getByText('在手机上完成材料整理', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '编辑记录 · 在手机上完成材料整理' }).click();
@@ -109,12 +110,14 @@ test('笔记复用导览，随手记保留原正文且未保存内容有离开�
     },
   });
   await page.reload();
-  await nav(page, '笔记');
-  await page.getByRole('button', { name: '打开业务线 论文研究', exact: true }).click();
-  await page.getByLabel('随手记', { exact: true }).fill('手机上的一个新想法');
   await nav(page, '工作空间');
-  await nav(page, '笔记');
   await page.getByRole('button', { name: '打开业务线 论文研究', exact: true }).click();
+  await page.locator('.workspace-line-notes > summary').click();
+  await page.getByLabel('随手记', { exact: true }).fill('手机上的一个新想法');
+  await nav(page, '今日已做');
+  await nav(page, '工作空间');
+  await page.getByRole('button', { name: '打开业务线 论文研究', exact: true }).click();
+  await page.locator('.workspace-line-notes > summary').click();
   await expect(page.getByLabel('随手记', { exact: true })).toHaveValue('手机上的一个新想法');
   await page.getByRole('button', { name: '记到笔记', exact: true }).click();
   await expect(page.getByLabel('随手记', { exact: true })).toHaveValue('');
@@ -126,15 +129,16 @@ test('笔记复用导览，随手记保留原正文且未保存内容有离开�
     })
     .click();
   await page.getByLabel('内部正文', { exact: true }).fill('原有正文与手机编辑');
+  await nav(page, '今日已做');
   await nav(page, '工作空间');
-  await nav(page, '笔记');
   await page.getByRole('button', { name: '打开业务线 论文研究', exact: true }).click();
+  await page.locator('.workspace-line-notes > summary').click();
   await expect(page.getByLabel('内部正文', { exact: true })).toHaveValue('原有正文与手机编辑');
   await page.getByRole('button', { name: '保存内容', exact: true }).click();
   await expect(page.getByText('原有正文与手机编辑', { exact: true })).toBeVisible();
 });
 
-test('新增节点和待办沿用同一表单；手机样式不影响桌面四页', async ({ page }) => {
+test('新增节点和待办沿用同一表单；手机样式不影响桌面三页', async ({ page }) => {
   await nav(page, '编辑');
   await page.getByRole('button', { name: '待办／节点', exact: true }).click();
   await page.getByLabel('类型', { exact: true }).selectOption('milestone');
@@ -152,7 +156,7 @@ test('新增节点和待办沿用同一表单；手机样式不影响桌面四�
   await page.goto('/');
   await expect(
     page.getByRole('navigation', { name: '主导航', exact: true }).getByRole('button'),
-  ).toHaveCount(4);
+  ).toHaveCount(3);
   await expect(page.locator('html')).not.toHaveAttribute('data-surface', 'android');
 });
 
@@ -164,17 +168,18 @@ test('打开设置后返回，实际录入草稿继续保留', async ({ page }) 
   await expect(page.getByLabel('具体事件', { exact: true })).toHaveValue('设置前的草稿');
 });
 
-test('窄屏时间并排、轻量输入和日期、默认展开的可选内容支持两种主题', async ({ page }) => {
+test('窄屏时间格、轻量输入和日期、默认展开的可选内容支持两种主题', async ({ page }) => {
   await nav(page, '编辑');
-  await expect(page.getByRole('region', { name: '待选池', exact: true })).toBeVisible();
-  for (const theme of ['green', 'blue']) {
+  await expect(page.getByRole('region', { name: '待选池', exact: true })).toHaveCount(0);
+  for (const theme of ['sage', 'blue']) {
     await page.evaluate((theme) => (document.documentElement.dataset.theme = theme), theme);
     for (const width of [320, 390, 640]) {
       await page.setViewportSize({ width, height: 844 });
-      const start = await page.getByLabel('开始时间', { exact: true }).boundingBox();
-      const end = await page.getByLabel('结束时间', { exact: true }).boundingBox();
-      expect(start!.y).toBe(end!.y);
-      expect(start!.x + start!.width).toBeLessThan(end!.x);
+      await expect(page.locator('.half-hour-grid > button')).toHaveCount(48);
+      const columns = await page
+        .locator('.half-hour-grid')
+        .evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length);
+      expect(columns).toBe(8);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );

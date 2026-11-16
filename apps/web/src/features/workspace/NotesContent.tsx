@@ -109,7 +109,12 @@ export function NotesContent({
         <h3>Notes</h3>
         <ContentPreview value={{ ...value, body: value.intro ?? '', comments: [] }} />
         {value.sections.map((part) => (
-          <section className="detail-section" key={part.id} aria-label={`内容 · ${part.title}`}>
+          <section
+            className="detail-section"
+            key={part.id}
+            data-space-id={part.id}
+            aria-label={`内容 · ${part.title}`}
+          >
             {activeId === part.id ? (
               <NotesContent
                 id={part.id}
@@ -129,13 +134,19 @@ export function NotesContent({
             ) : (
               <>
                 <div className="section-heading">
-                  {part.kind === 'milestone' ? <h2>{part.heading}</h2> : <h3>{part.heading}</h3>}
-                  <Button
-                    aria-label={`编辑内容 · ${part.title}`}
-                    onClick={() => setActiveId(part.id)}
+                  <div
+                    role="heading"
+                    aria-level={part.kind === 'milestone' ? 2 : 3}
+                    aria-label={part.heading}
                   >
-                    <Pencil2Icon />
-                  </Button>
+                    <button
+                      className="notes-section-title"
+                      aria-label={`编辑内容 · ${part.title}`}
+                      onClick={() => setActiveId(part.id)}
+                    >
+                      {part.heading}
+                    </button>
+                  </div>
                 </div>
                 <ContentPreview value={part} />
               </>
@@ -159,6 +170,7 @@ export function NotesContent({
         <>
           <Field label="内部正文">
             <textarea
+              disabled={!loadedRevision}
               rows={8}
               value={body}
               onChange={(event) => change(event.target.value, comments)}

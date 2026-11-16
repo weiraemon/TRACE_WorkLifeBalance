@@ -9,7 +9,7 @@ test('全局导航合并到顶部单行，移除侧栏，窄屏搜索与设置�
   await expect(page).toHaveTitle('CHAOS · 科研与生活工作台');
   await expect(header.locator('.app-brand')).toHaveText('CHAOS');
   const navigation = header.getByRole('navigation', { name: '主导航', exact: true });
-  await expect(navigation.getByRole('button')).toHaveText(['今日', '工作空间', '知识', '回顾']);
+  await expect(navigation.getByRole('button')).toHaveText(['今日', '工作空间', '回顾']);
   const backup = header.getByRole('button', { name: '设置', exact: true });
   await expect(backup.locator('svg')).toHaveCount(1);
   for (const width of [1440, 600, 375]) {
@@ -37,8 +37,8 @@ test('全局导航合并到顶部单行，移除侧栏，窄屏搜索与设置�
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByRole('heading', { name: '设置', exact: true })).toBeVisible();
     await dialog.getByRole('button', { name: '关闭对话框', exact: true }).click();
-    await nav(page, '知识');
-    await expect(navigation.getByRole('button', { name: '知识', exact: true })).toHaveAttribute(
+    await nav(page, '工作空间');
+    await expect(navigation.getByRole('button', { name: '工作空间', exact: true })).toHaveAttribute(
       'aria-current',
       'page',
     );

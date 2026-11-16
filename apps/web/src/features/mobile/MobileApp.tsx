@@ -1,20 +1,14 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-  Pencil2Icon,
-  CheckIcon,
-  ListBulletIcon,
-  LayersIcon,
-  BarChartIcon,
-  ReaderIcon,
   GearIcon,
   ArrowLeftIcon,
   ReloadIcon,
   PlusIcon,
   MagnifyingGlassIcon,
-  DotsHorizontalIcon,
 } from '@radix-ui/react-icons';
 import {
   isSpaceItem,
+  clock,
   localDay,
   timeTotals,
   type Entry,
@@ -46,17 +40,17 @@ import { MobileNotes } from './MobileNotes';
 import './mobile.css';
 import { OperationProgress } from '../../components/OperationProgress';
 import { operationSnapshot, runOperation } from '../../platform/operations';
+import { useContextActions } from '../../components/useContextActions';
 
 const Review = lazy(() =>
   import('../../pages/Review').then((module) => ({ default: module.Review })),
 );
 const destinations = [
-  { id: 'edit', label: '编辑', title: '编辑', icon: Pencil2Icon },
-  { id: 'done', label: '已做', title: '今日已做', icon: CheckIcon },
-  { id: 'today', label: '待做', title: '今日待做／待联系', icon: ListBulletIcon },
-  { id: 'workspace', label: '空间', title: '工作空间', icon: LayersIcon },
-  { id: 'review', label: '回顾', title: '回顾', icon: BarChartIcon },
-  { id: 'notes', label: '笔记', title: '笔记', icon: ReaderIcon },
+  { id: 'edit', label: '编辑', title: '编辑' },
+  { id: 'done', label: '已做', title: '今日已做' },
+  { id: 'today', label: '待做', title: '今日待做／待联系' },
+  { id: 'workspace', label: '空间', title: '工作空间' },
+  { id: 'review', label: '回顾', title: '回顾' },
 ] as const;
 type Page = (typeof destinations)[number]['id'];
 type Route = { page: Page; lineId: string };
@@ -72,6 +66,12 @@ export default function MobileApp() {
   const [settings, setSettings] = useState(false),
     [query, setQuery] = useState(''),
     [archived, setArchived] = useState(false);
+  const [showOlder, setShowOlder] = useState(
+    () => localStorage.getItem('chaos:show-older-completed') === 'true',
+  );
+  const [time, setTime] = useState(() =>
+    clock(new Date().getHours() * 60 + new Date().getMinutes()),
+  );
   const [editor, setEditor] = useState<Editor | null>(null),
     [selected, setSelected] = useState<string | null>(null),
     [actionId, setActionId] = useState<string | null>(null),
@@ -79,6 +79,11 @@ export default function MobileApp() {
   const [editMode, setEditMode] = useState<'actual' | 'todo'>('actual'),
     [formVersion, setFormVersion] = useState(0),
     [source, setSource] = useState<RecordSource>();
+  const [recentId, setRecentId] = useState('');
+  const contextActions = useContextActions((id) => {
+    const entry = snapshot?.entries.find((entry) => entry.data.id === id);
+    if (entry && isSpaceItem(entry.data)) openEditor({ type: entry.data.type, entry });
+  });
   const dirty = useRef(new Set<string>()),
     request = useRef(0),
     main = useRef<HTMLElement>(null);
@@ -142,7 +147,7 @@ export default function MobileApp() {
   };
   const openEditor = (next: Editor) => {
     if (canLeave()) {
-      setSelected(null);
+      if (!next.entry || next.entry.data.id !== selected) setSelected(null);
       setEditor(next);
     }
   };
@@ -205,6 +210,8 @@ export default function MobileApp() {
     let previousDay = localDay(),
       pending = false;
     const refresh = (read = true) => {
+      const now = new Date();
+      setTime(clock(now.getHours() * 60 + now.getMinutes()));
       const today = localDay();
       if (today !== previousDay) {
         const previous = previousDay;
@@ -310,7 +317,6 @@ export default function MobileApp() {
     else if (detailWasOpen.current) main.current?.scrollTo({ top: detailScroll.current });
     detailWasOpen.current = Boolean(selectedEntry);
   }, [selectedEntry?.data.id]);
-  const title = destinations.find((item) => item.id === route.page)!.title;
   const updateDate = (next: string) => {
     if (next && canLeave()) {
       setDate(next);
@@ -357,37 +363,39 @@ export default function MobileApp() {
   return (
     <div className="mobile-app">
       <header className="mobile-topbar">
-        <div>
-          {selectedEntry || route.lineId || route.page !== 'today' ? (
-            <Button aria-label="返回" onClick={back}>
-              <ArrowLeftIcon />
-            </Button>
-          ) : (
-            <span className="mobile-brand">CHAOS</span>
-          )}
-          <span>{selectedEntry ? '工作详情' : title}</span>
-        </div>
-        {selectedEntry ? (
-          <Button
-            aria-label="更多操作"
-            title="更多操作"
-            aria-haspopup="dialog"
-            onClick={() => setActionId(selectedEntry.data.id)}
-          >
-            <DotsHorizontalIcon />
+        {selectedEntry || route.lineId || route.page !== 'today' ? (
+          <Button aria-label="返回" onClick={back}>
+            <ArrowLeftIcon />
           </Button>
-        ) : (
-          <Button
-            aria-label="设置"
-            onClick={() => {
-              if (canLeave()) setSettings(true);
-            }}
-          >
-            <GearIcon />
-          </Button>
-        )}
+        ) : null}
+        <time>{time}</time>
+        <button
+          type="button"
+          className="mobile-today"
+          data-dirty={isDirty}
+          onClick={() => updateDate(localDay())}
+        >
+          今日
+        </button>
+        <DatePicker
+          aria-label="查看日期"
+          value={date}
+          onChange={(event) => updateDate(event.target.value)}
+        />
+        <Button
+          aria-label="设置"
+          onClick={() => {
+            if (canLeave()) setSettings(true);
+          }}
+        >
+          <GearIcon />
+        </Button>
       </header>
-      <main className={`mobile-main${selectedEntry ? ' mobile-main-detail' : ''}`} ref={main}>
+      <main
+        className={`mobile-main${selectedEntry ? ' mobile-main-detail' : ''}`}
+        ref={main}
+        {...contextActions}
+      >
         {!settings && !loading && <OperationProgress />}
         <ErrorMessage message={error} />
         {error && <Button onClick={() => setError('')}>收起提示</Button>}
@@ -424,19 +432,6 @@ export default function MobileApp() {
                   </p>
                 ))}
               </details>
-            )}
-            {(route.page === 'today' || route.page === 'done' || route.page === 'edit') && (
-              <div className="mobile-day">
-                <span>
-                  {date === localDay() ? '今天' : '查看日期'}
-                  {isDirty && <small> · 未保存</small>}
-                </span>
-                <DatePicker
-                  aria-label="查看日期"
-                  value={date}
-                  onChange={(event) => updateDate(event.target.value)}
-                />
-              </div>
             )}
             {route.page === 'today' && (
               <>
@@ -482,6 +477,7 @@ export default function MobileApp() {
                   <small>小时实际投入</small>
                 </p>
                 <ActualRecordList
+                  recentId={recentId}
                   entries={snapshot.entries
                     .filter((entry) => entry.data.type === 'actual' && entry.data.date === date)
                     .sort((a, b) =>
@@ -539,6 +535,11 @@ export default function MobileApp() {
                     source={source}
                     reload={reload}
                     onDirtyChange={actualDirty}
+                    onSaved={(id, savedDate) => {
+                      setDate(savedDate);
+                      setRecentId(id);
+                      navigate('done');
+                    }}
                     close={() => {
                       if (canLeave()) {
                         setFormVersion((version) => version + 1);
@@ -572,11 +573,12 @@ export default function MobileApp() {
                 )}
               </section>
             )}
-            {(route.page === 'workspace' || route.page === 'notes') && (
+            {route.page === 'workspace' && (
               <>
                 {line ? (
-                  route.page === 'workspace' ? (
+                  <>
                     <VerticalLine
+                      showOlder={showOlder}
                       snapshot={snapshot}
                       line={line}
                       lines={lines}
@@ -584,17 +586,18 @@ export default function MobileApp() {
                       select={openDetails}
                       edit={openEditor}
                       toggle={toggle}
-                      actions={setActionId}
                     />
-                  ) : (
-                    <MobileNotes
-                      key={`${snapshot.vaultId}:${line.id}:${formVersion}`}
-                      snapshot={snapshot}
-                      line={line}
-                      reload={reload}
-                      onDirtyChange={notesDirty}
-                    />
-                  )
+                    <details className="workspace-line-notes">
+                      <summary>业务线笔记</summary>
+                      <MobileNotes
+                        key={`${snapshot.vaultId}:${line.id}:${formVersion}`}
+                        snapshot={snapshot}
+                        line={line}
+                        reload={reload}
+                        onDirtyChange={notesDirty}
+                      />
+                    </details>
+                  </>
                 ) : (
                   <>
                     <div className="mobile-project-filter">
@@ -623,7 +626,6 @@ export default function MobileApp() {
                       archived={archived}
                       select={(line) => navigate(route.page, line.id)}
                       edit={openEditor}
-                      actions={setActionId}
                     />
                   </>
                 )}
@@ -645,14 +647,13 @@ export default function MobileApp() {
       </main>
       {!selectedEntry && (
         <nav className="mobile-navigation" aria-label="手机导航">
-          {destinations.map(({ id, label, title, icon: Icon }) => (
+          {destinations.map(({ id, label, title }) => (
             <button
               key={id}
               aria-label={title}
               aria-current={route.page === id ? 'page' : undefined}
               onClick={() => navigate(id)}
             >
-              <Icon />
               <span>{label}</span>
             </button>
           ))}
@@ -662,6 +663,17 @@ export default function MobileApp() {
         <Modal title="设置" onClose={() => setSettings(false)}>
           <OperationProgress />
           <Appearance />
+          <label className="mobile-display-preference">
+            <input
+              type="checkbox"
+              checked={showOlder}
+              onChange={(event) => {
+                setShowOlder(event.target.checked);
+                localStorage.setItem('chaos:show-older-completed', String(event.target.checked));
+              }}
+            />
+            显示较早完成的内容
+          </label>
           {connection}
           {snapshot && (
             <>
@@ -729,6 +741,16 @@ export default function MobileApp() {
             snapshot={snapshot}
             reload={reload}
             onDirtyChange={workDirty}
+            actions={
+              editor.entry
+                ? () => {
+                    if (canLeave()) {
+                      setEditor(null);
+                      setActionId(editor.entry!.data.id);
+                    }
+                  }
+                : undefined
+            }
             close={() => {
               if (canLeave()) setEditor((current) => (current === editor ? null : current));
             }}

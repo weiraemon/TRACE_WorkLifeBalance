@@ -4,9 +4,9 @@
   padding: 24px;
   position: fixed;
   right: 0;
-  top: 0;
+  top: 64px;
   width: min(380px, 100vw);
-  height: 100dvh;
+  height: calc(100dvh - 64px);
   overflow-y: auto;
   z-index: 12;
   box-shadow: -12px 0 35px #343e2b18;
@@ -80,7 +80,7 @@
   .detail {
     position: fixed;
     right: 0;
-    top: 0;
+    top: 64px;
     width: 370px;
     z-index: 10;
     box-shadow: -12px 0 35px #343e2b18;
@@ -691,4 +691,16 @@
   background: var(--priority-color);
   color: var(--paper);
   box-shadow: 0 0 0 2px var(--paper);
+}
+.location-context {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.location-context > summary {
+  cursor: pointer;
+  padding-block: 8px;
+}
+.location-context-expanded > summary {
+  display: none;
 }

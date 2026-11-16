@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Page, type Locator } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -8,8 +8,47 @@ import {
   type SaveOptions,
   type Snapshot,
   localDay,
+  clock,
+  minutes,
 } from '../../packages/domain/index';
 export { localDay };
+export async function selectTime(scope: Page | Locator, start: string, end: string) {
+  const grid = scope.getByRole('group', { name: '一天的 48 个半小时' });
+  await grid
+    .getByRole('button', { name: `${start}–${clock(minutes(start) + 30)}`, exact: true })
+    .click();
+  if (minutes(end) - minutes(start) > 30)
+    await grid
+      .getByRole('button', { name: `${clock(minutes(end) - 30)}–${end}`, exact: true })
+      .click({ modifiers: ['Shift'] });
+}
+export async function associationMode(page: Page) {
+  await page.getByRole('button', { name: '关联模式', exact: true }).first().click();
+  return page.getByRole('dialog', { name: '工作空间 · 关联模式', exact: true });
+}
+export async function resumeRecording(page: Page) {
+  if (await page.locator('html[data-surface="android"]').count()) {
+    await page
+      .getByRole('navigation', { name: '手机导航' })
+      .getByRole('button', { name: '编辑', exact: true })
+      .click();
+  } else {
+    await page.getByRole('button', { name: '继续记录', exact: true }).click();
+  }
+}
+export async function longPress(target: Locator) {
+  await target.dispatchEvent('pointerdown', {
+    pointerType: 'touch',
+    button: 0,
+    clientX: 100,
+    clientY: 100,
+  });
+  await expect(target.page().getByRole('dialog')).toBeVisible();
+  await target
+    .page()
+    .locator('.mobile-main')
+    .dispatchEvent('pointerup', { pointerType: 'touch', clientX: 100, clientY: 100 });
+}
 export async function connect(page: Page) {
   await fs.mkdir('.test-vault', { recursive: true });
   const root = await fs.mkdtemp(path.resolve('.test-vault/lines-'));

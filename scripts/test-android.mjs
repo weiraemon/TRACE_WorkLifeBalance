@@ -92,6 +92,30 @@ async function tapNative(pattern) {
     );
   }, '系统目录授权未完成');
 }
+async function selectTime(page, start, end) {
+  const format = (minutes) =>
+    String(Math.floor(minutes / 60)).padStart(2, '0') + ':' + String(minutes % 60).padStart(2, '0');
+  const minute = (time) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
+  const grid = page.getByRole('group', { name: '一天的 48 个半小时' });
+  await grid
+    .getByRole('button', { name: start + '–' + format(minute(start) + 30), exact: true })
+    .click();
+  if (minute(end) - minute(start) > 30)
+    await grid
+      .getByRole('button', { name: format(minute(end) - 30) + '–' + end, exact: true })
+      .click({ modifiers: ['Shift'] });
+}
+async function openActions(page, target) {
+  await target.dispatchEvent('pointerdown', {
+    pointerType: 'touch',
+    button: 0,
+    clientX: 100,
+    clientY: 100,
+  });
+  await page.getByRole('dialog').waitFor();
+  await target.dispatchEvent('pointerup', { pointerType: 'touch', clientX: 100, clientY: 100 });
+  await page.getByRole('button', { name: '更多操作', exact: true }).click();
+}
 let browser;
 let wifiChild;
 function nativeTests() {
@@ -234,8 +258,7 @@ try {
   );
   await nav('编辑');
   await page.getByLabel('具体事件', { exact: true }).fill('切页后保留的手机草稿');
-  await page.getByLabel('结束时间', { exact: true }).click();
-  await tapNative(/^(CANCEL|取消)$/i);
+  await selectTime(page, '02:00', '02:30');
   assert.equal(
     await page.evaluate(() => globalThis.chaosIdleScans),
     0,
@@ -248,7 +271,7 @@ try {
     '切页后保留的手机草稿',
   );
   await page.getByRole('button', { name: '清空', exact: true }).click();
-  checks.push('空闲与打开原生时间选择器不扫描目录，实际录入草稿跨页保留');
+  checks.push('空闲与选择半小时时间格不扫描目录，实际录入草稿跨页保留');
   await nav('今日已做');
   const simpleEditor = page
     .getByRole('button', { name: '编辑记录 · 单文件保存性能验收', exact: true })
@@ -257,16 +280,14 @@ try {
   if (existingSimple) await simpleEditor.click();
   else await nav('编辑');
   await page.getByLabel('具体事件', { exact: true }).fill('单文件保存性能验收');
-  await page.getByLabel('开始时间', { exact: true }).fill('03:00');
-  await page.getByLabel('结束时间', { exact: true }).fill('03:15');
+  await selectTime(page, '03:00', '03:30');
   const simpleStarted = Date.now();
   await page.getByRole('button', { name: '保存实际工作', exact: true }).click();
   if (existingSimple) await page.getByRole('dialog').waitFor({ state: 'hidden' });
   else
-    await eventually(
-      async () => assert.equal(await page.getByLabel('具体事件', { exact: true }).inputValue(), ''),
-      '单文件实际保存失败',
-    );
+    await page
+      .getByRole('button', { name: '编辑记录 · 单文件保存性能验收', exact: true })
+      .waitFor();
   timings.simpleActualSaveMs = Date.now() - simpleStarted;
   assert.equal(
     await page.evaluate(() => globalThis.chaosIdleScans),
@@ -325,51 +346,62 @@ try {
   // Repeated runs can inherit older synthetic nodes with the same title.
   while ((await node.count()) > 1) {
     const count = await node.count();
-    await node.last().getByRole('button', { name: '节点操作 · 方案讨论', exact: true }).click();
+    await openActions(page, node.last().locator('.mobile-node-name'));
     await page.getByRole('dialog').getByRole('button', { name: '删除', exact: true }).click();
     await eventually(async () => assert.equal(await node.count(), count - 1), '清理重复合成节点');
   }
   if (!(await page.getByRole('checkbox', { name: '完成 整理讨论材料', exact: true }).count())) {
-    await node
-      .locator('.mobile-node-tools')
-      .getByRole('button', { name: '待办', exact: true })
-      .click();
+    await node.getByRole('button', { name: '添加 TODO / IDEA · 方案讨论', exact: true }).click();
     await page.getByRole('dialog').getByLabel('标题', { exact: true }).fill('整理讨论材料');
     await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click();
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
   }
   const previousCompletion = page.getByRole('checkbox', { name: '完成 整理讨论材料', exact: true });
+  const todoId = await page
+    .locator('.mobile-todos li')
+    .filter({ hasText: '整理讨论材料' })
+    .first()
+    .getAttribute('data-space-id');
   if (await previousCompletion.isChecked()) await previousCompletion.click();
   const dimensions = /(?:Physical|Override) size: (\d+)x(\d+)/.exec(device('shell', 'wm', 'size'));
   assert.ok(dimensions);
+  const swipeTarget = await node.locator('.mobile-node-name').boundingBox();
+  const swipeY = Math.round(
+    (+dimensions[2] * (swipeTarget.y + swipeTarget.height / 2)) /
+      (await page.evaluate(() => innerHeight)),
+  );
   device(
     'shell',
     'input',
     'swipe',
     String(Math.round(+dimensions[1] * 0.85)),
-    String(Math.round(+dimensions[2] * 0.55)),
+    String(swipeY),
     String(Math.round(+dimensions[1] * 0.15)),
-    String(Math.round(+dimensions[2] * 0.55)),
+    String(swipeY),
     '300',
   );
   await page.getByRole('heading', { name: '方法验证', exact: true }).waitFor();
-  await page.getByRole('button', { name: '上一条业务线', exact: true }).click();
+  await page.getByRole('heading', { name: '方法验证', exact: true }).press('ArrowLeft');
   await page.screenshot({ path: path.join(output, 'vertical-line.png') });
   checks.push('项目、业务线、节点和待办创建；竖向业务线与切线');
-  await page.getByRole('button', { name: '条目操作 · 整理讨论材料', exact: true }).click();
+  await openActions(page, page.locator('.mobile-todo-title').filter({ hasText: '整理讨论材料' }));
   await page.getByRole('button', { name: '添加批注／纪要', exact: true }).click();
   await page.getByLabel('批注 / 纪要', { exact: true }).fill('内容编辑验收原文');
   await page.getByRole('button', { name: '保存批注', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
-  await nav('笔记');
+  await nav('工作空间');
   const notesOpened = Date.now();
   await page.getByRole('button', { name: '打开业务线 下一步研究', exact: true }).click();
+  await page.locator('.workspace-line-notes > summary').click();
   await page
     .locator('.notes-content .markdown-body')
     .getByRole('heading', { name: '下一步研究', exact: true })
     .waitFor();
   timings.notesOpenMs = Date.now() - notesOpened;
-  await page.getByRole('button', { name: '编辑内容 · 整理讨论材料', exact: true }).click();
+  await page
+    .locator(`.workspace-line-notes [data-space-id="${todoId}"]`)
+    .getByRole('button', { name: '编辑内容 · 整理讨论材料', exact: true })
+    .click();
   const internal = page.getByLabel('内部正文', { exact: true });
   for (const value of await page
     .locator('.notes-content textarea')
@@ -398,30 +430,29 @@ try {
   if (updatingActual) await existingRecord.click();
   else await nav('编辑');
   await page.getByLabel('具体事件', { exact: true }).fill('离线整理讨论材料');
-  await page.getByLabel('开始时间', { exact: true }).fill('09:00');
-  await page.getByLabel('结束时间', { exact: true }).fill('10:00');
-  if (!updatingActual) {
-    await page
-      .locator('.actual-pool-choice')
-      .filter({ hasText: '整理讨论材料' })
-      .getByRole('button', { name: '加入', exact: true })
-      .click();
-  }
-  const completion = page.getByLabel('本次完成 整理讨论材料', { exact: true });
-  if (await completion.isEnabled()) await completion.check();
+  await selectTime(page, '09:00', '10:00');
   const saveStarted = Date.now();
   await page.getByRole('button', { name: '保存实际工作', exact: true }).click();
   if (updatingActual) await page.getByRole('dialog').waitFor({ state: 'hidden' });
   else
-    await eventually(
-      async () => assert.equal(await page.getByLabel('具体事件', { exact: true }).inputValue(), ''),
-      '离线实际记录保存失败',
-    );
+    await page.getByRole('button', { name: '编辑记录 · 离线整理讨论材料', exact: true }).waitFor();
   timings.actualSaveMs = Date.now() - saveStarted;
   await nav('今日已做');
   await page.getByText('离线整理讨论材料', { exact: true }).first().waitFor();
+  await page.getByRole('button', { name: '关联模式', exact: true }).click();
+  const association = page.getByRole('dialog', { name: '工作空间 · 关联模式', exact: true });
+  await association.getByRole('button', { name: '打开业务线 下一步研究', exact: true }).click();
+  const linked = association.getByRole('checkbox', { name: '关联条目 整理讨论材料', exact: true });
+  if (await linked.count()) await linked.check();
+  const completion = association.getByRole('checkbox', {
+    name: '本次完成 整理讨论材料',
+    exact: true,
+  });
+  if (await completion.isEnabled()) await completion.check();
+  await association.getByRole('button', { name: '保存关联并返回已做', exact: true }).click();
+  await association.waitFor({ state: 'hidden' });
   await page.screenshot({ path: path.join(output, 'actuals.png') });
-  checks.push('关闭网络后，实际记录＋本次完成联合保存');
+  checks.push('关闭网络后保存实际，再在工作空间关联并完成待办');
   await nav('回顾');
   await page.getByRole('region', { name: '本周概况', exact: true }).waitFor();
   await page.screenshot({ path: path.join(output, 'review.png') });
@@ -430,8 +461,9 @@ try {
   await page.getByRole('status').filter({ hasText: '已备份' }).waitFor();
   await page.getByRole('button', { name: '关闭对话框', exact: true }).click();
   const restoreMarker = '只用于恢复验收的临时随手记 ' + Date.now();
-  await nav('笔记');
+  await nav('工作空间');
   await page.getByRole('button', { name: '打开业务线 下一步研究', exact: true }).click();
+  await page.locator('.workspace-line-notes > summary').click();
   await page.getByLabel('随手记', { exact: true }).fill(restoreMarker);
   await page.getByRole('button', { name: '记到笔记', exact: true }).click();
   await eventually(
@@ -503,8 +535,9 @@ try {
       ),
     '交换后的待办没有完成',
   );
-  await nav('笔记');
+  await nav('工作空间');
   await page.getByRole('button', { name: `打开业务线 ${metadata.lineTitle}`, exact: true }).click();
+  await page.locator('.workspace-line-notes > summary').click();
   await page.getByLabel('随手记', { exact: true }).fill(metadata.memo);
   await page.getByRole('button', { name: '记到笔记', exact: true }).click();
   await eventually(

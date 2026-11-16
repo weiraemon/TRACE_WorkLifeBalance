@@ -12,7 +12,7 @@ export function BusinessLineTrack({
   points: Milestone[];
   todos: Todo[];
 }) {
-  const { select, edit, drag } = pointProps;
+  const { select, edit, drag, association } = pointProps;
   return (
     <section
       className="business-track"
@@ -28,7 +28,7 @@ export function BusinessLineTrack({
               <button
                 className="line-title"
                 onClick={() => select(line.id)}
-                {...drag.sourceProps(line)}
+                {...(!association && drag.sourceProps(line))}
               >
                 <strong>{line.title}</strong>
               </button>

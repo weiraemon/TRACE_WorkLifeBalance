@@ -15,7 +15,7 @@ import {
 } from '../../../../packages/domain/workspace';
 import { complete } from '../api';
 import { Button, EmptyState } from '../components/ui';
-import type { Editor } from '../types/editor';
+import type { AssociationSelection, Editor } from '../types/editor';
 import { WorkspaceNavigation } from '../features/workspace/WorkspaceNavigation';
 import { workspaceGroups } from '../features/workspace/workspaceGroups';
 import { useWorkspaceDrag } from '../features/workspace/useWorkspaceDrag';
@@ -29,6 +29,7 @@ export function Workspace({
   query,
   showArchived,
   onShowArchivedChange,
+  association,
 }: {
   snapshot: Snapshot;
   edit: (e: Editor) => void;
@@ -38,6 +39,7 @@ export function Workspace({
   query: string;
   showArchived: boolean;
   onShowArchivedChange: (show: boolean) => void;
+  association?: AssociationSelection;
 }) {
   const [activeId, setActiveId] = useState('');
   const [showOlderNodes, setShowOlderNodes] = useState(false);
@@ -47,6 +49,12 @@ export function Workspace({
   const records = snapshot.entries
     .map((e) => e.data)
     .filter(isSpaceItem)
+    .filter(
+      (item) =>
+        !association ||
+        (item.type !== 'milestone' && item.type !== 'todo') ||
+        !isComplete(item, snapshot.entries),
+    )
     .filter(
       (item) =>
         showOlderNodes ||
@@ -71,7 +79,17 @@ export function Workspace({
       await reload();
     });
   return (
-    <div className="space-board">
+    <div
+      className={`space-board${association ? ' workspace-associating' : ''}`}
+      onContextMenu={
+        association
+          ? (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          : undefined
+      }
+    >
       <WorkspaceNavigation
         groups={groups}
         activeId={activeId}
@@ -82,7 +100,7 @@ export function Workspace({
         onShowOlderNodesChange={setShowOlderNodes}
         onCreateProject={() => edit({ type: 'project' })}
       />
-      <div className="workspace-content" ref={content} {...drag.boardProps}>
+      <div className="workspace-content" ref={content} {...(!association && drag.boardProps)}>
         <p className="workspace-drag-status" role="status">
           {drag.status}
         </p>
@@ -122,6 +140,7 @@ export function Workspace({
                     edit={edit}
                     toggle={toggle}
                     drag={drag}
+                    association={association}
                   />
                 );
               })}

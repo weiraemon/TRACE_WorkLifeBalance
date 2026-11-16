@@ -29,7 +29,6 @@ import { SpaceMenu } from './features/workspace/SpaceMenu';
 import { QuickEdit } from './features/workspace/QuickEdit';
 import { SpaceDetails } from './features/workspace/SpaceDetails';
 import { DeleteSpaceDialog } from './features/workspace/DeleteSpaceDialog';
-import { Knowledge } from './pages/Knowledge';
 import { Review } from './pages/Review';
 import { Today } from './pages/Today';
 const MessageInbox = lazy(() =>
@@ -41,7 +40,6 @@ const WechatSync = lazy(() =>
 const pages = [
   { id: 'today', name: '今日' },
   { id: 'workspace', name: '工作空间' },
-  { id: 'knowledge', name: '知识' },
   { id: 'review', name: '回顾' },
 ];
 export default function App() {
@@ -211,7 +209,7 @@ export default function App() {
       await handleDeleted(await removeSpace(entry));
     });
   };
-  const hasBusinessNavigation = (page === 'workspace' || page === 'knowledge') && Boolean(snapshot);
+  const hasBusinessNavigation = page === 'workspace' && Boolean(snapshot);
   return (
     <div
       className={
@@ -360,14 +358,6 @@ export default function App() {
                     onShowArchivedChange={setShowArchived}
                   />
                 </>
-              )}
-              {page === 'knowledge' && (
-                <Knowledge
-                  snapshot={snapshot}
-                  query={query}
-                  showArchived={showArchived}
-                  onShowArchivedChange={setShowArchived}
-                />
               )}
               {page === 'review' && (
                 <Review

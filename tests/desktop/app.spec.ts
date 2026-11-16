@@ -1,3 +1,4 @@
+import { selectTime } from '../e2e/helpers';
 import { test, expect, _electron, type ElectronApplication } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -29,7 +30,7 @@ async function launch(root: string) {
   return page;
 }
 
-test('桌面版目录选择、四页、记录保存、完整 QQ 入口与安全隔离；退出释放锁并恢复目录', async () => {
+test('桌面版目录选择、三页、记录保存、完整 QQ 入口与安全隔离；退出释放锁并恢复目录', async () => {
   await fs.mkdir('.test-vault', { recursive: true });
   const root = await fs.mkdtemp(path.resolve('.test-vault/desktop-'));
   const vault = path.join(root, '中文工作目录 with spaces');
@@ -51,14 +52,13 @@ test('桌面版目录选择、四页、记录保存、完整 QQ 入口与安全�
   await page.getByRole('button', { name: '连接工作目录', exact: true }).click();
   const form = page.getByRole('form', { name: '实际工作录入', exact: true });
   await form.getByLabel('具体事件', { exact: true }).fill('Electron 中保存完整工作记录');
-  await form.getByLabel('开始时间', { exact: true }).fill('10:00');
-  await form.getByLabel('结束时间', { exact: true }).fill('11:00');
+  await selectTime(form, '10:00', '11:00');
   await form.getByRole('button', { name: '保存实际工作', exact: true }).click();
-  await expect(form.getByLabel('具体事件', { exact: true })).toHaveValue('');
+  await expect(page.getByRole('button', { name: '继续记录', exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: '当天实际记录', exact: true })).toContainText(
     'Electron 中保存完整工作记录',
   );
-  for (const name of ['工作空间', '知识', '回顾', '今日']) {
+  for (const name of ['工作空间', '回顾', '今日']) {
     const navigation = page
       .getByRole('navigation', { name: '主导航', exact: true })
       .getByRole('button', { name, exact: true });
@@ -85,7 +85,9 @@ test('桌面版目录选择、四页、记录保存、完整 QQ 入口与安全�
   await page.getByRole('button', { name: '关闭对话框', exact: true }).click();
   await page.getByRole('button', { name: '设置', exact: true }).click();
   await page.getByRole('button', { name: '微信同步设置', exact: true }).click();
-  await expect(page.getByRole('button', { name: '选择微信数据目录并初始化…', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: '选择微信数据目录并初始化…', exact: true }),
+  ).toBeVisible();
   await expect(page.getByLabel('Python 命令', { exact: true })).toHaveCount(0);
   await desktop!.close();
   desktop = undefined;
