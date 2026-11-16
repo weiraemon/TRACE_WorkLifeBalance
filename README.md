@@ -52,7 +52,7 @@ CHAOS 是一个本地运行的个人工作台。把外部要求与自己的探�
 
 ## 快速开始
 
-Android 使用六入口竖屏界面，支持本机 Markdown 目录、Wi-Fi 直连与 JSON 增量交换，暂不接入 QQ／微信／AI 服务与后台自动同步。GitHub Release 提供关闭调试的签名 APK，支持覆盖此前相同证书的本地测试版。完整差异见 [Android 功能覆盖](docs/development/android-feature-coverage.md)。开发构建使用 `npm run package:android`，本机配置发行签名后使用 `npm run package:android:release`。电脑手机界面预览与模拟器验收见 [Android 构建、预览与验收](docs/development/android-local.md)。
+Android 使用五入口竖屏界面，笔记整合在工作空间中。实际工作使用半小时时间格录入，保存后展示已做列表，支持从已做或节点两端补充关联。Android 支持本机 Markdown 目录、Wi-Fi 直连与 JSON 增量交换，暂不接入 QQ／微信／AI 服务与后台自动同步。GitHub Release 提供关闭调试的签名 APK，支持覆盖此前相同证书的本地测试版。完整差异见 [Android 功能覆盖](docs/development/android-feature-coverage.md)。开发构建使用 `npm run package:android`，本机配置发行签名后使用 `npm run package:android:release`。电脑手机界面预览与模拟器验收见 [Android 构建、预览与验收](docs/development/android-local.md)。
 
 桌面版需要 **Windows x64 · 本地 NTFS 目录**。
 
