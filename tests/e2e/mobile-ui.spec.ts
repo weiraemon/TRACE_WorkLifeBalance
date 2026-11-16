@@ -34,7 +34,6 @@ test('五个入口、项目清单和竖向业务线共享数据，滑动切线�
   await page.getByRole('checkbox', { name: '完成 找人要材料', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: '完成 找人要材料', exact: true })).toBeChecked();
   await longPress(page.locator('.mobile-todo-title').filter({ hasText: '找人要材料' }));
-  await page.getByRole('button', { name: '更多操作', exact: true }).click();
   await expect(
     page.getByRole('dialog').getByRole('button', { name: '重新打开', exact: true }),
   ).toBeVisible();
@@ -208,4 +207,61 @@ test('窄屏时间格、轻量输入和日期、默认展开的可选内容支�
     await page.evaluate(() => document.fonts.check('650 21px "Noto Serif SC Variable"', '回顾')),
   ).toBe(true);
   await page.screenshot({ path: 'test-results/mobile-review-redesign.png' });
+});
+
+test('手机直接改时间、方框完成，紧凑属性直接删除并保留点击批注', async ({ page }) => {
+  const data = await snapshot(page);
+  const line = data.entries.find((entry) => entry.data.type === 'workline')!;
+  const node = await write(page, 'milestone', { title: '轻量编辑节点', lineId: line.data.id });
+  await page.reload();
+  await nav(page, '工作空间');
+  await page.getByRole('button', { name: '打开业务线 论文研究', exact: true }).click();
+  const article = page.getByRole('article', { name: '节点 · 轻量编辑节点', exact: true });
+  const date = article.getByRole('button', { name: '修改时间 · 轻量编辑节点', exact: true });
+  await expect(date).toHaveText('未定');
+  await date.click();
+  const schedule = page.getByRole('dialog', { name: '调整时间', exact: true });
+  await schedule.getByLabel('日期', { exact: true }).fill(localDay());
+  await schedule.getByLabel('时刻', { exact: true }).fill('14:30');
+  await schedule.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(schedule).toHaveCount(0);
+  await expect(date).toContainText('14:30');
+  await article.getByRole('checkbox', { name: '完成节点 轻量编辑节点', exact: true }).click();
+  await expect(article.getByRole('checkbox')).toBeChecked();
+  await article.getByRole('checkbox').click();
+  await expect(article.getByRole('checkbox')).not.toBeChecked();
+  await article.locator('.mobile-node-name').click();
+  await expect(page.getByLabel('内部正文', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '返回', exact: true }).click();
+  await longPress(article.locator('.mobile-node-name'));
+  const editor = page.getByRole('dialog', { name: '编辑节点', exact: true });
+  await editor.getByRole('button', { name: '标记完成', exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  await longPress(article.locator('.mobile-node-name'));
+  await editor.getByLabel('标题', { exact: true }).fill('编辑后继续推进');
+  await editor.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  const renamed = page.getByRole('article', { name: '节点 · 编辑后继续推进', exact: true });
+  await expect(renamed).toBeVisible();
+  await longPress(renamed.locator('.mobile-node-name'));
+  await expect(editor.getByRole('button', { name: '更多操作', exact: true })).toHaveCount(0);
+  await expect(editor.getByLabel('粘贴微信消息', { exact: true })).toHaveCount(0);
+  await expect(editor.getByLabel('批注 / 纪要', { exact: true })).toHaveCount(0);
+  await expect(editor.getByRole('button', { name: '删除', exact: true })).toBeVisible();
+  for (const width of [320, 390, 640]) {
+    await page.setViewportSize({ width, height: 844 });
+    const bounds = await editor.boundingBox();
+    expect(bounds!.height).toBeLessThan(640);
+    expect(await editor.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      true,
+    );
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: 'test-results/mobile-compact-editor.png' });
+  await editor.getByRole('button', { name: '删除', exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(renamed).toHaveCount(0);
+  expect((await snapshot(page)).entries.some((entry) => entry.data.id === node.data.id)).toBe(
+    false,
+  );
 });

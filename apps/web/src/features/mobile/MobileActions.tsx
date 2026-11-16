@@ -1,29 +1,22 @@
 import { useState } from 'react';
-import {
-  isSpaceItem,
-  localDay,
-  type Entry,
-  type Snapshot,
-} from '../../../../../packages/domain/index';
+import { isSpaceItem, type Entry, type Snapshot } from '../../../../../packages/domain/index';
 import { isComplete } from '../../../../../packages/domain/workspace';
-import { command, complete, promote, save } from '../../api';
-import { Button, DatePicker, ErrorMessage, Field, Modal } from '../../components/ui';
-import { ImportancePicker } from '../../components/Importance';
-import type { Editor } from '../../types/editor';
+import { complete, promote, save } from '../../api';
+import { Button, ErrorMessage, Field } from '../../components/ui';
 
 export function MobileActions({
   entry,
   snapshot,
   close,
   reload,
-  edit,
   remove,
+  onBusyChange,
 }: {
+  onBusyChange: (busy: boolean) => void;
   entry: Entry;
   snapshot: Snapshot;
   close: () => void;
   reload: () => Promise<void>;
-  edit: (editor: Editor) => void;
   remove: (entry: Entry) => void;
 }) {
   const [original] = useState(entry);
@@ -37,6 +30,7 @@ export function MobileActions({
   const pool = item.type === 'milestone' && item.pool;
   const task = async (fn: () => Promise<unknown>) => {
     setBusy(true);
+    onBusyChange(true);
     setError('');
     try {
       await fn();
@@ -46,6 +40,7 @@ export function MobileActions({
       setError(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
+      onBusyChange(false);
     }
   };
   const targets = snapshot.entries.filter(
@@ -59,7 +54,7 @@ export function MobileActions({
           (item.type === 'todo' && data.type === 'todo')),
   );
   return (
-    <Modal title={item.title} onClose={() => !busy && close()} className="mobile-actions-dialog">
+    <div className="mobile-inline-actions" inert={busy}>
       <ErrorMessage message={error} />
       <fieldset disabled={busy} className="mobile-actions-fields">
         {moving ? (
@@ -92,6 +87,7 @@ export function MobileActions({
               </select>
             </Field>
             <Button
+              type="button"
               disabled={!targetId}
               className="primary"
               onClick={() =>
@@ -108,73 +104,36 @@ export function MobileActions({
             >
               确认移动
             </Button>
-            <Button onClick={() => setMoving(false)}>返回操作</Button>
+            <Button type="button" onClick={() => setMoving(false)}>
+              返回操作
+            </Button>
           </>
         ) : (
           <>
             {!pool && (
               <>
-                <legend>重要性</legend>
-                <ImportancePicker
-                  value={item.importance}
-                  onChange={(importance) =>
-                    void task(() => save({ ...item, importance }, original))
-                  }
-                />
-                {(item.type === 'todo' || item.type === 'milestone') && (
-                  <Field label="日期">
-                    <DatePicker
-                      value={item.dueDate ?? ''}
-                      onChange={(event) =>
-                        void task(() =>
-                          command({
-                            type: 'work.reschedule',
-                            id: item.id,
-                            revision: original.revision,
-                            dueDate: event.target.value || null,
-                          }),
-                        )
-                      }
-                    />
-                  </Field>
-                )}
                 <Button
+                  type="button"
                   onClick={() =>
                     void task(() => complete(original, !isComplete(item, snapshot.entries)))
                   }
                 >
                   {isComplete(item, snapshot.entries) ? '重新打开' : '标记完成'}
                 </Button>
-                <Button
-                  onClick={() => {
-                    close();
-                    edit({ type: item.type, entry: original });
-                  }}
-                >
-                  编辑
-                </Button>
                 {(item.type === 'todo' || item.type === 'milestone') && (
-                  <>
-                    <Button
-                      onClick={() => {
-                        close();
-                        edit({ type: item.type, entry: original, defaults: { comment: true } });
-                      }}
-                    >
-                      添加批注／纪要
-                    </Button>
-                    <Button onClick={() => void task(() => promote(original))}>
-                      升为独立业务线
-                    </Button>
-                  </>
+                  <Button type="button" onClick={() => void task(() => promote(original))}>
+                    升为业务线
+                  </Button>
                 )}
                 {item.type !== 'project' && (
-                  <Button onClick={() => setMoving(true)}>移动／排序</Button>
+                  <Button type="button" onClick={() => setMoving(true)}>
+                    移动／排序
+                  </Button>
                 )}
                 <Button
+                  type="button"
                   className="danger"
                   onClick={() => {
-                    close();
                     remove(original);
                   }}
                 >
@@ -185,6 +144,6 @@ export function MobileActions({
           </>
         )}
       </fieldset>
-    </Modal>
+    </div>
   );
 }

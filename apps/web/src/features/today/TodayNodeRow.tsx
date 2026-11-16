@@ -8,12 +8,14 @@ export function TodayNodeRow({
   snapshot,
   toggle,
   record,
+  schedule,
 }: {
   context: MilestoneContext;
   done: boolean;
   snapshot: Snapshot;
   toggle: (item: SpaceItem) => void;
   record: () => void;
+  schedule?: () => void;
 }) {
   const { milestone, line } = context;
   const preview = useRef<HTMLDivElement>(null);
@@ -69,8 +71,17 @@ export function TodayNodeRow({
           <small>{line.title}</small>
           <span title={milestone.title}>{milestone.title}</span>
         </span>
-        {milestone.dueTime && <time>{milestone.dueTime}</time>}
+        {!schedule && milestone.dueTime && <time>{milestone.dueTime}</time>}
       </button>
+      {schedule && (
+        <button
+          className="mobile-node-date"
+          aria-label={`修改时间 · ${milestone.title}`}
+          onClick={schedule}
+        >
+          {milestone.dueTime ?? '未定'}
+        </button>
+      )}
       {!done && (
         <button
           className="record-source"

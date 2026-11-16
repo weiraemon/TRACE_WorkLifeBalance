@@ -113,8 +113,9 @@ async function openActions(page, target) {
     clientY: 100,
   });
   await page.getByRole('dialog').waitFor();
-  await target.dispatchEvent('pointerup', { pointerType: 'touch', clientX: 100, clientY: 100 });
-  await page.getByRole('button', { name: '更多操作', exact: true }).click();
+  await page
+    .locator('.mobile-main')
+    .dispatchEvent('pointerup', { pointerType: 'touch', clientX: 100, clientY: 100 });
 }
 let browser;
 let wifiChild;
@@ -356,6 +357,27 @@ try {
     await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click();
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
   }
+  await node.getByRole('button', { name: '修改时间 · 方案讨论', exact: true }).click();
+  const schedule = page.getByRole('dialog', { name: '调整时间', exact: true });
+  await schedule.getByLabel('时刻', { exact: true }).fill('14:30');
+  await schedule.getByRole('button', { name: '保存', exact: true }).click();
+  await schedule.waitFor({ state: 'hidden' });
+  await eventually(
+    async () =>
+      assert.match(
+        await node.getByRole('button', { name: '修改时间 · 方案讨论', exact: true }).innerText(),
+        /14:30/,
+      ),
+    '快捷改时刻',
+  );
+  await openActions(page, node.locator('.mobile-node-name'));
+  const properties = page.getByRole('dialog', { name: '编辑节点', exact: true });
+  assert.equal(await properties.getByRole('button', { name: '更多操作', exact: true }).count(), 0);
+  assert.equal(await properties.getByLabel('批注 / 纪要', { exact: true }).count(), 0);
+  await properties.getByRole('button', { name: '删除', exact: true }).waitFor();
+  await page.screenshot({ path: path.join(output, 'compact-properties.png') });
+  await properties.getByRole('button', { name: '关闭对话框', exact: true }).click();
+  checks.push('点击节点时间直接调整，长按紧凑属性直接提供删除并移除重复批注');
   const previousCompletion = page.getByRole('checkbox', { name: '完成 整理讨论材料', exact: true });
   const todoId = await page
     .locator('.mobile-todos li')
@@ -384,11 +406,10 @@ try {
   await page.getByRole('heading', { name: '方法验证', exact: true }).press('ArrowLeft');
   await page.screenshot({ path: path.join(output, 'vertical-line.png') });
   checks.push('项目、业务线、节点和待办创建；竖向业务线与切线');
-  await openActions(page, page.locator('.mobile-todo-title').filter({ hasText: '整理讨论材料' }));
-  await page.getByRole('button', { name: '添加批注／纪要', exact: true }).click();
-  await page.getByLabel('批注 / 纪要', { exact: true }).fill('内容编辑验收原文');
-  await page.getByRole('button', { name: '保存批注', exact: true }).click();
-  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  await page.locator('.mobile-todo-title').filter({ hasText: '整理讨论材料' }).click();
+  await page.getByLabel('内部正文', { exact: true }).fill('内容编辑验收原文');
+  await page.getByRole('button', { name: '保存内容', exact: true }).click();
+  await page.getByRole('button', { name: '返回', exact: true }).click();
   await nav('工作空间');
   const notesOpened = Date.now();
   await page.getByRole('button', { name: '打开业务线 下一步研究', exact: true }).click();

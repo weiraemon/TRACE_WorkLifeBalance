@@ -133,40 +133,47 @@ export function VerticalLine({
               <div className="mobile-node-heading">
                 {!point.pool && (
                   <button
-                    className={`mobile-node-dot priority-${point.importance}`}
+                    className={`mobile-todo-check priority-${point.importance}`}
                     role="checkbox"
                     aria-checked={association ? association.has(point.id) : done}
                     aria-label={`${association ? '关联节点' : '完成节点'} ${point.title}`}
                     onClick={() => (association ? association.toggle(point.id) : toggle(point.id))}
                   >
-                    {association ? (
-                      association.has(point.id) ? (
-                        <CheckIcon />
-                      ) : (
-                        <span />
-                      )
-                    ) : done ? (
-                      <CheckIcon />
-                    ) : point.tags[0] ? (
-                      <NodeTagIcon tag={point.tags[0]} />
-                    ) : (
-                      <span />
-                    )}
+                    {(association ? association.has(point.id) : done) && <CheckIcon />}
                   </button>
                 )}
-                <button
-                  className={`mobile-node-name${done ? ' mobile-completed' : ''}`}
-                  onClick={() =>
-                    association ? !point.pool && association.toggle(point.id) : select(point.id)
-                  }
-                >
-                  <strong>
-                    {point.pool
-                      ? '待办池'
-                      : `${point.dueDate ?? '未定日期'}${point.dueTime ? ` ${point.dueTime}` : ''}`}
-                  </strong>
-                  {!point.pool && <span>{point.title}</span>}
-                </button>
+                <div className="mobile-node-content">
+                  {!point.pool && (
+                    <button
+                      className="mobile-node-date"
+                      aria-label={`修改时间 · ${point.title}`}
+                      disabled={Boolean(association)}
+                      onClick={() =>
+                        edit({
+                          type: 'milestone',
+                          entry: snapshot.entries.find(({ data }) => data.id === point.id),
+                          defaults: { schedule: true },
+                        })
+                      }
+                    >
+                      {point.dueDate ?? '未定'} {point.dueTime}
+                    </button>
+                  )}
+                  <button
+                    className={`mobile-node-name priority-${point.importance}${done ? ' mobile-completed' : ''}`}
+                    onClick={() =>
+                      association ? !point.pool && association.toggle(point.id) : select(point.id)
+                    }
+                  >
+                    {!point.pool &&
+                      (point.tags[0] ? (
+                        <NodeTagIcon tag={point.tags[0]} />
+                      ) : (
+                        <span className="mobile-node-tag-dot" />
+                      ))}
+                    <span>{point.pool ? '待办池' : point.title}</span>
+                  </button>
+                </div>
                 <Button
                   aria-label={`添加 TODO / IDEA · ${point.title}`}
                   onClick={() => edit({ type: 'todo', defaults: { milestoneId: point.id } })}
@@ -198,15 +205,27 @@ export function VerticalLine({
                       >
                         {todo.kind === 'idea' && <small>IDEA · </small>}
                         {todo.title}
-                        {(todo.dueDate || todo.direction !== 'self') && (
+                        {todo.direction !== 'self' && (
                           <small className="mobile-todo-meta">
-                            {todo.dueDate}
-                            {todo.direction !== 'self'
-                              ? ` · ${todo.direction === 'from' ? '等' : '找'} ${todo.person}`
-                              : ''}
+                            {`${todo.direction === 'from' ? '等' : '找'} ${todo.person}`}
                           </small>
                         )}
                       </button>
+                      {!association && (
+                        <button
+                          className="mobile-node-date"
+                          aria-label={`修改日期 · ${todo.title}`}
+                          onClick={() =>
+                            edit({
+                              type: 'todo',
+                              entry: snapshot.entries.find(({ data }) => data.id === todo.id),
+                              defaults: { schedule: true },
+                            })
+                          }
+                        >
+                          {todo.dueDate ?? point.dueDate ?? '未定'}
+                        </button>
+                      )}
                     </li>
                   );
                 })}

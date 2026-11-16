@@ -26,7 +26,6 @@ import { ActualRecordList } from '../actual/ActualRecordList';
 import { ActualRecordForm } from '../actual/ActualRecordForm';
 import { QuickCapture } from '../capture/QuickCapture';
 import { WorkItemForm } from '../workspace/WorkItemForm';
-import { CommentForm } from '../workspace/CommentForm';
 import { DeleteSpaceDialog } from '../workspace/DeleteSpaceDialog';
 import { SpaceDetails } from '../workspace/SpaceDetails';
 import { workspaceGroups } from '../workspace/workspaceGroups';
@@ -36,6 +35,7 @@ import { draftsAreDurable } from '../drafts/useDraftState';
 import { ProjectList } from './ProjectList';
 import { VerticalLine } from './VerticalLine';
 import { MobileActions } from './MobileActions';
+import { MobileSchedule } from './MobileSchedule';
 import { MobileNotes } from './MobileNotes';
 import './mobile.css';
 import { OperationProgress } from '../../components/OperationProgress';
@@ -74,7 +74,6 @@ export default function MobileApp() {
   );
   const [editor, setEditor] = useState<Editor | null>(null),
     [selected, setSelected] = useState<string | null>(null),
-    [actionId, setActionId] = useState<string | null>(null),
     [deleting, setDeleting] = useState<Entry | null>(null);
   const [editMode, setEditMode] = useState<'actual' | 'todo'>('actual'),
     [formVersion, setFormVersion] = useState(0),
@@ -141,7 +140,6 @@ export default function MobileApp() {
     if (historyEntry) history.pushState({ chaosMobile: next }, '');
     setRoute(next);
     setSelected(null);
-    setActionId(null);
     setQuery('');
     main.current?.scrollTo({ top: 0 });
   };
@@ -237,10 +235,6 @@ export default function MobileApp() {
     };
   }, [Boolean(snapshot), reload]);
   const back = () => {
-    if (actionId) {
-      setActionId(null);
-      return;
-    }
     if (deleting) {
       setDeleting(null);
       return;
@@ -276,7 +270,7 @@ export default function MobileApp() {
     window.addEventListener('popstate', pop);
     window.addEventListener('beforeunload', unload);
     const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && selected && !actionId && !editor && !settings && !deleting) {
+      if (event.key === 'Escape' && selected && !editor && !settings && !deleting) {
         event.preventDefault();
         back();
       }
@@ -311,7 +305,6 @@ export default function MobileApp() {
     previousDetail.current?.entry.data.id === selected
   )
     selectedEntry = previousDetail.current.entry;
-  const actionEntry = snapshot?.entries.find((entry) => entry.data.id === actionId);
   useLayoutEffect(() => {
     if (selectedEntry) main.current?.scrollTo({ top: 0 });
     else if (detailWasOpen.current) main.current?.scrollTo({ top: detailScroll.current });
@@ -436,6 +429,13 @@ export default function MobileApp() {
             {route.page === 'today' && (
               <>
                 <TodayAgenda
+                  schedule={(item) =>
+                    openEditor({
+                      type: item.type,
+                      entry: snapshot.entries.find(({ data }) => data.id === item.id),
+                      defaults: { schedule: true },
+                    })
+                  }
                   snapshot={snapshot}
                   date={date}
                   lineId=""
@@ -700,29 +700,10 @@ export default function MobileApp() {
           )}
         </Modal>
       )}
-      {snapshot && actionEntry && (
-        <MobileActions
-          key={actionEntry.data.id}
-          entry={actionEntry}
-          snapshot={snapshot}
-          close={() => setActionId(null)}
-          reload={reload}
-          edit={openEditor}
-          remove={remove}
-        />
-      )}
       {snapshot &&
         editor &&
-        (editor.defaults?.comment && editor.entry ? (
-          <CommentForm
-            draftScope={snapshot.root}
-            entry={editor.entry}
-            close={() => {
-              if (canLeave()) setEditor((current) => (current === editor ? null : current));
-            }}
-            reload={reload}
-            onDirtyChange={workDirty}
-          />
+        (editor.defaults?.schedule && editor.entry ? (
+          <MobileSchedule entry={editor.entry} reload={reload} close={() => setEditor(null)} />
         ) : editor.type === 'actual' ? (
           <ActualRecordForm
             key={editor.entry?.data.id ?? 'new'}
@@ -741,14 +722,24 @@ export default function MobileApp() {
             snapshot={snapshot}
             reload={reload}
             onDirtyChange={workDirty}
+            compact
             actions={
               editor.entry
-                ? () => {
-                    if (canLeave()) {
-                      setEditor(null);
-                      setActionId(editor.entry!.data.id);
-                    }
-                  }
+                ? (setBusy, close) => (
+                    <MobileActions
+                      entry={editor.entry!}
+                      onBusyChange={setBusy}
+                      snapshot={snapshot}
+                      close={close}
+                      reload={reload}
+                      remove={(entry) => {
+                        if (canLeave()) {
+                          setEditor(null);
+                          remove(entry);
+                        }
+                      }}
+                    />
+                  )
                 : undefined
             }
             close={() => {

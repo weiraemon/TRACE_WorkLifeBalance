@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   directionLabel,
   milestoneTags,
@@ -21,13 +21,15 @@ export function WorkItemForm({
   reload,
   onDirtyChange,
   actions,
+  compact = false,
 }: {
   editor: Editor;
   snapshot: Snapshot;
   close: () => void;
   reload: () => Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
-  actions?: () => void;
+  actions?: (setBusy: (busy: boolean) => void, close: () => void) => ReactNode;
+  compact?: boolean;
 }) {
   const type = editor.type as keyof typeof spaceLabel;
   const item = editor.entry && isSpaceItem(editor.entry.data) ? editor.entry.data : undefined;
@@ -114,7 +116,7 @@ export function WorkItemForm({
     );
   return (
     <Modal
-      className="editor-dialog"
+      className={`editor-dialog${compact ? ' compact-editor' : ''}`}
       title={`${item ? '编辑' : '新增'}${type === 'todo' ? kind.toUpperCase() : spaceLabel[type]}`}
       onClose={closeForm}
     >
@@ -170,9 +172,10 @@ export function WorkItemForm({
               data,
               editor.entry ? { ...editor.entry, revision: baseRevision } : undefined,
               {
-                comments: comment.trim()
-                  ? [{ id: commentId, targetId: recordId, text: comment }]
-                  : [],
+                comments:
+                  (!compact || !item) && comment.trim()
+                    ? [{ id: commentId, targetId: recordId, text: comment }]
+                    : [],
               },
             );
             await reload();
@@ -186,7 +189,7 @@ export function WorkItemForm({
           }
         }}
       >
-        {type === 'milestone' && !pool && (
+        {type === 'milestone' && !pool && (!compact || !item) && (
           <div className="node-smart-capture">
             <Field label="粘贴微信消息" wide>
               <textarea
@@ -223,8 +226,14 @@ export function WorkItemForm({
             关联做过的事
           </Button>
         )}
-        <Field label="标题">
-          <input required autoFocus value={title} onChange={(e) => setTitle(e.target.value)} />
+        <Field label="标题" wide={compact}>
+          <input
+            placeholder={compact ? '标题' : undefined}
+            required
+            autoFocus
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
         </Field>
         {type === 'todo' && (
           <Field label="内容类型">
@@ -248,7 +257,7 @@ export function WorkItemForm({
           />
         )}
         <fieldset className="primary-settings">
-          <legend>重要性</legend>
+          {!compact && <legend>重要性</legend>}
           <ImportancePicker value={importance} onChange={setImportance} />
         </fieldset>
         {type === 'milestone' && !pool && (
@@ -301,24 +310,25 @@ export function WorkItemForm({
               </Field>
               {direction !== 'self' && (
                 <Field label="联系人">
-                  <input required value={person} onChange={(e) => setPerson(e.target.value)} />
+                  <input
+                    placeholder={compact ? '联系人' : undefined}
+                    required
+                    value={person}
+                    onChange={(e) => setPerson(e.target.value)}
+                  />
                 </Field>
               )}
             </>
           )}
-          {(type === 'todo' || type === 'milestone') && (
-            <Field label="批注 / 纪要">
+          {(!compact || !item) && (type === 'todo' || type === 'milestone') && (
+            <Field label="批注 / 纪要" wide={compact}>
               <textarea rows={4} value={comment} onChange={(e) => setComment(e.target.value)} />
             </Field>
           )}
         </div>
+        {actions?.(setBusy, closeForm)}
         <ErrorMessage message={error} />
         <div className="form-actions">
-          {actions && (
-            <Button type="button" onClick={actions}>
-              更多操作
-            </Button>
-          )}
           <Button type="button" onClick={closeForm}>
             取消
           </Button>

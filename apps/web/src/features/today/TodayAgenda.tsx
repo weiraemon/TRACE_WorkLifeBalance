@@ -14,6 +14,7 @@ export function TodayAgenda({
   goWorkspace,
   toggle,
   record,
+  schedule,
 }: {
   snapshot: Snapshot;
   date: string;
@@ -23,6 +24,7 @@ export function TodayAgenda({
   goWorkspace: (id: string) => void;
   toggle: (item: SpaceItem) => void;
   record: (item: Todo | Milestone) => void;
+  schedule?: (item: Todo | Milestone) => void;
 }) {
   const agenda = agendaForDay(snapshot.entries, date).filter(
     (row) => !lineId || row.context.line.id === lineId,
@@ -63,6 +65,7 @@ export function TodayAgenda({
                   snapshot={snapshot}
                   toggle={toggle}
                   record={() => record(item)}
+                  schedule={schedule ? () => schedule(item) : undefined}
                 />
               ) : (
                 <li
@@ -89,6 +92,15 @@ export function TodayAgenda({
                       </span>
                     </span>
                   </button>
+                  {schedule && (
+                    <button
+                      className="mobile-node-date"
+                      aria-label={`修改日期 · ${item.title}`}
+                      onClick={() => schedule(item)}
+                    >
+                      {item.dueDate ?? context.milestone.dueDate ?? '未定'}
+                    </button>
+                  )}
                   <button
                     className="record-source"
                     aria-label={`记一段 · ${item.title}`}
