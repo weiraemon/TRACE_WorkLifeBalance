@@ -572,6 +572,42 @@
 .mobile-select-menu button[aria-selected='true'] {
   background: var(--mobile-recorded);
 }
+.mobile-app :is(input:not([type='checkbox']), textarea),
+[data-surface='android'] .dialog :is(input:not([type='checkbox']), textarea) {
+  background: transparent !important;
+  border: 2px solid var(--mobile-ink) !important;
+  border-radius: 10px;
+  color: var(--mobile-ink);
+}
+.mobile-app select,
+[data-surface='android'] .dialog select {
+  background: transparent;
+  border: 1px solid var(--mobile-border);
+  border-radius: 10px;
+  color: var(--mobile-ink);
+}
+.mobile-app .mobile-search input,
+[data-surface='android'] .mobile-search input {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0;
+  padding: 6px 0;
+}
+.mobile-app .date-time-input > input,
+[data-surface='android'] .date-time-input > input {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0;
+}
+.mobile-app .mobile-topbar input[type='date'],
+.mobile-app .mobile-topbar input[type='time'],
+[data-surface='android'] .mobile-topbar input[type='date'],
+[data-surface='android'] .mobile-topbar input[type='time'] {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0;
+  padding: 6px 0;
+}
 .mobile-capture-form .quick-capture-controls .field:has(> select),
 .mobile-capture-form > .field:has(> select) {
   border-radius: 10px;

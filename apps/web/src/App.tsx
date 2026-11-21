@@ -213,7 +213,7 @@ export default function App() {
   return (
     <div
       className={
-        'shell ' +
+        'shell desktop-app ' +
         (selectedEntry ? 'has-detail ' : '') +
         (hasBusinessNavigation ? 'workspace-shell' : '')
       }

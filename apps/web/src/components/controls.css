@@ -1,0 +1,23 @@
+/* Shared control skin. Page components only provide layout and behavior. */
+.desktop-app :is(input:not([type='checkbox']), select, textarea) {
+  background: transparent;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  color: var(--ink);
+}
+.desktop-app :is(input:not([type='checkbox']), select, textarea):focus-visible {
+  border-color: var(--accent-strong);
+}
+.desktop-app .topbar .search input {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  padding: 6px 0;
+}
+.desktop-app .topbar input[type='date'],
+.desktop-app .topbar input[type='time'] {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}

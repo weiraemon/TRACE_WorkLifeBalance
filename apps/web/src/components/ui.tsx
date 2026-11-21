@@ -7,6 +7,7 @@ import {
   isValidElement,
   useEffect,
   useRef,
+  useState,
   type ButtonHTMLAttributes,
   type ReactNode,
   type ReactElement,
@@ -29,6 +30,37 @@ export function ActionButton({
       {children ?? label}
     </Button>
   );
+}
+export function Select({
+  value, options, onChange, disabled = false, mobile = false, 'aria-label': ariaLabel,
+}: {
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  mobile?: boolean;
+  'aria-label'?: string;
+}) {
+  if (!mobile)
+    return <select aria-label={ariaLabel} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
+      {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+    </select>;
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const selected = options.find((option) => option.value === value);
+  useEffect(() => {
+    const close = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false); };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, []);
+  return <div className={`mobile-select${open ? ' is-open' : ''}`} ref={root}>
+    <button type="button" className="mobile-select-trigger" aria-haspopup="listbox" aria-expanded={open} aria-label={ariaLabel} disabled={disabled} onClick={() => setOpen((current) => !current)}>
+      <span>{selected?.label ?? ''}</span><span className="mobile-select-arrow" aria-hidden="true" />
+    </button>
+    {open && <div className="mobile-select-menu" role="listbox" aria-label={ariaLabel}>
+      {options.map((option) => <button type="button" role="option" aria-selected={option.value === value} key={option.value} onClick={() => { onChange(option.value); setOpen(false); }}>{option.label}</button>)}
+    </div>}
+  </div>;
 }
 export function Modal({
   title,

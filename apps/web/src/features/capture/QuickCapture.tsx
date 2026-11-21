@@ -1,72 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { type Snapshot, type Todo, type Milestone } from '../../../../../packages/domain/index';
 import { activeLines, isComplete } from '../../../../../packages/domain/workspace';
 import { DateTimeInput } from '../../components/DateTimeInput';
 import { announceSaved } from '../../components/SaveFeedback';
 import { createRecord } from '../../api';
-import { Button, Field, ErrorMessage } from '../../components/ui';
+import { Button, Field, ErrorMessage, Select } from '../../components/ui';
 import { ImportancePicker } from '../../components/Importance';
 import { useDraftState, useDraftSaving, clearDraft } from '../drafts/useDraftState';
 import { parseQuickCapture } from './quickCaptureParser';
 
-function MobileSelect({
-  value,
-  options,
-  onChange,
-  disabled = false,
-  'aria-label': ariaLabel,
-}: {
-  value: string;
-  options: Array<{ value: string; label: string }>;
-  onChange: (value: string) => void;
-  disabled?: boolean;
-  'aria-label'?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
-  const selected = options.find((option) => option.value === value);
-  useEffect(() => {
-    const close = (event: PointerEvent) => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener('pointerdown', close);
-    return () => document.removeEventListener('pointerdown', close);
-  }, []);
-  return (
-    <div className={`mobile-select${open ? ' is-open' : ''}`} ref={root}>
-      <button
-        type="button"
-        className="mobile-select-trigger"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-label={ariaLabel}
-        disabled={disabled}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span>{selected?.label ?? ''}</span>
-        <span className="mobile-select-arrow" aria-hidden="true" />
-      </button>
-      {open && (
-        <div className="mobile-select-menu" role="listbox" aria-label={ariaLabel}>
-          {options.map((option) => (
-            <button
-              type="button"
-              role="option"
-              aria-selected={option.value === value}
-              key={option.value}
-              onClick={() => {
-                onChange(option.value);
-                setOpen(false);
-              }}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 export function QuickCapture({
   snapshot,
   onCreate,
@@ -219,7 +161,7 @@ export function QuickCapture({
   );
   const lineSelect = (
     mobile ? (
-      <MobileSelect
+      <Select mobile
         aria-label="业务线"
         value={lineId}
         options={[{ value: '', label: '选择业务线' }, ...lines.map((line) => ({ value: line.id, label: line.title }))]}
@@ -237,7 +179,7 @@ export function QuickCapture({
   );
   const typeSelect = (
     mobile ? (
-      <MobileSelect aria-label="类型" value={captureType} options={[{ value: 'todo', label: 'TODO' }, { value: 'idea', label: 'IDEA' }, { value: 'milestone', label: '节点' }]} onChange={(value) => setCaptureType(value as typeof captureType)} />
+      <Select mobile aria-label="类型" value={captureType} options={[{ value: 'todo', label: 'TODO' }, { value: 'idea', label: 'IDEA' }, { value: 'milestone', label: '节点' }]} onChange={(value) => setCaptureType(value as typeof captureType)} />
     ) : (
       <select className="line-dropdown" aria-label="类型" value={captureType} onChange={(event) => setCaptureType(event.target.value as typeof captureType)}>
         <option value="todo">TODO</option><option value="idea">IDEA</option><option value="milestone">节点</option>
@@ -286,7 +228,7 @@ export function QuickCapture({
       {captureType !== 'milestone' && (
         <Field label="具体节点">
           {mobile ? (
-            <MobileSelect
+            <Select mobile
               aria-label="具体节点"
               value={chosen}
               disabled={!lineId}
@@ -346,3 +288,4 @@ export function QuickCapture({
     </section>
   );
 }
+
