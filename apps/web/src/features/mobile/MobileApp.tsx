@@ -475,8 +475,7 @@ export default function MobileApp() {
             {route.page === 'done' && (
               <section className="mobile-done">
                 <p className="mobile-total">
-                  {(timeTotals(snapshot.entries, date, date).total / 60).toFixed(1)}
-                  <small>小时实际投入</small>
+                  已工作 {(timeTotals(snapshot.entries, date, date).total / 60).toFixed(1)}小时
                 </p>
                 <ActualRecordList
                   recentId={recentId}

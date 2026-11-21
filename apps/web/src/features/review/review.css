@@ -397,11 +397,27 @@
   margin: 28px 0 36px;
 }
 .review-actuals article {
-  display: grid;
-  grid-template-columns: 110px minmax(0, 1fr);
-  gap: 4px 18px;
-  padding: 16px 0;
+  display: block;
+  padding: 9px 0;
   border-bottom: 1px solid var(--line);
+}
+.review-actuals .actual-record-content {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  min-width: 0;
+}
+.review-actuals .actual-record-content time {
+  flex: 0 0 auto;
+}
+.review-actuals .actual-record-description {
+  display: inline;
+  margin: 0;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+.review-actuals .actual-record-content small {
+  display: none;
 }
 .review-actuals time {
   font-size: 12px;
@@ -439,12 +455,6 @@
   text-decoration: underline;
 }
 @media (max-width: 680px) {
-  .review-actuals article {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .review-actuals article > small {
-    grid-column: 1;
-  }
   .plan-marker {
     padding: 0 6px 0 0;
     gap: 3px;

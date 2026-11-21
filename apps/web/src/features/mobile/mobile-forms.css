@@ -112,7 +112,8 @@
 }
 .mobile-app .button.danger,
 [data-surface='android'] .dialog .button.danger {
-  color: #a14036;
+  color: var(--mobile-selected-text);
+  background: #b84a3d;
 }
 .mobile-app .field > span,
 [data-surface='android'] .dialog .field > span {
@@ -385,35 +386,32 @@
 }
 .mobile-app .mobile-edit-modes {
   margin: var(--mobile-space-1) 0 var(--mobile-space-3);
-  padding: var(--mobile-space-1);
-  border-radius: var(--mobile-space-2);
-  background: #eae9e2;
-  gap: var(--mobile-space-1);
+  padding: 0;
+  border-bottom: 1px solid var(--mobile-border);
+  gap: 0;
 }
 .mobile-edit-modes::before {
   display: none;
 }
 .mobile-edit-modes button {
   min-height: 44px;
-  padding: var(--mobile-space-1);
-  border-radius: 12px;
+  padding: var(--mobile-space-1) var(--mobile-space-2);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   color: var(--mobile-muted);
   font-size: 15px;
 }
 .mobile-edit-modes button[aria-pressed='true'] {
-  background: var(--mobile-input);
+  background: transparent;
   color: var(--mobile-ink);
-  box-shadow: 0 1px 4px #1f2a2414;
+  border-bottom-color: var(--mobile-accent);
 }
 .mobile-app .selected-time-range,
 [data-surface='android'] .dialog .selected-time-range {
-  display: inline-flex;
-  align-items: center;
+  display: block;
   margin: var(--mobile-space-2) 0;
-  padding: var(--mobile-space-1) var(--mobile-space-2);
-  min-height: 44px;
-  border-radius: 999px;
-  background: #e7ede5;
+  padding: 0;
   color: var(--mobile-accent);
   font-size: 15px;
   font-weight: 600;
