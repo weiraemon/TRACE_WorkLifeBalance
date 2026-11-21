@@ -40,27 +40,20 @@ for (const runtime of Object.values(runtimes)) {
   );
 }
 const pythonDir = path.join(output, 'runtime', 'python');
-execFileSync(
-  'powershell.exe',
-  [
-    '-NoProfile',
-    '-NonInteractive',
-    '-Command',
-    `Expand-Archive -LiteralPath $env:CHAOS_PYTHON_ZIP -DestinationPath $env:CHAOS_PYTHON_DIR -Force
-  Expand-Archive -LiteralPath $env:CHAOS_SQLCIPHER_WHEEL -DestinationPath (Join-Path $env:CHAOS_PYTHON_DIR 'Lib/site-packages') -Force
-  Expand-Archive -LiteralPath $env:CHAOS_ZSTD_WHEEL -DestinationPath (Join-Path $env:CHAOS_PYTHON_DIR 'Lib/site-packages') -Force`,
-  ],
-  {
+const sitePackages = path.join(pythonDir, 'Lib', 'site-packages');
+await fs.mkdir(sitePackages, { recursive: true });
+// Use the Windows tar utility instead of PowerShell Expand-Archive. The latter
+// is absent in some local PowerShell installations, while tar handles both ZIP
+// runtimes and wheel archives on Windows runners and developer machines.
+for (const [archive, destination] of [
+  [path.join(cache, runtimes.python.file), pythonDir],
+  [path.join(cache, runtimes.sqlcipher.file), sitePackages],
+  [path.join(cache, runtimes.zstandard.file), sitePackages],
+]) {
+  execFileSync('tar.exe', ['-xf', archive, '-C', destination], {
     windowsHide: true,
-    env: {
-      ...process.env,
-      CHAOS_PYTHON_ZIP: path.join(cache, runtimes.python.file),
-      CHAOS_PYTHON_DIR: pythonDir,
-      CHAOS_SQLCIPHER_WHEEL: path.join(cache, runtimes.sqlcipher.file),
-      CHAOS_ZSTD_WHEEL: path.join(cache, runtimes.zstandard.file),
-    },
-  },
-);
+  });
+}
 await fs.writeFile(
   path.join(pythonDir, 'python312._pth'),
   'python312.zip\n.\nLib/site-packages\nimport site\n',
