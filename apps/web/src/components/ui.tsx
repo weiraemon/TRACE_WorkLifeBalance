@@ -1,3 +1,4 @@
+import { DateTimeInput } from './DateTimeInput';
 import * as Dialog from '@radix-ui/react-dialog';
 import { ArrowLeftIcon, Cross2Icon } from '@radix-ui/react-icons';
 import {
@@ -101,7 +102,9 @@ export function Field({
       <span>{label}</span>
       {Children.map(children, (child) =>
         isValidElement(child) &&
-        (['input', 'select', 'textarea'].includes(String(child.type)) || child.type === DatePicker)
+        (['input', 'select', 'textarea'].includes(String(child.type)) ||
+          child.type === DatePicker ||
+          child.type === DateTimeInput)
           ? cloneElement(child as ReactElement<{ 'aria-label'?: string }>, { 'aria-label': label })
           : child,
       )}

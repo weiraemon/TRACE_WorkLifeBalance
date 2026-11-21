@@ -1,0 +1,573 @@
+/* Mobile form tokens. Existing desktop tokens stay at the platform boundary. */
+:root[data-surface='android'] {
+  --mobile-bg: #f6f4ed;
+  --mobile-surface: #fffefa;
+  --mobile-input: #fff;
+  --mobile-border: #e3e0d6;
+  --mobile-ink: #1f2a24;
+  --mobile-muted: #6b746e;
+  --mobile-placeholder: #9aa19b;
+  --mobile-accent: #304d39;
+  --mobile-selected-text: #fff;
+  --mobile-recorded: #ecede8;
+  --mobile-font-body: Arial, 'Microsoft YaHei', sans-serif;
+  --mobile-font-title: 'Noto Serif SC Variable', serif;
+  --mobile-text-title: 22px;
+  --mobile-text-heading: 16px;
+  --mobile-text-body: 15px;
+  --mobile-text-caption: 13px;
+  --mobile-space-1: 8px;
+  --mobile-space-2: 16px;
+  --mobile-space-3: 24px;
+  --mobile-space-4: 32px;
+  --mobile-radius-input: 12px;
+  --mobile-radius-card: 16px;
+  --mobile-radius-button: 999px;
+  --mobile-touch-target: 44px;
+  --mobile-action-height: 48px;
+  --mobile-motion: 200ms;
+  --paper: var(--mobile-bg);
+  --surface: var(--mobile-surface);
+  --text: var(--mobile-ink);
+  --ink: var(--mobile-ink);
+  --muted: var(--mobile-muted);
+  --label: var(--mobile-muted);
+  --line: var(--mobile-border);
+  --accent-strong: var(--mobile-accent);
+  --input-bg: var(--mobile-input);
+  --input-border: var(--mobile-border);
+  --mobile-ui-font: var(--mobile-font-body);
+  font-family: var(--mobile-font-body);
+  font-size: var(--mobile-text-body);
+}
+:root[data-surface='android'][data-theme='blue'] {
+  --mobile-bg: #f1f5f8;
+  --mobile-surface: #f9fbfc;
+  --mobile-border: #d7e1e8;
+  --mobile-accent: #3b566d;
+  --mobile-ink: #22313a;
+  --mobile-muted: #65717a;
+  --mobile-recorded: #e8edf0;
+}
+.mobile-app,
+[data-surface='android'] .dialog {
+  color: var(--mobile-ink);
+  font-family: var(--mobile-font-body);
+  font-size: var(--mobile-text-body);
+}
+.mobile-app :is(h1, h2, h3),
+[data-surface='android'] .dialog :is(h2, h3) {
+  font-family: var(--mobile-font-body);
+  line-height: 1.5;
+  font-size: var(--mobile-text-heading);
+}
+.mobile-app h1,
+[data-surface='android'] .dialog > .section-heading h2 {
+  font-family: var(--mobile-font-title);
+  font-size: var(--mobile-text-title);
+  font-weight: 650;
+}
+.mobile-app :is(button, summary):not([data-half-hour]),
+[data-surface='android'] .dialog :is(button, summary):not([data-half-hour]) {
+  min-height: var(--mobile-touch-target);
+  font-family: var(--mobile-font-body);
+}
+.mobile-app :is(input, select, textarea):not([type='checkbox']),
+[data-surface='android'] .dialog :is(input, select, textarea):not([type='checkbox']) {
+  appearance: none;
+  background: var(--mobile-input);
+  border: 1px solid var(--mobile-border);
+  border-radius: var(--mobile-radius-input);
+  color: var(--mobile-ink);
+  font-size: var(--mobile-text-body);
+  font-family: var(--mobile-font-body);
+  padding: var(--mobile-space-1) var(--mobile-space-2);
+  min-height: var(--mobile-action-height);
+  line-height: 1.6;
+  box-shadow: none;
+}
+.mobile-app :is(input, select, textarea):focus-visible,
+[data-surface='android'] .dialog :is(input, select, textarea):focus-visible {
+  outline: 1px solid var(--mobile-accent);
+  outline-offset: 0;
+  border-color: var(--mobile-accent);
+  box-shadow: none;
+}
+.mobile-app ::placeholder,
+[data-surface='android'] .dialog ::placeholder {
+  color: var(--mobile-placeholder);
+  opacity: 1;
+}
+.mobile-app .button,
+[data-surface='android'] .dialog .button {
+  border-radius: var(--mobile-radius-button);
+  color: var(--mobile-accent);
+  font-size: var(--mobile-text-body);
+  background: transparent;
+}
+.mobile-app .button.primary,
+[data-surface='android'] .dialog .button.primary {
+  color: var(--mobile-selected-text);
+  background: var(--mobile-accent);
+}
+.mobile-app .button.danger,
+[data-surface='android'] .dialog .button.danger {
+  color: #a14036;
+}
+.mobile-app .field > span,
+[data-surface='android'] .dialog .field > span {
+  color: var(--mobile-muted);
+  font-size: var(--mobile-text-caption);
+}
+/* Styled display values cover the system date/time placeholder, while the native picker
+   and its keyboard/accessibility behavior remain on the full-size input. */
+.date-time-input {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: var(--mobile-action-height);
+  min-width: 0;
+  border: 1px solid var(--mobile-border);
+  border-radius: var(--mobile-radius-input);
+  background: var(--mobile-input);
+  padding: var(--mobile-space-1) var(--mobile-space-2);
+  color: var(--mobile-ink) !important;
+  font-size: var(--mobile-text-body) !important;
+  font-variant-numeric: tabular-nums;
+}
+.date-time-input > input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.date-time-input:focus-within {
+  outline: 1px solid var(--mobile-accent);
+  border-color: var(--mobile-accent);
+}
+.date-time-input > span {
+  pointer-events: none;
+}
+/* A fixed header and a sticky action row share the sheet's scroll container. */
+[data-surface='android'] :is(.editor-dialog, .mobile-schedule-dialog) {
+  inset: auto 0 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: auto;
+  max-height: calc(100dvh - var(--mobile-space-2));
+  overflow: hidden;
+  padding: 0 var(--mobile-space-2);
+  border-radius: var(--mobile-space-2) var(--mobile-space-2) 0 0;
+  background: var(--mobile-surface);
+}
+[data-surface='android'] :is(.editor-dialog, .mobile-schedule-dialog)::before {
+  content: '';
+  display: block;
+  flex: 0 0 4px;
+  width: var(--mobile-space-4);
+  margin: var(--mobile-space-1) auto;
+  border-radius: 999px;
+  background: var(--mobile-border);
+}
+[data-surface='android'] :is(.editor-dialog, .mobile-schedule-dialog) > .section-heading {
+  position: static;
+  flex-shrink: 0;
+  padding: 0 0 var(--mobile-space-1);
+  margin: 0;
+  background: var(--mobile-surface);
+}
+[data-surface='android'] :is(.editor-dialog, .mobile-schedule-dialog) > form {
+  display: block;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-top: var(--mobile-space-1);
+}
+[data-surface='android'] .compact-editor .field {
+  margin: 0;
+}
+.mobile-form-title {
+  margin-bottom: var(--mobile-space-3);
+}
+.mobile-form-title .field > span {
+  display: none;
+}
+.mobile-form-title input {
+  width: 100%;
+  font-weight: 600;
+  min-height: 56px !important;
+}
+.mobile-form-common,
+.mobile-capture-form > .quick-capture-controls,
+.mobile-capture-form > .field {
+  margin: 0;
+  padding: 0 var(--mobile-space-2);
+  background: var(--mobile-input);
+  border: 1px solid var(--mobile-border);
+  border-radius: var(--mobile-radius-card);
+}
+.mobile-form-common > .field,
+.mobile-capture-form > .field,
+.mobile-capture-form .quick-capture-controls > .field,
+.location-row .location-picker > .field {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--mobile-space-1);
+  margin: 0;
+  min-height: 56px;
+}
+.mobile-form-common > .field + .field,
+.mobile-form-common > .location-row + .field,
+.location-row .location-picker > .field + .field {
+  border-top: 1px solid var(--mobile-border);
+}
+[data-surface='android'] .mobile-form-common .field > span,
+.mobile-capture-form > .field > span,
+.mobile-capture-form .quick-capture-controls .field > span,
+.location-row .location-picker .field > span {
+  color: var(--mobile-muted);
+  font-size: var(--mobile-text-body);
+}
+[data-surface='android'] .mobile-form-common .field > :is(input, select),
+.mobile-capture-form > .field > select,
+.mobile-capture-form .quick-capture-controls .field > select,
+.location-row .location-picker .field > select {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  padding: var(--mobile-space-1) var(--mobile-space-2) var(--mobile-space-1) 0;
+  text-align: right;
+  background: transparent;
+}
+.mobile-form-common .date-time-input,
+.mobile-capture-form .date-time-input {
+  border: 0;
+  padding-inline: 0;
+  background: transparent;
+}
+.mobile-app .field:has(> select)::after,
+[data-surface='android'] .dialog .field:has(> select)::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  width: 6px;
+  height: 6px;
+  border-right: 1px solid var(--mobile-muted);
+  border-bottom: 1px solid var(--mobile-muted);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+[data-surface='android'] .location-row {
+  margin: 0;
+}
+.location-row > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mobile-space-2);
+  min-height: 56px;
+  padding: var(--mobile-space-1) var(--mobile-space-2) var(--mobile-space-1) 0;
+  list-style: none;
+  font-size: var(--mobile-text-body);
+}
+.location-row > summary span:first-child {
+  color: var(--mobile-muted);
+}
+.location-row > summary span:last-child {
+  color: var(--mobile-ink);
+  text-align: right;
+}
+.location-row .location-picker {
+  margin: 0 0 var(--mobile-space-1);
+}
+.mobile-form-options {
+  margin: var(--mobile-space-2) 0;
+  border-bottom: 1px solid var(--mobile-border);
+}
+.mobile-form-options > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  padding: var(--mobile-space-1) 0;
+  color: var(--mobile-muted);
+  font-size: var(--mobile-text-caption);
+  list-style: none;
+  cursor: pointer;
+}
+.mobile-form-options > summary::after {
+  content: '+';
+  font-size: var(--mobile-space-2);
+}
+.mobile-form-options[open] > summary::after {
+  content: '−';
+}
+.mobile-form-options > .field,
+.mobile-form-options .node-smart-capture {
+  margin-bottom: var(--mobile-space-2) !important;
+}
+.mobile-form-options textarea {
+  width: 100%;
+}
+.mobile-form-options .primary-settings {
+  margin: 0 0 var(--mobile-space-2);
+}
+[data-surface='android'] .importance-picker {
+  display: flex;
+  justify-content: flex-start;
+  gap: var(--mobile-space-1);
+  padding: 0;
+}
+[data-surface='android'] .importance-picker button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  background: transparent;
+  outline: 0;
+}
+[data-surface='android'] .importance-picker button::before {
+  content: '';
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--priority-color);
+}
+[data-surface='android'] .importance-picker button[aria-pressed='true']::before {
+  outline: 1px solid var(--priority-color);
+  outline-offset: 4px;
+}
+[data-surface='android'] .importance-picker button:focus-visible {
+  outline: 2px solid var(--mobile-accent);
+}
+[data-surface='android'] :is(.editor-dialog, .mobile-schedule-dialog) .form-actions,
+.mobile-app .mobile-editor .form-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--mobile-space-1);
+  margin: var(--mobile-space-2) 0 0;
+  padding: var(--mobile-space-2) 0 max(var(--mobile-space-2), env(safe-area-inset-bottom));
+  background: var(--mobile-surface);
+  border-top: 1px solid var(--mobile-border);
+  z-index: 1;
+}
+[data-surface='android'] .dialog .form-actions > .button,
+.mobile-app .mobile-editor .form-actions > .button {
+  min-height: 48px;
+  height: 48px;
+  flex: 1;
+}
+[data-surface='android'] .dialog .form-actions > .primary,
+.mobile-app .mobile-editor .form-actions > .primary {
+  flex: 2;
+}
+.mobile-app .mobile-editor .form-actions {
+  background: var(--mobile-bg);
+}
+.mobile-schedule-fields {
+  display: grid;
+  gap: var(--mobile-space-2);
+  padding-top: var(--mobile-space-1);
+}
+.mobile-app .mobile-edit-modes {
+  margin: var(--mobile-space-1) 0 var(--mobile-space-3);
+  padding: var(--mobile-space-1);
+  border-radius: var(--mobile-space-2);
+  background: #eae9e2;
+  gap: var(--mobile-space-1);
+}
+.mobile-edit-modes::before {
+  display: none;
+}
+.mobile-edit-modes button {
+  min-height: 44px;
+  padding: var(--mobile-space-1);
+  border-radius: 12px;
+  color: var(--mobile-muted);
+  font-size: 15px;
+}
+.mobile-edit-modes button[aria-pressed='true'] {
+  background: var(--mobile-input);
+  color: var(--mobile-ink);
+  box-shadow: 0 1px 4px #1f2a2414;
+}
+.mobile-app .selected-time-range,
+[data-surface='android'] .dialog .selected-time-range {
+  display: inline-flex;
+  align-items: center;
+  margin: var(--mobile-space-2) 0;
+  padding: var(--mobile-space-1) var(--mobile-space-2);
+  min-height: 44px;
+  border-radius: 999px;
+  background: #e7ede5;
+  color: var(--mobile-accent);
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.mobile-app .actual-record-form .actual-entry-main > .field {
+  margin: 0;
+}
+.mobile-app .actual-record-form textarea {
+  min-height: 96px;
+  height: auto;
+}
+.mobile-capture-form .capture-recognition-heading {
+  display: none;
+}
+.mobile-capture-form > .quick-capture-controls {
+  display: block;
+  margin-bottom: var(--mobile-space-1);
+}
+.mobile-capture-form > .field {
+  margin-bottom: var(--mobile-space-1);
+}
+.mobile-capture-form > .field:has(> input) {
+  display: flex;
+  align-items: stretch;
+  padding: var(--mobile-space-1);
+}
+.mobile-capture-form .mobile-form-title > .field {
+  margin: 0;
+}
+.mobile-capture-form {
+  padding: 0;
+  margin: 0;
+}
+.mobile-capture-form .quick-capture-controls > .field + .field {
+  border-top: 1px solid var(--mobile-border);
+}
+.mobile-save-feedback {
+  position: fixed;
+  bottom: calc(88px + env(safe-area-inset-bottom));
+  inset-inline: var(--mobile-space-2);
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 25;
+}
+.mobile-save-feedback > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mobile-space-1);
+  min-height: 44px;
+  padding: var(--mobile-space-1) var(--mobile-space-2);
+  border: 1px solid var(--mobile-border);
+  border-radius: 999px;
+  background: var(--mobile-surface);
+  box-shadow: 0 4px var(--mobile-space-2) #1f2a2414;
+  color: var(--mobile-ink);
+  font-size: 13px;
+}
+@media (hover: hover) {
+  .mobile-app .button:not(.primary):hover,
+  [data-surface='android'] .dialog .button:not(.primary):hover {
+    background: var(--hover);
+  }
+  .mobile-edit-modes button:hover {
+    color: var(--mobile-ink);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .mobile-main > *,
+  .mobile-editor > :not(.mobile-edit-modes) {
+    animation: mobile-fade-in var(--mobile-motion) ease-out;
+  }
+  [data-surface='android'] .dialog {
+    animation: mobile-sheet-in var(--mobile-motion) ease-out;
+  }
+  .mobile-save-feedback > span {
+    animation: mobile-sheet-in var(--mobile-motion) ease-out;
+  }
+}
+@keyframes mobile-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes mobile-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--mobile-space-2));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.date-time-input > svg {
+  width: var(--mobile-space-2);
+  height: var(--mobile-space-2);
+  margin-left: var(--mobile-space-1);
+  flex-shrink: 0;
+  color: var(--mobile-muted);
+  pointer-events: none;
+}
+
+.mobile-app .mobile-topbar input[type='date'],
+.mobile-app .review-page > .section-heading input[type='date'] {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.mobile-app .record-feedback {
+  display: none;
+}
+.mobile-app :is(.mobile-node-heading, .mobile-line-title) > .button {
+  min-height: 44px;
+}
+.mobile-app .mobile-editor .actual-record-form {
+  display: block;
+}
+
+.mobile-form-common:empty {
+  display: none;
+}
+
+.mobile-app .field:has(> select),
+[data-surface='android'] .dialog .field:has(> select) {
+  position: relative;
+}
+.mobile-app .hint,
+[data-surface='android'] .dialog .hint {
+  font-size: var(--mobile-text-caption);
+  color: var(--mobile-muted);
+}
+
+/* Keep the existing time cells independent from the form palette. */
+[data-surface='android'] .half-hour-grid {
+  --accent-strong: #415a42;
+  --ink: #333a35;
+  --line: #e1e2d8;
+  --muted: #747a71;
+  --selected: #dfe6d8;
+}
+[data-surface='android'][data-theme='blue'] .half-hour-grid {
+  --accent-strong: #48657c;
+  --ink: #34434e;
+  --line: #d7e1e8;
+  --muted: #6f7e88;
+  --selected: #dce7f0;
+}
+[data-surface='android'] .half-hour-grid > button:disabled {
+  opacity: 0.65;
+}
