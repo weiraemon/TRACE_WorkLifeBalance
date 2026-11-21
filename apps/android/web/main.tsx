@@ -1,3 +1,4 @@
+import '../../web/src/styles.css';
 import { createRoot } from 'react-dom/client';
 import MobileApp from '../../web/src/features/mobile/MobileApp';
 import { createAndroidTransport } from '../runtime/index';
@@ -5,7 +6,6 @@ import { androidRequest, installAndroidBridge } from '../../web/src/platform/and
 import { registerPlugin } from '@capacitor/core';
 import { installPlatformTransport } from '../../web/src/platform/http';
 import { applyTheme, readTheme } from '../../web/src/theme';
-import '../../web/src/styles.css';
 import {
   checkOperation,
   installOperationCancel,
