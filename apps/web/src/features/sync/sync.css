@@ -72,8 +72,10 @@
   text-align: left;
   cursor: pointer;
 }
-.qq-group-match:hover {
-  background: var(--hover);
+@media (hover: hover) {
+  .qq-group-match:hover {
+    background: var(--hover);
+  }
 }
 .qq-group-match small {
   flex: none;
@@ -164,8 +166,10 @@
   padding: 2px 4px;
   cursor: pointer;
 }
-.rule-toggle:hover {
-  color: var(--accent-strong);
+@media (hover: hover) {
+  .rule-toggle:hover {
+    color: var(--accent-strong);
+  }
 }
 .message-conditions label {
   display: flex;

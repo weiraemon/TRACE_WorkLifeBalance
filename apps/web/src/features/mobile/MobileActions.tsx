@@ -89,7 +89,6 @@ export function MobileActions({
             <Button
               type="button"
               disabled={!targetId}
-              className="primary"
               onClick={() =>
                 void task(() =>
                   save(item, original, {

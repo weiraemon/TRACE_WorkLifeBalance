@@ -450,8 +450,10 @@
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
 }
-.point-dates:hover {
-  color: var(--accent-strong);
+@media (hover: hover) {
+  .point-dates:hover {
+    color: var(--accent-strong);
+  }
 }
 .point-marker-row {
   height: 32px;
@@ -516,8 +518,10 @@
   color: inherit;
   font: inherit;
 }
-.todo-date:hover {
-  color: var(--accent-strong);
+@media (hover: hover) {
+  .todo-date:hover {
+    color: var(--accent-strong);
+  }
 }
 .todo-done .todo-title {
   text-decoration: line-through;

@@ -38,6 +38,8 @@ import { MobileActions } from './MobileActions';
 import { MobileSchedule } from './MobileSchedule';
 import { MobileNotes } from './MobileNotes';
 import './mobile.css';
+import './mobile-forms.css';
+import { SaveFeedback } from '../../components/SaveFeedback';
 import { OperationProgress } from '../../components/OperationProgress';
 import { operationSnapshot, runOperation } from '../../platform/operations';
 import { useContextActions } from '../../components/useContextActions';
@@ -528,6 +530,7 @@ export default function MobileApp() {
                 </div>
                 {editMode === 'actual' ? (
                   <ActualRecordForm
+                    mobile
                     key={`actual:${snapshot.vaultId}:${formVersion}`}
                     embedded
                     snapshot={snapshot}
@@ -556,6 +559,7 @@ export default function MobileApp() {
                     }}
                   >
                     <QuickCapture
+                      mobile
                       key={`capture:${snapshot.vaultId}:${formVersion}`}
                       snapshot={snapshot}
                       today={date}
@@ -706,6 +710,7 @@ export default function MobileApp() {
           <MobileSchedule entry={editor.entry} reload={reload} close={() => setEditor(null)} />
         ) : editor.type === 'actual' ? (
           <ActualRecordForm
+            mobile
             key={editor.entry?.data.id ?? 'new'}
             editor={editor}
             snapshot={snapshot}
@@ -747,6 +752,7 @@ export default function MobileApp() {
             }}
           />
         ))}
+      <SaveFeedback />
       {snapshot && deleting && (
         <DeleteSpaceDialog
           entry={deleting}

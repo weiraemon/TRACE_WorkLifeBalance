@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import type { Entry } from '../../../../../packages/domain/index';
+import { DateTimeInput } from '../../components/DateTimeInput';
+import { announceSaved } from '../../components/SaveFeedback';
 import { save } from '../../api';
-import { Button, DatePicker, ErrorMessage, Field, Modal } from '../../components/ui';
+import { Button, ErrorMessage, Field, Modal } from '../../components/ui';
 
 export function MobileSchedule({
   entry,
@@ -39,6 +41,7 @@ export function MobileSchedule({
               original,
             );
             await reload();
+            announceSaved();
             close();
           } catch (error) {
             setError(error instanceof Error ? error.message : String(error));
@@ -49,7 +52,7 @@ export function MobileSchedule({
       >
         <div className="mobile-schedule-fields">
           <Field label="日期">
-            <DatePicker
+            <DateTimeInput
               value={dueDate}
               required={Boolean(dueTime)}
               onChange={(event) => {
@@ -60,7 +63,7 @@ export function MobileSchedule({
           </Field>
           {item.type === 'milestone' && (
             <Field label="时刻">
-              <input
+              <DateTimeInput
                 type="time"
                 value={dueTime}
                 onChange={(event) => setTime(event.target.value)}

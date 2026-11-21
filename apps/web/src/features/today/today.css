@@ -248,10 +248,12 @@
   background: var(--paper);
   padding-block: 4px;
 }
-.today-node .today-row:hover,
-.today-node .record-source:hover {
-  background: transparent;
-  color: white;
+@media (hover: hover) {
+  .today-node .today-row:hover,
+  .today-node .record-source:hover {
+    background: transparent;
+    color: white;
+  }
 }
 .today-agenda {
   display: block;
@@ -385,7 +387,11 @@
   font-size: 10px;
   white-space: nowrap;
 }
-.record-source:hover,
+@media (hover: hover) {
+  .record-source:hover {
+    text-decoration: underline;
+  }
+}
 .record-source:focus-visible {
   text-decoration: underline;
 }
