@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { activeLines } from '../../../../../packages/domain/workspace';
 import type { Entry, Snapshot } from '../../../../../packages/domain/index';
 import { save } from '../../api';
-import { Button, ErrorMessage, Field, Modal } from '../../components/ui';
+import { ActionButton, Button, ErrorMessage, Field, Modal } from '../../components/ui';
 import { Workspace } from '../../pages/Workspace';
 import { ProjectList } from '../mobile/ProjectList';
 import { VerticalLine } from '../mobile/VerticalLine';
@@ -66,44 +66,6 @@ export function ActualAssociationMode({
             )}
           </select>
         </Field>
-        <Button
-          disabled={busy}
-          onClick={() => {
-            clearDraft(draftKey);
-            close();
-          }}
-        >
-          取消关联
-        </Button>
-        <Button
-          disabled={busy}
-          className="primary"
-          onClick={async () => {
-            setBusy(true);
-            setError('');
-            try {
-              await save(
-                { ...old, milestoneIds: selection.milestoneIds, itemIds: selection.itemIds },
-                { ...entry, revision },
-                {
-                  completeIds: selection.completeIds.filter(association.has),
-                  comments: Object.entries(selection.comments)
-                    .filter(([id, comment]) => association.has(id) && comment.text.trim())
-                    .map(([targetId, comment]) => ({ ...comment, targetId, date: old.date })),
-                },
-              );
-              await reload();
-              clearDraft(draftKey);
-              close();
-            } catch (error) {
-              setError(String(error));
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          {busy ? '正在保存…' : '保存关联并返回已做'}
-        </Button>
       </div>
       <ErrorMessage message={error} />
       <div className="association-workspace-body" inert={busy}>
@@ -148,6 +110,43 @@ export function ActualAssociationMode({
           )}
         </div>
         <SelectedAssociations selection={selection} />
+      </div>
+      <div className="association-mode-actions">
+        <ActionButton
+          action="cancel"
+          disabled={busy}
+          onClick={() => {
+            clearDraft(draftKey);
+            close();
+          }}
+        />
+        <ActionButton
+          action="save"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setError('');
+            try {
+              await save(
+                { ...old, milestoneIds: selection.milestoneIds, itemIds: selection.itemIds },
+                { ...entry, revision },
+                {
+                  completeIds: selection.completeIds.filter(association.has),
+                  comments: Object.entries(selection.comments)
+                    .filter(([id, comment]) => association.has(id) && comment.text.trim())
+                    .map(([targetId, comment]) => ({ ...comment, targetId, date: old.date })),
+                },
+              );
+              await reload();
+              clearDraft(draftKey);
+              close();
+            } catch (error) {
+              setError(String(error));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
       </div>
     </Modal>
   );

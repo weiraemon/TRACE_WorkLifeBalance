@@ -1,8 +1,6 @@
 import type { Entry, Snapshot } from '../../../../../packages/domain/index';
 import type { Editor } from '../../types/editor';
 import { useEffect, useRef, useState } from 'react';
-import { Button, ErrorMessage, Modal } from '../../components/ui';
-import { deleteActual } from '../../api';
 import { ActualAssociationMode } from './ActualAssociationMode';
 
 export function ActualRecordList({
@@ -18,14 +16,9 @@ export function ActualRecordList({
   reload: () => Promise<void>;
   recentId?: string;
 }) {
-  const [target, setTarget] = useState<Entry | null>(null);
   const [associationId, setAssociationId] = useState<string | null>(null);
   const associationEntry = entries.find((entry) => entry.data.id === associationId);
-  const defaultAssociationId =
-    entries.find((entry) => entry.data.id === recentId)?.data.id ?? entries.at(-1)?.data.id;
   const consumed = useRef(false);
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
   const press = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
   const cancel = () => {
     if (press.current) clearTimeout(press.current.timer);
@@ -39,15 +32,6 @@ export function ActualRecordList({
           已保存，记录已添加到下方。
         </p>
       )}
-      {entries.length > 0 && (
-        <Button
-          className="association-mode-entry"
-          onClick={() => setAssociationId(defaultAssociationId ?? null)}
-        >
-          关联模式
-        </Button>
-      )}
-      <ErrorMessage message={error} />
       {entries.map(
         (entry) =>
           entry.data.type === 'actual' && (
@@ -59,17 +43,16 @@ export function ActualRecordList({
               onContextMenu={(event) => {
                 event.preventDefault();
                 cancel();
-                setTarget(entry);
+                edit({ type: 'actual', entry });
               }}
               onPointerDown={(event) => {
                 consumed.current = false;
-                if (event.pointerType === 'mouse') return;
                 cancel();
                 press.current = {
                   x: event.clientX,
                   y: event.clientY,
                   timer: setTimeout(() => {
-                    setTarget(entry);
+                    setAssociationId(entry.data.id);
                     consumed.current = true;
                     press.current = null;
                   }, 500),
@@ -94,7 +77,7 @@ export function ActualRecordList({
               onKeyDown={(event) => {
                 if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
                   event.preventDefault();
-                  setTarget(entry);
+                  edit({ type: 'actual', entry });
                 }
               }}
             >
@@ -127,44 +110,6 @@ export function ActualRecordList({
           close={() => setAssociationId(null)}
           reload={reload}
         />
-      )}
-      {target && target.data.type === 'actual' && (
-        <Modal
-          title="实际记录操作"
-          onClose={() => setTarget(null)}
-          className="mobile-actions-dialog"
-        >
-          <p>{target.data.description}</p>
-          <div className="actions">
-            <Button
-              onClick={() => {
-                edit({ type: 'actual', entry: target });
-                setTarget(null);
-              }}
-            >
-              修改记录
-            </Button>
-            <Button
-              className="danger"
-              disabled={busy}
-              onClick={async () => {
-                setBusy(true);
-                setError('');
-                try {
-                  await deleteActual(target);
-                  await reload();
-                  setTarget(null);
-                } catch (error) {
-                  setError(String(error));
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              {busy ? '正在删除…' : '删除记录'}
-            </Button>
-          </div>
-        </Modal>
       )}
     </div>
   );

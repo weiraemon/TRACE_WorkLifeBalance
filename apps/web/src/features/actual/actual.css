@@ -235,6 +235,34 @@
   flex: 1;
   min-width: 0;
   margin: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+.association-mode-bar .field > span {
+  white-space: nowrap;
+  font-size: 15px;
+  color: var(--actual-text);
+}
+.association-mode-bar select {
+  font-size: 15px;
+}
+.association-mode-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.association-mode-actions .button {
+  width: 100%;
+  min-height: 48px;
+  font-size: 16px;
+}
+[data-surface='android'] .dialog .association-mode-actions .button {
+  min-height: 52px;
+  font-size: 16px;
 }
 .association-workspace-body {
   flex: 1;
@@ -319,8 +347,16 @@
   }
   .association-mode-bar {
     align-items: stretch;
-    flex-direction: column;
     gap: 8px;
+  }
+  .association-mode-bar .field {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .association-mode-actions {
+    gap: 8px;
+  }
+  .association-mode-actions .button {
+    width: 100%;
   }
   .association-workspace-body {
     display: block;

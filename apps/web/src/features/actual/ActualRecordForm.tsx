@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { clock, localDay, minutes, type Snapshot } from '../../../../../packages/domain/index';
 import { announceSaved } from '../../components/SaveFeedback';
-import { createRecord, save } from '../../api';
-import { Modal, Field, Button, ErrorMessage, DatePicker } from '../../components/ui';
+import { createRecord, deleteActual, save } from '../../api';
+import { Modal, Field, ActionButton, ErrorMessage, DatePicker } from '../../components/ui';
 import { useDraftState, useDraftSaving, clearDraft } from '../drafts/useDraftState';
 import type { Editor } from '../../types/editor';
 import type { RecordSource } from './types';
@@ -185,7 +185,8 @@ export function ActualRecordForm({
       </div>
       <ErrorMessage message={error} />
       <div className="form-actions">
-        <Button
+        <ActionButton
+          action="cancel"
           type="button"
           onClick={() => {
             if (embedded || !wasEdited) {
@@ -194,12 +195,25 @@ export function ActualRecordForm({
             }
             close();
           }}
-        >
-          {embedded ? '清空' : '取消'}
-        </Button>
-        <Button type="submit" className="primary" disabled={busy}>
-          {busy ? '正在保存…' : '保存实际工作'}
-        </Button>
+        />
+        <ActionButton action="save" type="submit" disabled={busy} />
+        {old && (
+          <ActionButton action="delete" type="button" disabled={busy} onClick={async () => {
+            setBusy(true);
+            setError('');
+            try {
+              await deleteActual(editor.entry!);
+              await reload();
+              clearDraft(draftKey);
+              onDirtyChange?.(false);
+              close();
+            } catch (e) {
+              setError(e instanceof Error ? e.message : String(e));
+            } finally {
+              setBusy(false);
+            }
+          }} />
+        )}
       </div>
     </form>
   );
