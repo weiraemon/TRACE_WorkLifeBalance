@@ -43,6 +43,7 @@ export function WorkLocationPicker({
   onChange,
   originalMilestoneId,
   compact = false,
+  row = false,
 }: {
   entries: Entry[];
   level: 'workline' | 'milestone' | 'todo';
@@ -50,6 +51,7 @@ export function WorkLocationPicker({
   onChange: (value: WorkLocation) => void;
   originalMilestoneId?: string;
   compact?: boolean;
+  row?: boolean;
 }) {
   const records = entries.map((e) => e.data);
   const line = records.find((record) => record.id === value.lineId && record.type === 'workline');
@@ -67,10 +69,19 @@ export function WorkLocationPicker({
     records.find((r) => r.type === 'milestone' && r.lineId === lineId && r.pool)?.id ?? '';
   return (
     <details
-      className={`location-context${compact ? '' : ' location-context-expanded'}`}
+      className={`location-context${compact ? '' : ' location-context-expanded'}${row ? ' location-row' : ''}`}
       open={!compact}
     >
-      <summary>归属 · {line?.type === 'workline' ? line.title : '选择项目与业务线'}</summary>
+      <summary>
+        {row ? (
+          <>
+            <span>归属</span>
+            <span>{line?.type === 'workline' ? line.title : '选择项目与业务线'}</span>
+          </>
+        ) : (
+          <>归属 · {line?.type === 'workline' ? line.title : '选择项目与业务线'}</>
+        )}
+      </summary>
       <div className="location-picker">
         <Field label="所属项目">
           <select

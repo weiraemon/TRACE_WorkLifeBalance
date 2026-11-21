@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react';
 import { type Snapshot, type Todo, type Milestone } from '../../../../../packages/domain/index';
 import { activeLines, isComplete } from '../../../../../packages/domain/workspace';
+import { DateTimeInput } from '../../components/DateTimeInput';
+import { announceSaved } from '../../components/SaveFeedback';
 import { createRecord } from '../../api';
 import { Button, Field, ErrorMessage } from '../../components/ui';
 import { ImportancePicker } from '../../components/Importance';
@@ -10,10 +12,12 @@ export function QuickCapture({
   snapshot,
   onCreate,
   today,
+  mobile = false,
 }: {
   snapshot: Snapshot;
   onCreate: (item: Todo | Milestone, comment: string) => Promise<void>;
   today: string;
+  mobile?: boolean;
 }) {
   const draftKey = `${snapshot.root}:quick-capture`;
   const [importance, setImportance] = useDraftState(draftKey + ':importance', 1);
@@ -96,6 +100,7 @@ export function QuickCapture({
               dueDate: dueDate || (captureType === 'todo' ? today : null),
             }) as Todo);
       await onCreate(item, comment);
+      if (mobile) announceSaved();
       clearDraft(draftKey);
       setLineId(lineId);
       setNodeId(chosen);
@@ -115,6 +120,22 @@ export function QuickCapture({
       setBusy(false);
     }
   };
+  const ScheduleInput = mobile ? DateTimeInput : 'input';
+  const titleField = (
+    <Field label="要做什么">
+      <input
+        value={title}
+        placeholder="写下下一步…"
+        onChange={(event) => setTitle(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            void submit();
+          }
+        }}
+      />
+    </Field>
+  );
   const pasteCapture = (
     <div className="quick-capture-paste">
       <div className="field span-two">
@@ -139,55 +160,74 @@ export function QuickCapture({
       </Button>
     </div>
   );
+  const lineSelect = (
+    <select
+      className="line-dropdown"
+      aria-label="业务线"
+      value={lineId}
+      onChange={(event) => {
+        setLineId(event.target.value);
+        setNodeId('');
+      }}
+    >
+      <option value="">选择业务线</option>
+      {lines.map((line) => (
+        <option key={line.id} value={line.id}>
+          {line.title}
+        </option>
+      ))}
+    </select>
+  );
+  const typeSelect = (
+    <select
+      className="line-dropdown"
+      aria-label="类型"
+      value={captureType}
+      onChange={(event) => setCaptureType(event.target.value as typeof captureType)}
+    >
+      <option value="todo">TODO</option>
+      <option value="idea">IDEA</option>
+      <option value="milestone">节点</option>
+    </select>
+  );
+  const optionalFields = (
+    <>
+      <fieldset className="primary-settings">
+        {!mobile && <legend>重要性</legend>}
+        <ImportancePicker value={importance} onChange={setImportance} />
+      </fieldset>
+      <Field label="批注">
+        <textarea rows={2} value={comment} onChange={(event) => setComment(event.target.value)} />
+      </Field>
+    </>
+  );
   return (
     <section
       inert={busy}
-      className="quick-capture compact-capture"
+      className={`quick-capture compact-capture${mobile ? ' mobile-capture-form' : ''}`}
+      onInvalidCapture={(event) => {
+        const details = (event.target as HTMLElement).closest('details');
+        if (details) details.open = true;
+      }}
       aria-label="快速创建 TODO / IDEA"
     >
       <h2 className="capture-recognition-heading">自动匹配与识别</h2>
-      {pasteCapture}
+      {!mobile && pasteCapture}
+      {mobile && <div className="mobile-form-title">{titleField}</div>}
       <div className="quick-capture-controls">
-        <select
-          className="line-dropdown"
-          aria-label="业务线"
-          value={lineId}
-          onChange={(event) => {
-            setLineId(event.target.value);
-            setNodeId('');
-          }}
-        >
-          <option value="">选择业务线</option>
-          {lines.map((line) => (
-            <option key={line.id} value={line.id}>
-              {line.title}
-            </option>
-          ))}
-        </select>
-        <select
-          className="line-dropdown"
-          aria-label="类型"
-          value={captureType}
-          onChange={(event) => setCaptureType(event.target.value as typeof captureType)}
-        >
-          <option value="todo">TODO</option>
-          <option value="idea">IDEA</option>
-          <option value="milestone">节点</option>
-        </select>
+        {mobile ? (
+          <>
+            <Field label="业务线">{lineSelect}</Field>
+            <Field label="类型">{typeSelect}</Field>
+          </>
+        ) : (
+          <>
+            {lineSelect}
+            {typeSelect}
+          </>
+        )}
       </div>
-      <Field label="要做什么">
-        <input
-          value={title}
-          placeholder="写下下一步…"
-          onChange={(event) => setTitle(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              void submit();
-            }
-          }}
-        />
-      </Field>
+      {!mobile && titleField}
       {captureType !== 'milestone' && (
         <Field label="具体节点">
           <select
@@ -206,7 +246,7 @@ export function QuickCapture({
       )}
       <div className="quick-capture-controls">
         <Field label={captureType === 'milestone' ? '截止日期' : '条目日期'}>
-          <input
+          <ScheduleInput
             type="date"
             value={dueDate || (captureType !== 'idea' ? (today ?? '') : '')}
             onChange={(event) => setDueDate(event.target.value)}
@@ -214,7 +254,7 @@ export function QuickCapture({
         </Field>
         {captureType === 'milestone' && (
           <Field label="截止时刻">
-            <input
+            <ScheduleInput
               type="time"
               value={dueTime}
               onChange={(event) => setDueTime(event.target.value)}
@@ -231,13 +271,15 @@ export function QuickCapture({
           />
         </Field>
       )}
-      <fieldset className="primary-settings">
-        <legend>重要性</legend>
-        <ImportancePicker value={importance} onChange={setImportance} />
-      </fieldset>
-      <Field label="批注">
-        <textarea rows={2} value={comment} onChange={(event) => setComment(event.target.value)} />
-      </Field>
+      {mobile ? (
+        <details className="mobile-form-options">
+          <summary>更多选项</summary>
+          {optionalFields}
+          {pasteCapture}
+        </details>
+      ) : (
+        optionalFields
+      )}
       <ErrorMessage message={error} />
       <div className="form-actions">
         <Button type="button" className="primary" disabled={busy} onClick={() => void submit()}>

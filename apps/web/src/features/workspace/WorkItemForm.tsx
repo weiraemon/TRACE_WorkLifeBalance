@@ -6,6 +6,8 @@ import {
   type Snapshot,
 } from '../../../../../packages/domain/index';
 import { Button, Field, DatePicker, Modal, ErrorMessage } from '../../components/ui';
+import { DateTimeInput } from '../../components/DateTimeInput';
+import { announceSaved } from '../../components/SaveFeedback';
 import { createRecord, save } from '../../api';
 import { ImportancePicker } from '../../components/Importance';
 import type { Editor } from '../../types/editor';
@@ -105,6 +107,158 @@ export function WorkItemForm({
     if (!location.lineId && line?.data.type === 'workline')
       setLocation({ projectId: line.data.projectId, lineId: line.data.id, milestoneId: '' });
   };
+  const ScheduleInput = compact ? DateTimeInput : DatePicker;
+  const TimeInput = compact ? DateTimeInput : 'input';
+  const recognition = type === 'milestone' && !pool && (!compact || !item) && (
+    <div className="node-smart-capture">
+      <Field label="粘贴微信消息" wide>
+        <textarea
+          rows={3}
+          value={sourceText}
+          placeholder="例如：明天上午九点半所里一块讨论下推进方案"
+          onChange={(e) => setSourceText(e.target.value)}
+          onPaste={(e) => {
+            const value = e.clipboardData.getData('text');
+            if (!value.trim()) return;
+            e.preventDefault();
+            setSourceText(value);
+            applyParsedText(value);
+          }}
+        />
+      </Field>
+      <Button
+        type="button"
+        onClick={() => applyParsedText(sourceText)}
+        disabled={!sourceText.trim()}
+      >
+        识别时间和节点
+      </Button>
+      {sourceText && (
+        <p className="hint">
+          会识别“明天 / 10月29日 / 周二 / 下周二”、9点 / 九点 /
+          9.、上午下午和半点；识别不到业务线时请手动选择。
+        </p>
+      )}
+    </div>
+  );
+  const association = item && (type === 'todo' || (type === 'milestone' && !pool)) && (
+    <Button type="button" onClick={() => setMatching(true)}>
+      关联做过的事
+    </Button>
+  );
+  const titleField = (
+    <Field label="标题" wide={compact}>
+      <input
+        placeholder={compact ? '标题' : undefined}
+        required
+        autoFocus
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+      />
+    </Field>
+  );
+  const kindField = type === 'todo' && (
+    <Field label="内容类型">
+      <select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
+        <option value="todo">TODO</option>
+        <option value="idea">IDEA</option>
+      </select>
+    </Field>
+  );
+  const locationField = type !== 'project' && (
+    <WorkLocationPicker
+      entries={snapshot.entries}
+      level={type}
+      value={location}
+      onChange={setLocation}
+      originalMilestoneId={item?.type === 'todo' ? item.milestoneId : undefined}
+      row={compact}
+      compact={
+        compact ||
+        ((type === 'todo' || type === 'milestone') &&
+          Boolean(item || defaults.lineId || defaults.milestoneId))
+      }
+    />
+  );
+  const importanceField = (
+    <fieldset className="primary-settings">
+      {!compact && <legend>重要性</legend>}
+      <ImportancePicker value={importance} onChange={setImportance} />
+    </fieldset>
+  );
+  const tagField = type === 'milestone' && !pool && (
+    <Field label="节点标签">
+      <input
+        list="node-tags"
+        value={tags}
+        onChange={(e) => setTags(e.target.value)}
+        placeholder="会议，报告，专注…"
+      />
+      <datalist id="node-tags">
+        {knownTags.map((tag) => (
+          <option key={tag} value={tag} />
+        ))}
+      </datalist>
+    </Field>
+  );
+  const dateFields = (
+    <>
+      {(type === 'todo' || type === 'milestone') && !pool && (
+        <Field label={type === 'milestone' ? '截止日期' : '条目日期'}>
+          <ScheduleInput
+            value={dueDate}
+            onChange={(e) => {
+              setDueDate(e.target.value);
+              if (!e.target.value) setDueTime('');
+            }}
+          />
+        </Field>
+      )}
+      {type === 'milestone' && !pool && (
+        <>
+          <Field label="截止时刻">
+            <TimeInput type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} />
+          </Field>
+        </>
+      )}
+    </>
+  );
+  const handoffFields = type === 'todo' && kind === 'todo' && (
+    <>
+      <Field label="交接方式">
+        <select
+          value={direction}
+          onChange={(e) => setDirection(e.target.value as typeof direction)}
+        >
+          {Object.entries(directionLabel).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </Field>
+      {direction !== 'self' && (
+        <Field label="联系人">
+          <input
+            placeholder={compact ? '联系人' : undefined}
+            required
+            value={person}
+            onChange={(e) => setPerson(e.target.value)}
+          />
+        </Field>
+      )}
+    </>
+  );
+  const commentField = (!compact || !item) && (type === 'todo' || type === 'milestone') && (
+    <Field label="批注 / 纪要" wide={compact}>
+      <textarea
+        placeholder={compact ? '补充备注…' : undefined}
+        rows={compact ? 3 : 4}
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+      />
+    </Field>
+  );
   if (matching && editor.entry && (type === 'milestone' || type === 'todo'))
     return (
       <NodeActualMatcher
@@ -122,6 +276,12 @@ export function WorkItemForm({
     >
       <form
         inert={busy}
+        onInvalidCapture={(event) => {
+          if (compact) {
+            const details = (event.target as HTMLElement).closest('details');
+            if (details) details.open = true;
+          }
+        }}
         onChangeCapture={() => {
           setEdited(true);
           onDirtyChange?.(true);
@@ -179,6 +339,7 @@ export function WorkItemForm({
               },
             );
             await reload();
+            if (compact) announceSaved();
             clearDraft(draftKey);
             onDirtyChange?.(false);
             close();
@@ -189,143 +350,40 @@ export function WorkItemForm({
           }
         }}
       >
-        {type === 'milestone' && !pool && (!compact || !item) && (
-          <div className="node-smart-capture">
-            <Field label="粘贴微信消息" wide>
-              <textarea
-                rows={3}
-                value={sourceText}
-                placeholder="例如：明天上午九点半所里一块讨论下推进方案"
-                onChange={(e) => setSourceText(e.target.value)}
-                onPaste={(e) => {
-                  const value = e.clipboardData.getData('text');
-                  if (!value.trim()) return;
-                  e.preventDefault();
-                  setSourceText(value);
-                  applyParsedText(value);
-                }}
-              />
-            </Field>
-            <Button
-              type="button"
-              onClick={() => applyParsedText(sourceText)}
-              disabled={!sourceText.trim()}
-            >
-              识别时间和节点
-            </Button>
-            {sourceText && (
-              <p className="hint">
-                会识别“明天 / 10月29日 / 周二 / 下周二”、9点 / 九点 /
-                9.、上午下午和半点；识别不到业务线时请手动选择。
-              </p>
-            )}
-          </div>
+        {compact ? (
+          <>
+            <div className="mobile-form-title">{titleField}</div>
+            <div className="mobile-form-common">
+              {locationField}
+              {kindField}
+              {tagField}
+              {dateFields}
+              {handoffFields}
+            </div>
+            <details className="mobile-form-options">
+              <summary>更多选项</summary>
+              {importanceField}
+              {commentField}
+              {recognition}
+            </details>
+            {association}
+          </>
+        ) : (
+          <>
+            {recognition}
+            {association}
+            {titleField}
+            {kindField}
+            {locationField}
+            {importanceField}
+            {tagField}
+            <div className="optional-settings">
+              {dateFields}
+              {handoffFields}
+              {commentField}
+            </div>
+          </>
         )}
-        {item && (type === 'todo' || (type === 'milestone' && !pool)) && (
-          <Button type="button" onClick={() => setMatching(true)}>
-            关联做过的事
-          </Button>
-        )}
-        <Field label="标题" wide={compact}>
-          <input
-            placeholder={compact ? '标题' : undefined}
-            required
-            autoFocus
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </Field>
-        {type === 'todo' && (
-          <Field label="内容类型">
-            <select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
-              <option value="todo">TODO</option>
-              <option value="idea">IDEA</option>
-            </select>
-          </Field>
-        )}
-        {type !== 'project' && (
-          <WorkLocationPicker
-            entries={snapshot.entries}
-            level={type}
-            value={location}
-            onChange={setLocation}
-            originalMilestoneId={item?.type === 'todo' ? item.milestoneId : undefined}
-            compact={
-              (type === 'todo' || type === 'milestone') &&
-              Boolean(item || defaults.lineId || defaults.milestoneId)
-            }
-          />
-        )}
-        <fieldset className="primary-settings">
-          {!compact && <legend>重要性</legend>}
-          <ImportancePicker value={importance} onChange={setImportance} />
-        </fieldset>
-        {type === 'milestone' && !pool && (
-          <Field label="节点标签">
-            <input
-              list="node-tags"
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-              placeholder="会议，报告，专注…"
-            />
-            <datalist id="node-tags">
-              {knownTags.map((tag) => (
-                <option key={tag} value={tag} />
-              ))}
-            </datalist>
-          </Field>
-        )}
-        <div className="optional-settings">
-          {(type === 'todo' || type === 'milestone') && !pool && (
-            <Field label={type === 'milestone' ? '截止日期' : '条目日期'}>
-              <DatePicker
-                value={dueDate}
-                onChange={(e) => {
-                  setDueDate(e.target.value);
-                  if (!e.target.value) setDueTime('');
-                }}
-              />
-            </Field>
-          )}
-          {type === 'milestone' && !pool && (
-            <>
-              <Field label="截止时刻">
-                <input type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} />
-              </Field>
-            </>
-          )}
-          {type === 'todo' && kind === 'todo' && (
-            <>
-              <Field label="交接方式">
-                <select
-                  value={direction}
-                  onChange={(e) => setDirection(e.target.value as typeof direction)}
-                >
-                  {Object.entries(directionLabel).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              {direction !== 'self' && (
-                <Field label="联系人">
-                  <input
-                    placeholder={compact ? '联系人' : undefined}
-                    required
-                    value={person}
-                    onChange={(e) => setPerson(e.target.value)}
-                  />
-                </Field>
-              )}
-            </>
-          )}
-          {(!compact || !item) && (type === 'todo' || type === 'milestone') && (
-            <Field label="批注 / 纪要" wide={compact}>
-              <textarea rows={4} value={comment} onChange={(e) => setComment(e.target.value)} />
-            </Field>
-          )}
-        </div>
         {actions?.(setBusy, closeForm)}
         <ErrorMessage message={error} />
         <div className="form-actions">

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { clock, localDay, minutes, type Snapshot } from '../../../../../packages/domain/index';
+import { announceSaved } from '../../components/SaveFeedback';
 import { createRecord, save } from '../../api';
 import { Modal, Field, Button, ErrorMessage, DatePicker } from '../../components/ui';
 import { useDraftState, useDraftSaving, clearDraft } from '../drafts/useDraftState';
@@ -13,6 +14,7 @@ export function ActualRecordForm({
   close,
   reload,
   embedded = false,
+  mobile = false,
   source,
   onDirtyChange,
   onSaved,
@@ -22,6 +24,7 @@ export function ActualRecordForm({
   close: () => void;
   reload: () => Promise<void>;
   embedded?: boolean;
+  mobile?: boolean;
   source?: RecordSource;
   onDirtyChange?: (dirty: boolean) => void;
   onSaved?: (id: string, date: string) => void;
@@ -125,6 +128,7 @@ export function ActualRecordForm({
             },
           );
           await reload();
+          if (mobile) announceSaved();
           clearDraft(draftKey);
           onDirtyChange?.(false);
           close();
@@ -172,7 +176,7 @@ export function ActualRecordForm({
           <textarea
             required
             autoFocus={!embedded}
-            rows={4}
+            rows={mobile ? 3 : 4}
             placeholder="做了什么？"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
