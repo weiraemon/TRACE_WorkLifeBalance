@@ -6,7 +6,7 @@ import {
   type Entry,
 } from '../../../../../packages/domain/index';
 import { deletePreview, deleteSpace } from '../../api';
-import { Button, ErrorMessage, Modal } from '../../components/ui';
+import { ActionButton, Button, ErrorMessage, Modal } from '../../components/ui';
 import { spaceLabel } from './WorkItemForm';
 
 export function DeleteSpaceDialog({
@@ -75,8 +75,8 @@ export function DeleteSpaceDialog({
       {draftAffected && <p className="error">当前正文草稿尚未保存，确认删除后将放弃该草稿。</p>}
       <ErrorMessage message={error} />
       <div className="actions">
-        <Button
-          className="danger"
+        <ActionButton
+          action="delete"
           disabled={!preview || Boolean(preview.blockedReason) || Boolean(error) || busy}
           onClick={async () => {
             if (!preview) return;
@@ -90,12 +90,8 @@ export function DeleteSpaceDialog({
               setBusy(false);
             }
           }}
-        >
-          确认删除
-        </Button>
-        <Button disabled={busy} onClick={close}>
-          取消
-        </Button>
+        />
+        <ActionButton action="cancel" disabled={busy} onClick={close} />
         {(error || preview?.blockedReason) && (
           <Button disabled={busy} onClick={() => setRetry((value) => value + 1)}>
             重新检查

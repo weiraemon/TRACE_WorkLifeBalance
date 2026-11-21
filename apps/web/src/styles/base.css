@@ -440,12 +440,13 @@ nav svg {
   overflow-wrap: anywhere;
 }
 .button.danger {
-  color: #a33c31;
-  border-color: #dcb6af;
+  color: #fff;
+  background: #b84a3d;
+  border-color: #b84a3d;
 }
 @media (hover: hover) {
   .button.danger:hover:not(:disabled) {
-    background: #f7e9e4;
+    background: #9f3d33;
   }
 }
 .overlay {
@@ -517,11 +518,15 @@ input[type='checkbox'] {
   grid-column: 1/-1;
 }
 .form-actions {
-  display: flex;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
   align-items: center;
   gap: 12px;
   margin-top: 18px;
+}
+.form-actions > .button {
+  width: 100%;
+  min-height: 48px;
 }
 .form-actions > .hint {
   margin-right: auto;

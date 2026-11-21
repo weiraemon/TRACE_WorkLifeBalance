@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Entry } from '../../../../../packages/domain/index';
 import { save } from '../../api';
-import { Button, Modal, Field, ErrorMessage } from '../../components/ui';
+import { ActionButton, Modal, Field, ErrorMessage } from '../../components/ui';
 import { useDraftState, useDraftSaving, clearDraft } from '../drafts/useDraftState';
 export function CommentForm({
   entry,
@@ -67,12 +67,8 @@ export function CommentForm({
         </Field>
         <ErrorMessage message={error} />
         <div className="form-actions">
-          <Button type="button" onClick={closeForm}>
-            取消
-          </Button>
-          <Button type="submit" className="primary" disabled={busy}>
-            保存批注
-          </Button>
+          <ActionButton action="cancel" type="button" onClick={closeForm} />
+          <ActionButton action="save" type="submit" disabled={busy} />
         </div>
       </form>
     </Modal>

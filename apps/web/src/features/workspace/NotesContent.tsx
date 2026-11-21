@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { CheckIcon, Cross2Icon, Pencil2Icon } from '@radix-ui/react-icons';
 import type { NoteContent, NoteComment } from '../../../../../packages/domain/index';
 import { readContent, saveContent } from '../../api';
-import { Button, ErrorMessage, Field } from '../../components/ui';
+import { ActionButton, Button, ErrorMessage, Field } from '../../components/ui';
 import { useDraftState, useDraftSaving } from '../drafts/useDraftState';
 const Markdown = lazy(() => import('react-markdown'));
 type Draft = { body: string; comments: NoteComment[]; revision: string };
@@ -195,7 +195,8 @@ export function NotesContent({
             </Field>
           ))}
           <div className="actions">
-            <Button
+            <ActionButton
+              action="cancel"
               aria-label="取消"
               onClick={() => {
                 if (dirty.current && !window.confirm('放弃尚未保存的内容？')) return;
@@ -207,10 +208,10 @@ export function NotesContent({
                 onSaved?.();
               }}
             >
-              {compact ? <Cross2Icon /> : '取消'}
-            </Button>
-            <Button
-              className="primary"
+              {compact ? <Cross2Icon /> : undefined}
+            </ActionButton>
+            <ActionButton
+              action="save"
               aria-label="保存内容"
               disabled={!loadedRevision || busy}
               onClick={() => {
@@ -235,8 +236,8 @@ export function NotesContent({
                   .finally(() => setBusy(false));
               }}
             >
-              {compact ? <CheckIcon /> : '保存内容'}
-            </Button>
+              {compact ? <CheckIcon /> : undefined}
+            </ActionButton>
           </div>
         </>
       ) : (

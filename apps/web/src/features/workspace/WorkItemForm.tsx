@@ -5,7 +5,7 @@ import {
   isSpaceItem,
   type Snapshot,
 } from '../../../../../packages/domain/index';
-import { Button, Field, DatePicker, Modal, ErrorMessage } from '../../components/ui';
+import { ActionButton, Button, Field, DatePicker, Modal, ErrorMessage } from '../../components/ui';
 import { DateTimeInput } from '../../components/DateTimeInput';
 import { announceSaved } from '../../components/SaveFeedback';
 import { createRecord, save } from '../../api';
@@ -387,12 +387,8 @@ export function WorkItemForm({
         {actions?.(setBusy, closeForm)}
         <ErrorMessage message={error} />
         <div className="form-actions">
-          <Button type="button" onClick={closeForm}>
-            取消
-          </Button>
-          <Button type="submit" className="primary" disabled={busy}>
-            {busy ? '正在保存…' : '保存'}
-          </Button>
+          <ActionButton action="cancel" type="button" onClick={closeForm} />
+          <ActionButton action="save" type="submit" disabled={busy} />
         </div>
       </form>
     </Modal>

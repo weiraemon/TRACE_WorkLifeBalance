@@ -14,6 +14,22 @@ import {
 export function Button({ className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
   return <button className={'button ' + className} {...props} />;
 }
+export function ActionButton({
+  action,
+  className = '',
+  children,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  action: 'save' | 'delete' | 'cancel';
+}) {
+  const label = action === 'save' ? '保存' : action === 'delete' ? '删除' : '取消';
+  const tone = action === 'save' ? 'primary' : action === 'delete' ? 'danger' : '';
+  return (
+    <Button className={`${tone} ${className}`.trim()} {...props}>
+      {children ?? label}
+    </Button>
+  );
+}
 export function Modal({
   title,
   children,
