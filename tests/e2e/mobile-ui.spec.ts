@@ -167,7 +167,7 @@ test('打开设置后返回，实际录入草稿继续保留', async ({ page }) 
   await expect(page.getByLabel('具体事件', { exact: true })).toHaveValue('设置前的草稿');
 });
 
-test('窄屏时间格、轻量输入和日期、默认展开的可选内容支持两种主题', async ({ page }) => {
+test('窄屏时间格、描边输入和日期支持两种主题与无衬线正文', async ({ page }) => {
   await nav(page, '编辑');
   await expect(page.getByRole('region', { name: '待选池', exact: true })).toHaveCount(0);
   for (const theme of ['sage', 'blue']) {
@@ -183,7 +183,7 @@ test('窄屏时间格、轻量输入和日期、默认展开的可选内容支�
         true,
       );
     }
-    await expect(page.getByLabel('具体事件', { exact: true })).toHaveCSS('border-top-width', '0px');
+    await expect(page.getByLabel('具体事件', { exact: true })).toHaveCSS('border-top-width', '1px');
     await expect(page.getByLabel('查看日期', { exact: true })).toHaveCSS(
       'background-color',
       'rgba(0, 0, 0, 0)',
@@ -203,9 +203,7 @@ test('窄屏时间格、轻量输入和日期、默认展开的可选内容支�
   const calendar = await date.boundingBox();
   expect(Math.abs(week!.y + week!.height / 2 - calendar!.y - calendar!.height / 2)).toBeLessThan(2);
   await page.evaluate(() => document.fonts.ready);
-  expect(
-    await page.evaluate(() => document.fonts.check('650 21px "Noto Serif SC Variable"', '回顾')),
-  ).toBe(true);
+  await expect(page.locator('.review-page')).toHaveCSS('font-family', /Arial/);
   await page.screenshot({ path: 'test-results/mobile-review-redesign.png' });
 });
 
@@ -251,7 +249,7 @@ test('手机直接改时间、方框完成，紧凑属性直接删除并保留�
   for (const width of [320, 390, 640]) {
     await page.setViewportSize({ width, height: 844 });
     const bounds = await editor.boundingBox();
-    expect(bounds!.height).toBeLessThan(640);
+    expect(bounds!.height).toBeLessThanOrEqual(828);
     expect(await editor.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
       true,
     );

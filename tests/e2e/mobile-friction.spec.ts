@@ -89,6 +89,7 @@ test('业务线入口的识别保持归属，待选节点按当天优先且删�
   await page.getByRole('button', { name: '添加节点', exact: true }).click();
   const dialog = page.getByRole('dialog');
   const projectId = await dialog.getByLabel('所属项目', { exact: true }).inputValue();
+  await dialog.getByText('更多选项', { exact: true }).click();
   await dialog.getByLabel('粘贴微信消息', { exact: true }).fill('明天下午三点开会');
   await dialog.getByRole('button', { name: '识别时间和节点', exact: true }).click();
   await expect(dialog.getByLabel('所属项目', { exact: true })).toHaveValue(projectId);

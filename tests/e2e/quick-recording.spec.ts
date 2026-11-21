@@ -56,7 +56,11 @@ for (const mobile of [false, true]) {
       await expect(
         page.getByRole('button', { name: '编辑记录 · 整理实验材料', exact: true }),
       ).toBeVisible();
-      await expect(page.getByText('已保存，记录已添加到下方。', { exact: true })).toBeVisible();
+      await expect(
+        mobile
+          ? page.locator('.mobile-save-feedback').filter({ hasText: '已保存' })
+          : page.getByText('已保存，记录已添加到下方。', { exact: true }),
+      ).toBeVisible();
       const actual = (await snapshot(page)).entries.find(
         ({ data }) => data.type === 'actual' && data.description === '整理实验材料',
       )!;
