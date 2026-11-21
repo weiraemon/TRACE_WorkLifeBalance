@@ -203,6 +203,14 @@
   font-weight: 600;
   min-height: 56px !important;
 }
+.mobile-capture-form input:not([type='checkbox']),
+.mobile-capture-form select,
+.mobile-capture-form textarea {
+  background: transparent;
+  border: 1px solid var(--mobile-ink);
+  border-radius: 8px;
+  color: var(--mobile-ink);
+}
 .mobile-form-common,
 .mobile-capture-form > .quick-capture-controls,
 .mobile-capture-form > .field {
@@ -211,6 +219,17 @@
   background: var(--mobile-input);
   border: 1px solid var(--mobile-border);
   border-radius: var(--mobile-radius-card);
+}
+.mobile-capture-form > .quick-capture-controls,
+.mobile-capture-form > .field {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--mobile-border);
+  border-radius: 0;
+  padding-inline: 0;
+}
+.mobile-capture-form > .quick-capture-controls {
+  gap: 8px;
 }
 .mobile-form-common > .field,
 .mobile-capture-form > .field,
@@ -233,7 +252,7 @@
 .mobile-capture-form > .field > span,
 .mobile-capture-form .quick-capture-controls .field > span,
 .location-row .location-picker .field > span {
-  color: var(--mobile-muted);
+  color: var(--mobile-ink);
   font-size: var(--mobile-text-body);
 }
 [data-surface='android'] .mobile-form-common .field > :is(input, select),
@@ -247,6 +266,13 @@
   text-align: right;
   background: transparent;
 }
+.mobile-capture-form .quick-capture-controls .field > select,
+.mobile-capture-form > .field > select {
+  font-family: var(--mobile-ui-font);
+  font-size: var(--mobile-text-body);
+  color: var(--mobile-ink);
+  padding-right: 28px;
+}
 .mobile-form-common .date-time-input,
 .mobile-capture-form .date-time-input {
   border: 0;
@@ -257,7 +283,7 @@
 [data-surface='android'] .dialog .field:has(> select)::after {
   content: '';
   position: absolute;
-  right: 0;
+  right: 12px;
   width: 6px;
   height: 6px;
   border-right: 1px solid var(--mobile-muted);
@@ -448,6 +474,107 @@
 }
 .mobile-capture-form .quick-capture-controls > .field + .field {
   border-top: 1px solid var(--mobile-border);
+}
+.mobile-capture-form > .quick-capture-controls,
+.mobile-capture-form > .field {
+  margin-bottom: 0;
+}
+.mobile-capture-form .form-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.mobile-capture-form .form-actions > .button,
+.mobile-capture-form .form-actions > .primary {
+  flex: 1;
+  width: 100%;
+}
+.mobile-capture-form .quick-capture-paste textarea,
+.mobile-capture-form .mobile-form-options textarea,
+.mobile-capture-form .mobile-form-title input {
+  background: transparent !important;
+  border: 1px solid var(--mobile-ink) !important;
+  border-radius: 8px !important;
+  color: var(--mobile-ink);
+}
+.mobile-capture-form .quick-capture-controls .field > select,
+.mobile-capture-form > .field > select {
+  text-align: left;
+  border: 1px solid var(--mobile-border) !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  color: var(--mobile-ink);
+}
+.mobile-capture-form select:open {
+  border-radius: 10px 10px 0 0 !important;
+}
+.mobile-capture-form select option {
+  background: var(--mobile-bg);
+  color: var(--mobile-ink);
+}
+.mobile-select {
+  position: relative;
+  min-width: 0;
+}
+.mobile-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 1px solid var(--mobile-border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--mobile-ink);
+  font: inherit;
+  text-align: left;
+}
+.mobile-select.is-open .mobile-select-trigger {
+  border-radius: 10px 10px 0 0;
+  border-bottom-color: transparent;
+}
+.mobile-select-arrow {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(45deg) translateY(-2px);
+}
+.mobile-select.is-open .mobile-select-arrow {
+  transform: rotate(225deg) translate(-1px, -1px);
+}
+.mobile-select-menu {
+  position: absolute;
+  z-index: 8;
+  top: calc(100% - 1px);
+  left: 0;
+  right: 0;
+  padding: 4px 0;
+  overflow: hidden;
+  border: 1px solid var(--mobile-border);
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  background: var(--mobile-bg);
+  box-shadow: 0 8px 18px #1f2a241c;
+}
+.mobile-select-menu button {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--mobile-ink);
+  font: inherit;
+  text-align: left;
+}
+.mobile-select-menu button[aria-selected='true'] {
+  background: var(--mobile-recorded);
+}
+.mobile-capture-form .quick-capture-controls .field:has(> select),
+.mobile-capture-form > .field:has(> select) {
+  border-radius: 10px;
 }
 .mobile-save-feedback {
   position: fixed;
