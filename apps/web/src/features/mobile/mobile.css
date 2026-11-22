@@ -596,13 +596,13 @@
 .mobile-editor .quick-capture-controls > .field {
   grid-column: auto;
 }
-.mobile-memo {
-  position: relative;
-  padding-bottom: 12px;
-  margin-bottom: 28px;
-}
 .mobile-notes .notes-content {
   padding: 0;
+}
+.mobile-note-entry + .mobile-note-entry {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
 }
 .mobile-notes .markdown-body {
   font-size: 16px;
@@ -846,19 +846,9 @@
 [data-surface='android'] .dialog .form-actions > .button {
   flex: 1;
 }
-.mobile-note-save {
-  display: flex !important;
-  margin-left: auto;
-  width: 48px;
-  padding: 12px !important;
-}
-.mobile-notes .notes-content .section-heading .button,
-.mobile-notes .notes-content .actions .button {
+.mobile-notes .notes-content .section-heading .button {
   width: 48px;
   padding: 12px;
-}
-.mobile-notes .notes-content .actions {
-  justify-content: flex-end;
 }
 .mobile-notes .button svg {
   width: 21px;
@@ -914,7 +904,8 @@
   padding-inline: 0;
 }
 [data-surface='android'] .overdue-dialog .overdue-event-actions input[type='date'] {
-  grid-column: 1 / -1;
+  grid-column: auto;
+  order: -1;
   width: 100%;
   background: transparent;
   border-radius: 0;

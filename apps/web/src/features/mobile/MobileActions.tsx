@@ -11,6 +11,8 @@ export function MobileActions({
   reload,
   remove,
   onBusyChange,
+  onAssociate,
+  showDelete = true,
 }: {
   onBusyChange: (busy: boolean) => void;
   entry: Entry;
@@ -18,6 +20,8 @@ export function MobileActions({
   close: () => void;
   reload: () => Promise<void>;
   remove: (entry: Entry) => void;
+  onAssociate?: () => void;
+  showDelete?: boolean;
 }) {
   const [original] = useState(entry);
   const [busy, setBusy] = useState(false),
@@ -53,10 +57,23 @@ export function MobileActions({
         : (item.type === 'workline' && data.type === 'workline') ||
           (item.type === 'todo' && data.type === 'todo')),
   );
+  const canAssociate = Boolean(
+    onAssociate && (item.type === 'todo' || (item.type === 'milestone' && !pool)),
+  );
+  const actionCount =
+    Number(canAssociate) +
+    Number(!pool) +
+    Number(item.type === 'todo' || item.type === 'milestone') +
+    Number(item.type !== 'project') +
+    Number(showDelete && !pool);
   return (
     <div className="mobile-inline-actions" inert={busy}>
       <ErrorMessage message={error} />
-      <fieldset disabled={busy} className="mobile-actions-fields">
+      <fieldset
+        disabled={busy}
+        className="mobile-actions-fields"
+        data-action-count={moving ? undefined : actionCount}
+      >
         {moving ? (
           <>
             <Field label="移动方式">
@@ -109,6 +126,11 @@ export function MobileActions({
           </>
         ) : (
           <>
+            {canAssociate && (
+              <Button type="button" onClick={onAssociate}>
+                关联
+              </Button>
+            )}
             {!pool && (
               <>
                 <Button
@@ -117,27 +139,29 @@ export function MobileActions({
                     void task(() => complete(original, !isComplete(item, snapshot.entries)))
                   }
                 >
-                  {isComplete(item, snapshot.entries) ? '重新打开' : '标记完成'}
+                  {isComplete(item, snapshot.entries) ? '重新打开' : '完成'}
                 </Button>
                 {(item.type === 'todo' || item.type === 'milestone') && (
                   <Button type="button" onClick={() => void task(() => promote(original))}>
-                    升为业务线
+                    升为业务
                   </Button>
                 )}
                 {item.type !== 'project' && (
                   <Button type="button" onClick={() => setMoving(true)}>
-                    移动／排序
+                    移动
                   </Button>
                 )}
-                <Button
-                  type="button"
-                  className="danger"
-                  onClick={() => {
-                    remove(original);
-                  }}
-                >
-                  删除
-                </Button>
+                {showDelete && (
+                  <Button
+                    type="button"
+                    className="danger"
+                    onClick={() => {
+                      remove(original);
+                    }}
+                  >
+                    删除
+                  </Button>
+                )}
               </>
             )}
           </>

@@ -18,7 +18,7 @@ import {
 import { contactsForDay, isComplete, lineFor } from '../../../../../packages/domain/workspace';
 import { api, complete, load, removeSpace, save, session } from '../../api';
 import { androidRequest, isAndroid } from '../../platform/android';
-import { Button, DatePicker, EmptyState, ErrorMessage, Modal } from '../../components/ui';
+import { ActionButton, Button, DatePicker, EmptyState, ErrorMessage, Modal } from '../../components/ui';
 import { Appearance, Backup, Connect } from '../settings/VaultSettings';
 import { Exchange } from '../settings/Exchange';
 import { TodayAgenda } from '../today/TodayAgenda';
@@ -591,7 +591,7 @@ export default function MobileApp() {
                       toggle={toggle}
                     />
                     <details className="workspace-line-notes">
-                      <summary>业务线笔记</summary>
+                      <summary>节点笔记</summary>
                       <MobileNotes
                         key={`${snapshot.vaultId}:${line.id}:${formVersion}`}
                         snapshot={snapshot}
@@ -729,17 +729,35 @@ export default function MobileApp() {
             compact
             actions={
               editor.entry
-                ? (setBusy, close) => (
+                ? (setBusy, close, associate) => (
                     <MobileActions
                       entry={editor.entry!}
                       onBusyChange={setBusy}
                       snapshot={snapshot}
                       close={close}
                       reload={reload}
+                      showDelete={false}
+                      onAssociate={associate}
                       remove={(entry) => {
                         if (canLeave()) {
                           setEditor(null);
                           remove(entry);
+                        }
+                      }}
+                    />
+                  )
+                : undefined
+            }
+            footerActions={
+              editor.entry && !(editor.entry.data.type === 'milestone' && editor.entry.data.pool)
+                ? () => (
+                    <ActionButton
+                      action="delete"
+                      type="button"
+                      onClick={() => {
+                        if (canLeave()) {
+                          setEditor(null);
+                          remove(editor.entry!);
                         }
                       }}
                     />

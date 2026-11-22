@@ -161,13 +161,23 @@ export function replaceContent(
   )
     throw new Error('批注不属于当前节点或条目，未覆盖内容');
   const changes = new Map(edits?.map((edit) => [edit.id, edit.text]));
-  const comments = current.comments.map(
-    (comment) =>
-      `${marker('comment', comment.id)}\n${comment.date}\n\n${trimBlankLines(changes.get(comment.id) ?? comment.text)}\n${marker('comment', comment.id, true)}`,
-  );
+  // An empty edit list is the new single-body editor: fold legacy comments into
+  // the body and remove their separate markers. An omitted list keeps the
+  // existing API behavior for older clients.
+  const merged =
+    edits?.length === 0
+      ? [text, ...current.comments.map((comment) => comment.text)].filter(Boolean).join('\n\n')
+      : text;
+  const comments =
+    edits?.length === 0
+      ? []
+      : current.comments.map(
+          (comment) =>
+            `${marker('comment', comment.id)}\n${comment.date}\n\n${trimBlankLines(changes.get(comment.id) ?? comment.text)}\n${marker('comment', comment.id, true)}`,
+        );
   const updated = [
     item ? itemHeading(item) : nodeHeading(node),
-    trimBlankLines(text),
+    trimBlankLines(merged),
     ...comments,
     ...current.children,
   ]

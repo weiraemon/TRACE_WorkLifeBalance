@@ -28,6 +28,9 @@ export function SpaceDetails({
   if (!isSpaceItem(item)) return null;
   const line = lineFor(item, snapshot.entries);
   const note = snapshot.entries.find((e) => e.data.id === line?.notesId);
+  const noteNodes = snapshot.entries.filter(
+    (entry) => entry.data.type === 'milestone' && entry.data.lineId === item.id && !entry.data.pool,
+  );
   const child =
     item.type === 'project'
       ? { type: 'workline' as const, defaults: { projectId: item.id } }
@@ -86,7 +89,26 @@ export function SpaceDetails({
             : ''}
         </p>
       )}
-      {line && (
+      {item.type === 'workline' ? (
+        <section className="detail-section notes-content" aria-label="业务线节点笔记">
+          <h3>Notes</h3>
+          {noteNodes.map((entry) =>
+            entry.data.type === 'milestone' ? (
+              <section className="detail-section" key={entry.data.id}>
+                <NotesContent
+                  draftScope={snapshot.root}
+                  id={entry.data.id}
+                  revision={entry.revision}
+                  title={entry.data.title}
+                  editable
+                  reload={reload}
+                  onDirtyChange={onDirtyChange}
+                />
+              </section>
+            ) : null,
+          )}
+        </section>
+      ) : line ? (
         <NotesContent
           draftScope={snapshot.root}
           key={snapshot.vaultId + item.id}
@@ -97,7 +119,7 @@ export function SpaceDetails({
           reload={reload}
           onDirtyChange={onDirtyChange}
         />
-      )}
+      ) : null}
       {item.resourceIds.length > 0 && (
         <section className="detail-section">
           <h3>资料</h3>

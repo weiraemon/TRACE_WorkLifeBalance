@@ -1,23 +1,23 @@
 import { useEffect, useRef, useState, lazy, Suspense } from 'react';
-import { CheckIcon, Cross2Icon, Pencil2Icon } from '@radix-ui/react-icons';
-import type { NoteContent, NoteComment } from '../../../../../packages/domain/index';
+import { Pencil2Icon } from '@radix-ui/react-icons';
+import type { NoteContent } from '../../../../../packages/domain/index';
 import { readContent, saveContent } from '../../api';
 import { ActionButton, Button, ErrorMessage, Field } from '../../components/ui';
 import { useDraftState, useDraftSaving } from '../drafts/useDraftState';
 const Markdown = lazy(() => import('react-markdown'));
-type Draft = { body: string; comments: NoteComment[]; revision: string };
+type Draft = { body: string; revision: string; comments?: Array<{ text: string }> };
+
+function mergedBody(body: string, comments?: Array<{ text: string }>) {
+  return [body.trim(), ...(comments ?? []).map((comment) => comment.text.trim())]
+    .filter(Boolean)
+    .join('\n\n');
+}
 
 function ContentPreview({ value }: { value: NoteContent }) {
   return (
     <div className="markdown-body">
       <Suspense fallback={null}>
-        <Markdown skipHtml>{value.body}</Markdown>
-        {value.comments?.map((comment) => (
-          <div key={comment.id}>
-            <small>{comment.date}</small>
-            <Markdown skipHtml>{comment.text}</Markdown>
-          </div>
-        ))}
+        <Markdown skipHtml>{mergedBody(value.body, value.comments)}</Markdown>
       </Suspense>
     </div>
   );
@@ -51,9 +51,10 @@ export function NotesContent({
   const key = `${draftScope}:note-content:${id}`;
   const [draft, setDraft] = useDraftState<Draft | null>(key, null);
   const [value, setValue] = useState<NoteContent | null>(provided ?? null);
-  const [body, setBody] = useState(draft?.body ?? provided?.body ?? '');
-  const [comments, setComments] = useState<NoteComment[]>(
-    draft?.comments ?? provided?.comments ?? [],
+  const [body, setBody] = useState(
+    draft
+      ? mergedBody(draft.body, draft.comments)
+      : mergedBody(provided?.body ?? '', provided?.comments),
   );
   const [loadedRevision, setLoadedRevision] = useState(draft?.revision ?? provided?.revision ?? '');
   const [editing, setEditing] = useState(startEditing || Boolean(draft));
@@ -63,8 +64,7 @@ export function NotesContent({
   const dirty = useRef(Boolean(draft));
   const accept = (next: NoteContent) => {
     setValue(next);
-    setBody(next.body);
-    setComments(next.comments ?? []);
+    setBody(mergedBody(next.body, next.comments));
     setLoadedRevision(next.revision);
     setError('');
   };
@@ -96,10 +96,9 @@ export function NotesContent({
     };
   }, [id, revision, provided, draft, busy]);
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
-  const change = (nextBody: string, nextComments: NoteComment[]) => {
+  const change = (nextBody: string) => {
     setBody(nextBody);
-    setComments(nextComments);
-    setDraft({ body: nextBody, comments: nextComments, revision: loadedRevision });
+    setDraft({ body: nextBody, revision: loadedRevision });
     dirty.current = true;
     onDirtyChange?.(true);
   };
@@ -168,33 +167,15 @@ export function NotesContent({
       </div>
       {editing && editable ? (
         <>
-          <Field label="内部正文">
+          <Field label="正文">
             <textarea
               disabled={!loadedRevision}
               rows={8}
               value={body}
-              onChange={(event) => change(event.target.value, comments)}
+              onChange={(event) => change(event.target.value)}
             />
           </Field>
-          {comments.map((comment, index) => (
-            <Field label={`批注 ${index + 1} · ${comment.date}`} key={comment.id}>
-              <textarea
-                rows={5}
-                value={comment.text}
-                onChange={(event) =>
-                  change(
-                    body,
-                    comments.map((current) =>
-                      current.id === comment.id
-                        ? { ...current, text: event.target.value }
-                        : current,
-                    ),
-                  )
-                }
-              />
-            </Field>
-          ))}
-          <div className="actions">
+          <div className="form-actions notes-content-actions">
             <ActionButton
               action="cancel"
               aria-label="取消"
@@ -207,9 +188,7 @@ export function NotesContent({
                 if (value) accept(value);
                 onSaved?.();
               }}
-            >
-              {compact ? <Cross2Icon /> : undefined}
-            </ActionButton>
+            />
             <ActionButton
               action="save"
               aria-label="保存内容"
@@ -221,7 +200,7 @@ export function NotesContent({
                   id,
                   body,
                   loadedRevision,
-                  comments.map(({ id, text }) => ({ id, text })),
+                  [],
                 )
                   .then(async (next) => {
                     accept(next);
@@ -235,9 +214,7 @@ export function NotesContent({
                   .catch((e) => setError(String(e)))
                   .finally(() => setBusy(false));
               }}
-            >
-              {compact ? <CheckIcon /> : undefined}
-            </ActionButton>
+            />
           </div>
         </>
       ) : (

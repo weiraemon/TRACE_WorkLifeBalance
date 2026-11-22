@@ -23,6 +23,7 @@ export function WorkItemForm({
   reload,
   onDirtyChange,
   actions,
+  footerActions,
   compact = false,
 }: {
   editor: Editor;
@@ -30,7 +31,12 @@ export function WorkItemForm({
   close: () => void;
   reload: () => Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
-  actions?: (setBusy: (busy: boolean) => void, close: () => void) => ReactNode;
+  actions?: (
+    setBusy: (busy: boolean) => void,
+    close: () => void,
+    associate: () => void,
+  ) => ReactNode;
+  footerActions?: (setBusy: (busy: boolean) => void, close: () => void) => ReactNode;
   compact?: boolean;
 }) {
   const type = editor.type as keyof typeof spaceLabel;
@@ -143,7 +149,7 @@ export function WorkItemForm({
   );
   const association = item && (type === 'todo' || (type === 'milestone' && !pool)) && (
     <Button type="button" onClick={() => setMatching(true)}>
-      关联做过的事
+      {compact ? '关联' : '关联做过的事'}
     </Button>
   );
   const titleField = (
@@ -366,7 +372,6 @@ export function WorkItemForm({
               {commentField}
               {recognition}
             </details>
-            {association}
           </>
         ) : (
           <>
@@ -384,9 +389,10 @@ export function WorkItemForm({
             </div>
           </>
         )}
-        {actions?.(setBusy, closeForm)}
+        {actions?.(setBusy, closeForm, () => setMatching(true))}
         <ErrorMessage message={error} />
         <div className="form-actions">
+          {footerActions?.(setBusy, closeForm)}
           <ActionButton action="cancel" type="button" onClick={closeForm} />
           <ActionButton action="save" type="submit" disabled={busy} />
         </div>

@@ -72,6 +72,15 @@ it('内容编辑不暴露标记、标题或子项，不能提交结构或其他�
   for (const entry of before.entries.filter((entry) => entry.data.type !== 'resource'))
     expect(after.entries.find((current) => current.data.id === entry.data.id)).toEqual(entry);
 });
+it('单正文编辑器把历史批注合并后清除批注标记', async () => {
+  const { vault, todo } = await setup();
+  const original = await vault.readContent(todo.data.id);
+  const edited = await vault.saveContent(todo.data.id, '新的正文', original.revision, []);
+  expect(edited.body).toBe('新的正文\n\n原批注');
+  expect(edited.comments).toEqual([]);
+  const source = await fs.readFile(path.join(vault.root, edited.path), 'utf8');
+  expect(source).not.toContain('atlas:comment');
+});
 
 async function legacyFixture() {
   const state = await setup();

@@ -185,18 +185,6 @@ export function ActualRecordForm({
       </div>
       <ErrorMessage message={error} />
       <div className="form-actions">
-        <ActionButton
-          action="cancel"
-          type="button"
-          onClick={() => {
-            if (embedded || !wasEdited) {
-              clearDraft(draftKey);
-              onDirtyChange?.(false);
-            }
-            close();
-          }}
-        />
-        <ActionButton action="save" type="submit" disabled={busy} />
         {old && (
           <ActionButton action="delete" type="button" disabled={busy} onClick={async () => {
             setBusy(true);
@@ -214,6 +202,18 @@ export function ActualRecordForm({
             }
           }} />
         )}
+        <ActionButton
+          action="cancel"
+          type="button"
+          onClick={() => {
+            if (embedded || !wasEdited) {
+              clearDraft(draftKey);
+              onDirtyChange?.(false);
+            }
+            close();
+          }}
+        />
+        <ActionButton action="save" type="submit" disabled={busy} />
       </div>
     </form>
   );

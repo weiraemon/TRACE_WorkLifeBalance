@@ -400,7 +400,7 @@
 }
 [data-surface='android'] .dialog .form-actions > .primary,
 .mobile-app .mobile-editor .form-actions > .primary {
-  flex: 2;
+  flex: 1;
 }
 .mobile-app .mobile-editor .form-actions {
   background: var(--mobile-bg);
@@ -488,6 +488,51 @@
   flex: 1;
   width: 100%;
 }
+
+/* Every mobile form footer uses the same full-width, equally divided actions. */
+.mobile-app .form-actions > .button,
+[data-surface='android'] .dialog .form-actions > .button {
+  flex: 1 1 0;
+  min-width: 0;
+  width: 100%;
+}
+.mobile-app .notes-content .form-actions,
+[data-surface='android'] .dialog .notes-content .form-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: var(--mobile-space-1);
+  margin-top: var(--mobile-space-2);
+}
+.mobile-app .mobile-inline-actions .mobile-actions-fields,
+[data-surface='android'] .dialog .mobile-inline-actions .mobile-actions-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: var(--mobile-space-1);
+}
+.mobile-app .mobile-inline-actions .mobile-actions-fields[data-action-count='1'],
+[data-surface='android'] .dialog .mobile-inline-actions .mobile-actions-fields[data-action-count='1'] {
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+.mobile-app .mobile-inline-actions .mobile-actions-fields[data-action-count='2'],
+[data-surface='android'] .dialog .mobile-inline-actions .mobile-actions-fields[data-action-count='2'] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.mobile-app .mobile-inline-actions .mobile-actions-fields[data-action-count='3'],
+[data-surface='android'] .dialog .mobile-inline-actions .mobile-actions-fields[data-action-count='3'] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.mobile-app .mobile-inline-actions .mobile-actions-fields[data-action-count='4'],
+[data-surface='android'] .dialog .mobile-inline-actions .mobile-actions-fields[data-action-count='4'] {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.mobile-app .mobile-inline-actions .mobile-actions-fields > .button,
+[data-surface='android'] .dialog .mobile-inline-actions .mobile-actions-fields > .button {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding-inline: 4px;
+  font-size: var(--mobile-text-caption);
+}
 .mobile-capture-form .quick-capture-paste textarea,
 .mobile-capture-form .mobile-form-options textarea,
 .mobile-capture-form .mobile-form-title input {
@@ -572,12 +617,18 @@
 .mobile-select-menu button[aria-selected='true'] {
   background: var(--mobile-recorded);
 }
-.mobile-app :is(input:not([type='checkbox']), textarea),
-[data-surface='android'] .dialog :is(input:not([type='checkbox']), textarea) {
+.mobile-app :is(input:not([type='checkbox']):not([type='date']):not([type='time']), textarea),
+[data-surface='android'] .dialog :is(input:not([type='checkbox']):not([type='date']):not([type='time']), textarea) {
   background: transparent !important;
   border: 2px solid var(--mobile-ink) !important;
   border-radius: 10px;
   color: var(--mobile-ink);
+}
+.mobile-app .mobile-form-common :is(input, select, textarea),
+[data-surface='android'] .dialog .mobile-form-common :is(input, select, textarea) {
+  background: var(--mobile-input) !important;
+  border: 1px solid var(--mobile-border) !important;
+  border-radius: var(--mobile-radius-input);
 }
 .mobile-app select,
 [data-surface='android'] .dialog select {
@@ -589,9 +640,14 @@
 .mobile-app .mobile-search input,
 [data-surface='android'] .mobile-search input {
   background: transparent !important;
-  border: 0 !important;
-  border-radius: 0;
-  padding: 6px 0;
+  border: 2px solid var(--mobile-ink) !important;
+  border-radius: 10px;
+  padding: 6px 12px;
+}
+.mobile-app .mobile-search,
+[data-surface='android'] .mobile-search {
+  border: 0;
+  box-shadow: none;
 }
 .mobile-app .date-time-input > input,
 [data-surface='android'] .date-time-input > input {

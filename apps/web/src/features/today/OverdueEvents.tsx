@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { localDay, type Snapshot } from '../../../../../packages/domain/index';
 import { overdueMilestones } from '../../../../../packages/domain/workspace';
-import { createRecord, removeSpace, save } from '../../api';
+import { createRecord, save } from '../../api';
 import { Button, DatePicker, ErrorMessage, Modal } from '../../components/ui';
 
 export function OverdueEvents({
@@ -20,16 +20,14 @@ export function OverdueEvents({
   const overdue = overdueMilestones(snapshot.entries, today);
   if (date !== today) return null;
 
-  const update = async (id: string, targetDate: string | null) => {
+  const update = async (id: string, targetDate: string) => {
     const context = overdue.find(({ milestone }) => milestone.id === id);
     const entry = snapshot.entries.find(({ data }) => data.id === id);
     if (!context || !entry) return;
     setBusyId(id);
     setError('');
     try {
-      if (targetDate === null) await removeSpace(entry);
-      else
-        await save(createRecord('milestone', { ...context.milestone, dueDate: targetDate }), entry);
+      await save(createRecord('milestone', { ...context.milestone, dueDate: targetDate }), entry);
       await reload();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -65,13 +63,6 @@ export function OverdueEvents({
                     </small>
                   </div>
                   <div className="overdue-event-actions">
-                    <Button
-                      className="danger"
-                      disabled={Boolean(busyId)}
-                      onClick={() => void update(milestone.id, null)}
-                    >
-                      删除
-                    </Button>
                     <Button
                       disabled={Boolean(busyId)}
                       onClick={() => void update(milestone.id, today)}
