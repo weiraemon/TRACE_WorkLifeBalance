@@ -1,7 +1,6 @@
 import type { Entry, Snapshot } from '../../../../../packages/domain/index';
 import type { Editor } from '../../types/editor';
-import { useEffect, useRef, useState } from 'react';
-import { ActualAssociationMode } from './ActualAssociationMode';
+import { useEffect, useRef } from 'react';
 
 export function ActualRecordList({
   entries,
@@ -16,8 +15,6 @@ export function ActualRecordList({
   reload: () => Promise<void>;
   recentId?: string;
 }) {
-  const [associationId, setAssociationId] = useState<string | null>(null);
-  const associationEntry = entries.find((entry) => entry.data.id === associationId);
   const consumed = useRef(false);
   const press = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
   const cancel = () => {
@@ -52,7 +49,7 @@ export function ActualRecordList({
                   x: event.clientX,
                   y: event.clientY,
                   timer: setTimeout(() => {
-                    setAssociationId(entry.data.id);
+                    edit({ type: 'actual', entry });
                     consumed.current = true;
                     press.current = null;
                   }, 500),
@@ -99,17 +96,6 @@ export function ActualRecordList({
               </button>
             </article>
           ),
-      )}
-      {associationEntry && (
-        <ActualAssociationMode
-          key={associationEntry.data.id}
-          entry={associationEntry}
-          entries={entries}
-          snapshot={snapshot}
-          choose={setAssociationId}
-          close={() => setAssociationId(null)}
-          reload={reload}
-        />
       )}
     </div>
   );
