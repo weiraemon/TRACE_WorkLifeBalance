@@ -264,6 +264,7 @@ export function QuickCapture({
       {captureType === 'milestone' && (
         <Field label="节点标签">
           <input
+            className="node-tag-input"
             value={tags}
             onChange={(event) => setTags(event.target.value)}
             placeholder="会议，讨论…"

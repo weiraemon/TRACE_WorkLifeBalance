@@ -19,6 +19,7 @@ export function ActualRecordList({
   const [associationId, setAssociationId] = useState<string | null>(null);
   const associationEntry = entries.find((entry) => entry.data.id === associationId);
   const consumed = useRef(false);
+  const pointerType = useRef<PointerEvent['pointerType']>('');
   const press = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
   const cancel = () => {
     if (press.current) clearTimeout(press.current.timer);
@@ -43,11 +44,16 @@ export function ActualRecordList({
               onContextMenu={(event) => {
                 event.preventDefault();
                 cancel();
-                edit({ type: 'actual', entry });
+                if (pointerType.current === 'touch') {
+                  consumed.current = true;
+                  setAssociationId(entry.data.id);
+                } else edit({ type: 'actual', entry });
               }}
               onPointerDown={(event) => {
                 consumed.current = false;
+                pointerType.current = event.pointerType;
                 cancel();
+                if (event.button !== 0) return;
                 press.current = {
                   x: event.clientX,
                   y: event.clientY,

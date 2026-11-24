@@ -534,16 +534,6 @@
 [data-surface='android'] .dialog .field > span {
   font-size: 15px;
 }
-.mobile-app input:not([type='checkbox']),
-.mobile-app select,
-.mobile-app textarea,
-[data-surface='android'] .dialog input:not([type='checkbox']),
-[data-surface='android'] .dialog select,
-[data-surface='android'] .dialog textarea {
-  font-size: 16px;
-  min-height: 48px;
-  max-width: 100%;
-}
 .mobile-app textarea,
 [data-surface='android'] .dialog textarea {
   line-height: 1.8;
@@ -757,32 +747,9 @@
 [data-surface='android'] .dialog .button.primary {
   color: var(--surface);
 }
-.mobile-app input:not([type='checkbox']),
-.mobile-app select,
-.mobile-app textarea,
-[data-surface='android'] .dialog input:not([type='checkbox']),
-[data-surface='android'] .dialog select,
-[data-surface='android'] .dialog textarea {
-  min-width: 0;
-  width: 100%;
-  border: 0;
-  border-radius: 12px;
-  background: var(--note-bg);
-  padding: 12px;
-  box-shadow: none;
-}
-.mobile-app :is(input, select, textarea):focus-visible,
-[data-surface='android'] .dialog :is(input, select, textarea):focus-visible {
-  outline: 2px solid var(--accent-strong);
-  outline-offset: 2px;
-}
 .mobile-app input[type='checkbox'],
 [data-surface='android'] .dialog input[type='checkbox'] {
   accent-color: var(--accent-strong);
-}
-.mobile-app .mobile-search input {
-  background: transparent;
-  padding-inline: 0;
 }
 .mobile-app .review-page > .section-heading > input {
   width: 156px;

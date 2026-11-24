@@ -1,0 +1,121 @@
+/* Shared mobile control skin. Page styles provide layout only. */
+:root[data-surface='android']
+  :is(.mobile-app, .dialog)
+  :is(input, select, textarea):not([type='checkbox']) {
+  appearance: none;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  min-height: var(--mobile-action-height);
+  padding: var(--mobile-space-1) var(--mobile-space-2);
+  background: transparent;
+  border: 1px solid var(--mobile-border);
+  border-radius: 10px;
+  color: var(--mobile-ink);
+  font: var(--mobile-text-body)/1.6 var(--mobile-font-body);
+  box-shadow: none;
+}
+/* Free-text entry has a stronger outline than selection controls. */
+:root[data-surface='android']
+  :is(.mobile-app, .dialog)
+  :is(
+    input:not([type]),
+    input[type='text'],
+    input[type='password'],
+    input[type='url'],
+    input[type='email'],
+    input[type='number'],
+    textarea
+  ):not([list]):not(.node-tag-input) {
+  border: 2px solid var(--mobile-ink);
+}
+:root[data-surface='android'] :is(.mobile-app, .dialog) :is(input, select, textarea):focus-visible {
+  outline: 1px solid var(--mobile-accent);
+  outline-offset: 0;
+  border-color: var(--mobile-accent);
+  box-shadow: none;
+}
+:root[data-surface='android'] :is(.mobile-app, .dialog) input[type='search'] {
+  border: 0;
+  border-radius: 0;
+  padding: 6px 0;
+}
+:root[data-surface='android'] .mobile-search {
+  border: 0;
+  box-shadow: none;
+}
+:root[data-surface='android'] :is(.mobile-app, .dialog) .date-time-input > input,
+:root[data-surface='android'] .mobile-topbar :is(input[type='date'], input[type='time']),
+:root[data-surface='android'] .review-page > .section-heading input[type='date'] {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+:root[data-surface='android'] .mobile-topbar :is(input[type='date'], input[type='time']) {
+  padding: 6px 0;
+}
+:root[data-surface='android'] .actual-record-content {
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+.mobile-select {
+  position: relative;
+  min-width: 0;
+}
+.mobile-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 1px solid var(--mobile-border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--mobile-ink);
+  font: inherit;
+  text-align: left;
+}
+.mobile-select.is-open .mobile-select-trigger {
+  border-radius: 10px 10px 0 0;
+  border-bottom-color: transparent;
+}
+.mobile-select-arrow {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(45deg) translateY(-2px);
+}
+.mobile-select.is-open .mobile-select-arrow {
+  transform: rotate(225deg) translate(-1px, -1px);
+}
+.mobile-select-menu {
+  position: absolute;
+  z-index: 8;
+  top: calc(100% - 1px);
+  left: 0;
+  right: 0;
+  padding: 4px 0;
+  overflow: hidden;
+  border: 1px solid var(--mobile-border);
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  background: var(--mobile-bg);
+  box-shadow: 0 8px 18px #1f2a241c;
+}
+.mobile-select-menu button {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--mobile-ink);
+  font: inherit;
+  text-align: left;
+}
+.mobile-select-menu button[aria-selected='true'] {
+  background: var(--mobile-recorded);
+}

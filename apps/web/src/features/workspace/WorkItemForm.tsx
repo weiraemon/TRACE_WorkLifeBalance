@@ -196,6 +196,7 @@ export function WorkItemForm({
     <Field label="节点标签">
       <input
         list="node-tags"
+        className="node-tag-input"
         value={tags}
         onChange={(e) => setTags(e.target.value)}
         placeholder="会议，报告，专注…"

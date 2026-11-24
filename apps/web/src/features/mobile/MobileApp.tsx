@@ -39,6 +39,7 @@ import { MobileSchedule } from './MobileSchedule';
 import { MobileNotes } from './MobileNotes';
 import './mobile.css';
 import './mobile-forms.css';
+import './mobile-controls.css';
 import { SaveFeedback } from '../../components/SaveFeedback';
 import { OperationProgress } from '../../components/OperationProgress';
 import { operationSnapshot, runOperation } from '../../platform/operations';
